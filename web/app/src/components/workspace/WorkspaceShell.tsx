@@ -57,6 +57,12 @@ import {
   nextUiFontSize,
 } from "../../ui-font";
 import { linkEnds, isMultiEnded, multiEndWorkIds, notifyStatus, gatherableEnds } from "../../link-ends";
+import {
+  endorserOptions,
+  passesEndorserFilter,
+  vouchersOf,
+  type EndorserFilter,
+} from "../../link-endorsement-filter";
 import { MultiEndCompare } from "../MultiEndCompare";
 import { useCompoundEdition } from "../../hooks/useCompoundEdition";
 import { authorColorPair } from "../../author-color";
@@ -378,6 +384,10 @@ export function WorkspaceShell() {
   const [searchOpen, setSearchOpen] = useState(false);
   const topSearchRef = useRef<HTMLInputElement | null>(null);
   const [activeLinkTypes, setActiveLinkTypes] = useState<Set<number>>(new Set());
+  // FR-87 §16.12: the endorser filter — "any" | "vouched" | a club
+  // id. Intersects the type chips; covers outgoing links AND
+  // backlinks (the incoming swamp).
+  const [endorserFilter, setEndorserFilter] = useState<EndorserFilter>("any");
   const [multiCompareWorkIds, setMultiCompareWorkIds] = useState<number[]>([]);
   const [compareFullscreen, setCompareFullscreen] = useState(false);
   // Provenance underlines are ON by default: the light floating
@@ -3322,15 +3332,52 @@ export function WorkspaceShell() {
                         clear
                       </button>
                     )}
+                    {(() => {
+                      // FR-87 §16.12: the endorser filter — offered
+                      // only when a third-party vouch exists to
+                      // filter by. Intersects the type chips.
+                      const endorsers = endorserOptions(transclusion.links);
+                      if (endorsers.length === 0) return null;
+                      const vouchedCount = transclusion.links.filter((l) => passesEndorserFilter(l, "vouched")).length;
+                      return (
+                        <select
+                          className="ws-link-filter-btn"
+                          value={String(endorserFilter)}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setEndorserFilter(v === "any" ? "any" : v === "vouched" ? "vouched" : parseInt(v, 10));
+                          }}
+                          title="Show only links endorsed by a club whose judgment you weigh (Miller §16.12)"
+                          style={{
+                            background: "var(--bg, #0d1117)",
+                            border: "1px solid var(--border, #30363d)",
+                            color: "var(--text-muted, #8b949e)",
+                            fontSize: 10,
+                            padding: "2px 4px",
+                            cursor: "pointer",
+                            borderRadius: 4,
+                          }}
+                        >
+                          <option value="any">Endorsed by: anyone</option>
+                          <option value="vouched">any vouch ({vouchedCount})</option>
+                          {endorsers.map((e) => (
+                            <option key={e.club_id} value={String(e.club_id)}>
+                              {e.name ?? "club 0x" + e.club_id.toString(16)} ({e.count})
+                            </option>
+                          ))}
+                        </select>
+                      );
+                    })()}
                   </div>
                 )}
                 {/* Outbound links */}
                 <div className="ws-conn-section">
                   <div className="ws-conn-header">
                     Links ({(() => {
-                      const filtered = activeLinkTypes.size === 0
-                        ? transclusion.links
-                        : transclusion.links.filter((l) => (l.link_types || []).some((t) => activeLinkTypes.has(t)));
+                      const filtered = transclusion.links
+                        .filter((l) => activeLinkTypes.size === 0 || (l.link_types || []).some((t) => activeLinkTypes.has(t)))
+                        .filter((l) => passesEndorserFilter(l, endorserFilter));
                       return filtered.length;
                     })()})
                   </div>
@@ -3341,9 +3388,9 @@ export function WorkspaceShell() {
                     const withDest = transclusion.links.filter(
                       (l): l is typeof l & { destination: number } => l.destination != null,
                     );
-                    const filteredLinks = activeLinkTypes.size === 0
-                      ? withDest
-                      : withDest.filter((l) => (l.link_types || []).some((t) => activeLinkTypes.has(t)));
+                    const filteredLinks = withDest
+                      .filter((l) => activeLinkTypes.size === 0 || (l.link_types || []).some((t) => activeLinkTypes.has(t)))
+                      .filter((l) => passesEndorserFilter(l, endorserFilter));
                     const openEndsBlock = openLinks.length > 0 ? (
                       <div className="ws-conn-open-ends isDeadEnd" style={{ marginBottom: 10 }}>
                         <div style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, color: "var(--amber)", padding: "8px 0 2px" }}>
@@ -3752,26 +3799,55 @@ export function WorkspaceShell() {
                                {/* Type picker lives in the title row now —
                                    badge and dropdown merged (was
                                    "Comment [Comment ▾]"). */}
-                               {canEdit && (
-                                <button
-                                  className="ws-conn-delete"
-                                  title="Vouch for this connection (endorse)"
-                                  style={{ color: "#3fb950" }}
-                                  onClick={async (e) => {
-                                    e.stopPropagation();
-                                    const client = clientRef.current;
-                                    if (!client) return;
-                                    try {
-                                      await client.sendRequest("link_endorse", { link_id: link.link_id });
-                                      if (workBeId !== null) {
-                                        void loadLinks(client, workBeId, works);
+                               {authenticated && (() => {
+                                  // FR-87 §16.12: vouching is a
+                                  // READER's review, not an editor's
+                                  // decoration — any authenticated
+                                  // session may vouch on any
+                                  // document (the movie-reviewer
+                                  // model). Already-vouched toggles
+                                  // to withdraw.
+                                  const myClub = identity?.club_id ?? null;
+                                  const myVouch =
+                                    myClub != null &&
+                                    vouchersOf(link).some((v) => v.club_id === myClub);
+                                  return (
+                                    <button
+                                      className="ws-conn-delete"
+                                      title={
+                                        myVouch
+                                          ? "Withdraw your vouch (un-endorse)"
+                                          : "Vouch for this connection — a reader's review: worth reading"
                                       }
-                                    } catch { /* best-effort */ }
-                                  }}
-                                >
-                                  ✓
-                                </button>
-                              )}
+                                      style={{
+                                        color: myVouch ? "#3fb950" : "#8b949e",
+                                        fontWeight: myVouch ? 700 : 400,
+                                      }}
+                                      onClick={async (e) => {
+                                        e.stopPropagation();
+                                        const client = clientRef.current;
+                                        if (!client) return;
+                                        try {
+                                          await client.sendRequest(
+                                            myVouch ? "link_unendorse" : "link_endorse",
+                                            { link_id: link.link_id },
+                                          );
+                                          if (workBeId !== null) {
+                                            void loadLinks(client, workBeId, works);
+                                          }
+                                        } catch {
+                                          showToast(
+                                            myVouch
+                                              ? "Could not withdraw vouch — try again"
+                                              : "Could not vouch — you may need to sign in",
+                                          );
+                                        }
+                                      }}
+                                    >
+                                      ✓
+                                    </button>
+                                  );
+                                })()}
                               {comparable && (
                                 <button
                                   className="ws-conn-delete"
@@ -3889,12 +3965,16 @@ export function WorkspaceShell() {
                   {/* Backlinks */}
                 <div className="ws-conn-section">
                   <div className="ws-conn-header">
-                    Backlinks ({transclusion.backlinks.length})
+                    Backlinks ({endorserFilter === "any"
+                       ? transclusion.backlinks.length
+                       : transclusion.backlinks.filter((bl) => passesEndorserFilter(bl, endorserFilter)).length})
                   </div>
                   {transclusion.backlinks.length === 0 ? (
                     <div className="ws-conn-empty">No inbound links from other works.</div>
                   ) : (
-                    transclusion.backlinks.map((bl, i) => {
+                    transclusion.backlinks
+                      .filter((bl) => passesEndorserFilter(bl, endorserFilter))
+                      .map((bl, i) => {
                       const lt = DEFAULT_LINK_TYPES.find((t) =>
                         t.name.toLowerCase() === (bl.link_type || "").toLowerCase().replace(/[\s_]/g, "") ||
                         t.name.toLowerCase().replace(/\s/g, "") === (bl.link_type || "").toLowerCase().replace(/[\s_]/g, "")
@@ -6399,6 +6479,8 @@ export function WorkspaceShell() {
                       </button>
                     </div>
                 </div>
+              </div>
+              )}
 
                   {/* Where is this used? (backfollow) */}
                   {(
@@ -6458,7 +6540,13 @@ export function WorkspaceShell() {
                             setProvenanceLoading(true);
                             setProvenanceChain(null);
                             try {
-                              const chain = await clientRef.current.workTransclusionChain(workBeId, 0, 0);
+                              // Whole-document trace: (0,0) matches NOTHING server-side
+                          // (transclusion_again_chain's span test is
+                          // entry_start < end && entry_end > start) —
+                          // the old call always returned an empty
+                          // chain, reporting "original content" for
+                          // transcluded works. Walk the full span.
+                          const chain = await clientRef.current.workTransclusionChain(workBeId, 0, text.length);
                               setProvenanceChain(chain);
                             } catch { setProvenanceChain(null); }
                             setProvenanceLoading(false);
@@ -6496,8 +6584,6 @@ export function WorkspaceShell() {
                       )}
                     </div>
                   )}
-              </div>
-            )}
             </>
           )}
           {workBeId !== null && (

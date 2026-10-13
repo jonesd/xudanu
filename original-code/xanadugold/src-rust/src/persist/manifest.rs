@@ -55,6 +55,23 @@ pub struct LinkTypeRegistryEntry {
     pub definition_work: Option<BeId>,
 }
 
+/// FR-87: one entry of a link's trust chain — who vouches, in what
+/// role, and when (Gold nlinksx.cxx endorsements).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LinkEndorsementEntry {
+    pub club_id: BeId,
+    /// "author" | "vouch" | "type"
+    pub kind: String,
+    /// The FR-39 type work this endorser vouches the link
+    /// instantiates (present only for kind == "type").
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Option::is_none")
+    )]
+    pub type_work: Option<BeId>,
+    pub timestamp: u64,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LinkEntry {
     pub link_id: BeId,
@@ -123,6 +140,22 @@ pub struct LinkEntry {
         serde(default, skip_serializing_if = "Option::is_none")
     )]
     pub responds_to: Option<BeId>,
+    /// FR-87: the link's trust chain. PORT BUG, FIXED WITH FR-87:
+    /// restore previously rebuilt links with `endorsements:
+    /// Vec::new()` — the trust chain was silently dropped on every
+    /// checkpoint → restart (the WAL alone is insufficient once a
+    /// checkpoint truncates it). In Gold these lived in the
+    /// document structure itself (the GrandMap's endorsementSpace)
+    /// and therefore persisted with it; this field gives the port's
+    /// link table the same guarantee.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub endorsements: Vec<LinkEndorsementEntry>,
+    /// FR-87: strike-out records (club, struck_at) — vouches
+    /// withdrawn and not re-made. Drives the contested indicator
+    /// (Miller §16.12; Gold's "struck-out signature" retract
+    /// semantics — see LinkState.withdrawn_vouches).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub withdrawn_vouches: Vec<(BeId, u64)>,
 }
 
 /// On-disk representation of a work entry in the manifest.
@@ -1657,6 +1690,8 @@ mod tests {
             cross_server_notify: None,
             author_club: None,
             responds_to: None,
+            endorsements: Vec::new(),
+            withdrawn_vouches: Vec::new(),
         });
         manifest.link_counter = 51;
 

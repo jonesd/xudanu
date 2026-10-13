@@ -52,5 +52,26 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: "./src/setupTests.ts",
     exclude: ["**/e2e/**", "**/node_modules/**", "**/dist/**"],
+    coverage: {
+      provider: "v8",
+      // Honest measurement: every source file counts, loaded or not.
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: [
+        "src/__tests__/**",
+        "src/setupTests.ts",
+        "src/main.tsx",
+        "src/globals.d.ts",
+        // Type-only modules: no runtime code to cover.
+        "src/types/**",
+      ],
+      reporter: ["text", "json-summary", "json", "html"],
+      // Coverage-plan-web.md ratchet: raises per phase, 80% at the end.
+      // Never let it drift below the shipped phase floor.
+      thresholds: {
+        lines: 45,
+        functions: 38,
+        branches: 37,
+      },
+    },
   },
 });

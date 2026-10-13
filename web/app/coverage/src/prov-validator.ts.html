@@ -1,0 +1,547 @@
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <title>Code coverage report for src/prov-validator.ts</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="../prettify.css" />
+    <link rel="stylesheet" href="../base.css" />
+    <link rel="shortcut icon" type="image/x-icon" href="../favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../sort-arrow-sprite.png);
+        }
+    </style>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../index.html">All files</a> / <a href="index.html">src</a> prov-validator.ts</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>0/2</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">100% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>0/0</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>0/1</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">0% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>0/2</span>
+            </div>
+        
+            
+        </div>
+        <p class="quiet">
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+        </p>
+        <template id="filterTemplate">
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
+        </template>
+    </div>
+    <div class='status-line low'></div>
+    <pre><table class="coverage">
+<tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
+<a name='L2'></a><a href='#L2'>2</a>
+<a name='L3'></a><a href='#L3'>3</a>
+<a name='L4'></a><a href='#L4'>4</a>
+<a name='L5'></a><a href='#L5'>5</a>
+<a name='L6'></a><a href='#L6'>6</a>
+<a name='L7'></a><a href='#L7'>7</a>
+<a name='L8'></a><a href='#L8'>8</a>
+<a name='L9'></a><a href='#L9'>9</a>
+<a name='L10'></a><a href='#L10'>10</a>
+<a name='L11'></a><a href='#L11'>11</a>
+<a name='L12'></a><a href='#L12'>12</a>
+<a name='L13'></a><a href='#L13'>13</a>
+<a name='L14'></a><a href='#L14'>14</a>
+<a name='L15'></a><a href='#L15'>15</a>
+<a name='L16'></a><a href='#L16'>16</a>
+<a name='L17'></a><a href='#L17'>17</a>
+<a name='L18'></a><a href='#L18'>18</a>
+<a name='L19'></a><a href='#L19'>19</a>
+<a name='L20'></a><a href='#L20'>20</a>
+<a name='L21'></a><a href='#L21'>21</a>
+<a name='L22'></a><a href='#L22'>22</a>
+<a name='L23'></a><a href='#L23'>23</a>
+<a name='L24'></a><a href='#L24'>24</a>
+<a name='L25'></a><a href='#L25'>25</a>
+<a name='L26'></a><a href='#L26'>26</a>
+<a name='L27'></a><a href='#L27'>27</a>
+<a name='L28'></a><a href='#L28'>28</a>
+<a name='L29'></a><a href='#L29'>29</a>
+<a name='L30'></a><a href='#L30'>30</a>
+<a name='L31'></a><a href='#L31'>31</a>
+<a name='L32'></a><a href='#L32'>32</a>
+<a name='L33'></a><a href='#L33'>33</a>
+<a name='L34'></a><a href='#L34'>34</a>
+<a name='L35'></a><a href='#L35'>35</a>
+<a name='L36'></a><a href='#L36'>36</a>
+<a name='L37'></a><a href='#L37'>37</a>
+<a name='L38'></a><a href='#L38'>38</a>
+<a name='L39'></a><a href='#L39'>39</a>
+<a name='L40'></a><a href='#L40'>40</a>
+<a name='L41'></a><a href='#L41'>41</a>
+<a name='L42'></a><a href='#L42'>42</a>
+<a name='L43'></a><a href='#L43'>43</a>
+<a name='L44'></a><a href='#L44'>44</a>
+<a name='L45'></a><a href='#L45'>45</a>
+<a name='L46'></a><a href='#L46'>46</a>
+<a name='L47'></a><a href='#L47'>47</a>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a>
+<a name='L52'></a><a href='#L52'>52</a>
+<a name='L53'></a><a href='#L53'>53</a>
+<a name='L54'></a><a href='#L54'>54</a>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a>
+<a name='L80'></a><a href='#L80'>80</a>
+<a name='L81'></a><a href='#L81'>81</a>
+<a name='L82'></a><a href='#L82'>82</a>
+<a name='L83'></a><a href='#L83'>83</a>
+<a name='L84'></a><a href='#L84'>84</a>
+<a name='L85'></a><a href='#L85'>85</a>
+<a name='L86'></a><a href='#L86'>86</a>
+<a name='L87'></a><a href='#L87'>87</a>
+<a name='L88'></a><a href='#L88'>88</a>
+<a name='L89'></a><a href='#L89'>89</a>
+<a name='L90'></a><a href='#L90'>90</a>
+<a name='L91'></a><a href='#L91'>91</a>
+<a name='L92'></a><a href='#L92'>92</a>
+<a name='L93'></a><a href='#L93'>93</a>
+<a name='L94'></a><a href='#L94'>94</a>
+<a name='L95'></a><a href='#L95'>95</a>
+<a name='L96'></a><a href='#L96'>96</a>
+<a name='L97'></a><a href='#L97'>97</a>
+<a name='L98'></a><a href='#L98'>98</a>
+<a name='L99'></a><a href='#L99'>99</a>
+<a name='L100'></a><a href='#L100'>100</a>
+<a name='L101'></a><a href='#L101'>101</a>
+<a name='L102'></a><a href='#L102'>102</a>
+<a name='L103'></a><a href='#L103'>103</a>
+<a name='L104'></a><a href='#L104'>104</a>
+<a name='L105'></a><a href='#L105'>105</a>
+<a name='L106'></a><a href='#L106'>106</a>
+<a name='L107'></a><a href='#L107'>107</a>
+<a name='L108'></a><a href='#L108'>108</a>
+<a name='L109'></a><a href='#L109'>109</a>
+<a name='L110'></a><a href='#L110'>110</a>
+<a name='L111'></a><a href='#L111'>111</a>
+<a name='L112'></a><a href='#L112'>112</a>
+<a name='L113'></a><a href='#L113'>113</a>
+<a name='L114'></a><a href='#L114'>114</a>
+<a name='L115'></a><a href='#L115'>115</a>
+<a name='L116'></a><a href='#L116'>116</a>
+<a name='L117'></a><a href='#L117'>117</a>
+<a name='L118'></a><a href='#L118'>118</a>
+<a name='L119'></a><a href='#L119'>119</a>
+<a name='L120'></a><a href='#L120'>120</a>
+<a name='L121'></a><a href='#L121'>121</a>
+<a name='L122'></a><a href='#L122'>122</a>
+<a name='L123'></a><a href='#L123'>123</a>
+<a name='L124'></a><a href='#L124'>124</a>
+<a name='L125'></a><a href='#L125'>125</a>
+<a name='L126'></a><a href='#L126'>126</a>
+<a name='L127'></a><a href='#L127'>127</a>
+<a name='L128'></a><a href='#L128'>128</a>
+<a name='L129'></a><a href='#L129'>129</a>
+<a name='L130'></a><a href='#L130'>130</a>
+<a name='L131'></a><a href='#L131'>131</a>
+<a name='L132'></a><a href='#L132'>132</a>
+<a name='L133'></a><a href='#L133'>133</a>
+<a name='L134'></a><a href='#L134'>134</a>
+<a name='L135'></a><a href='#L135'>135</a>
+<a name='L136'></a><a href='#L136'>136</a>
+<a name='L137'></a><a href='#L137'>137</a>
+<a name='L138'></a><a href='#L138'>138</a>
+<a name='L139'></a><a href='#L139'>139</a>
+<a name='L140'></a><a href='#L140'>140</a>
+<a name='L141'></a><a href='#L141'>141</a>
+<a name='L142'></a><a href='#L142'>142</a>
+<a name='L143'></a><a href='#L143'>143</a>
+<a name='L144'></a><a href='#L144'>144</a>
+<a name='L145'></a><a href='#L145'>145</a>
+<a name='L146'></a><a href='#L146'>146</a>
+<a name='L147'></a><a href='#L147'>147</a>
+<a name='L148'></a><a href='#L148'>148</a>
+<a name='L149'></a><a href='#L149'>149</a>
+<a name='L150'></a><a href='#L150'>150</a>
+<a name='L151'></a><a href='#L151'>151</a>
+<a name='L152'></a><a href='#L152'>152</a>
+<a name='L153'></a><a href='#L153'>153</a>
+<a name='L154'></a><a href='#L154'>154</a>
+<a name='L155'></a><a href='#L155'>155</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">export function <span class="fstat-no" title="function not covered" >buildProvValidatorHtml(p</span>rovJson: string): string {
+  const escaped = <span class="cstat-no" title="statement not covered" >JSON.stringify(provJson);</span>
+<span class="cstat-no" title="statement not covered" >  return `&lt;!DOCTYPE html&gt;</span>
+&lt;html lang="en"&gt;
+&lt;head&gt;
+&lt;meta charset="utf-8"&gt;
+&lt;meta name="viewport" content="width=device-width, initial-scale=1"&gt;
+&lt;title&gt;PROV-JSON Validator&lt;/title&gt;
+&lt;style&gt;
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',system-ui,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.6}
+a{color:#58a6ff;text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:1100px;margin:0 auto;padding:32px 24px 60px}
+h1{font-size:28px;font-weight:800;color:#e6edf3;margin-bottom:4px}
+.sub{font-size:14px;color:#8b949e;margin-bottom:24px}
+.toolbar{display:flex;gap:12px;margin-bottom:16px;align-items:center;flex-wrap:wrap}
+.btn{padding:8px 16px;border-radius:6px;border:1px solid #30363d;background:#21262d;color:#c9d1d9;font-size:13px;font-family:inherit;cursor:pointer}
+.btn:hover{border-color:#58a6ff;background:#1c2330}
+.btn-go{background:#238636;border-color:#238636;color:#fff;font-weight:600}
+.btn-go:hover{background:#2ea043}
+.btn-ext{background:none;border:1px solid #a371f744;color:#a371f7}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;height:460px}
+.panel{display:flex;flex-direction:column;background:#161b22;border:1px solid #21262d;border-radius:8px;overflow:hidden}
+.ph{padding:8px 12px;border-bottom:1px solid #21262d;display:flex;justify-content:space-between;align-items:center}
+.pt{font-size:12px;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:0.5px}
+.pbadge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;display:none}
+.pbadge.ok{background:rgba(63,185,80,0.15);color:#3fb950;border:1px solid rgba(63,185,80,0.3)}
+textarea{flex:1;background:#0d1117;border:none;color:#c9d1d9;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.5;padding:12px;resize:none;outline:none;tab-size:2}
+textarea:focus{box-shadow:inset 0 0 0 2px #58a6ff33}
+.results{margin-top:16px;padding:16px;border-radius:8px;font-size:13px;display:none}
+.results.ok{background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.3);color:#3fb950}
+.results.err{background:rgba(248,81,73,0.08);border:1px solid rgba(248,81,73,0.3);color:#f85149}
+.results ul{margin:8px 0 0 20px}.results li{margin-bottom:4px;font-family:'JetBrains Mono',monospace;font-size:12px}
+.links{margin-top:24px;padding:16px;background:#161b22;border:1px solid #21262d;border-radius:8px}
+.links h3{font-size:13px;color:#e6edf3;margin-bottom:8px}.links ul{margin-left:20px}
+.links li{margin-bottom:4px;font-size:13px}
+.foot{margin-top:32px;padding-top:16px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+@media(max-width:768px){.two-col{grid-template-columns:1fr;height:auto}.panel{height:240px}}
+&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;div class="wrap"&gt;
+&lt;h1&gt;PROV-JSON Validator&lt;/h1&gt;
+&lt;p class="sub"&gt;W3C PROV-JSON validation. Runs entirely in your browser.&lt;/p&gt;
+&lt;div class="toolbar"&gt;
+  &lt;button class="btn btn-go" onclick="doVal()"&gt;Validate&lt;/button&gt;
+  &lt;button class="btn" onclick="dl()"&gt;Download JSON&lt;/button&gt;
+  &lt;a class="btn btn-ext" href="https://openprovenance.org/prov-json/" target="_blank"&gt;PROV-JSON Spec&lt;/a&gt;
+  &lt;a class="btn btn-ext" href="https://openprovenance.org/" target="_blank"&gt;Open Provenance&lt;/a&gt;
+&lt;/div&gt;
+&lt;div class="two-col"&gt;
+  &lt;div class="panel"&gt;&lt;div class="ph"&gt;&lt;span class="pt"&gt;PROV-JSON Schema&lt;/span&gt;&lt;/div&gt;&lt;textarea id="schema" spellcheck="false"&gt;&lt;/textarea&gt;&lt;/div&gt;
+  &lt;div class="panel"&gt;&lt;div class="ph"&gt;&lt;span class="pt"&gt;Your Output&lt;/span&gt;&lt;span class="pbadge" id="badge"&gt;&lt;/span&gt;&lt;/div&gt;&lt;textarea id="output" spellcheck="false"&gt;&lt;/textarea&gt;&lt;/div&gt;
+&lt;/div&gt;
+&lt;div class="results" id="results"&gt;&lt;/div&gt;
+&lt;div class="links"&gt;
+  &lt;h3&gt;Resources&lt;/h3&gt;
+  &lt;ul&gt;
+    &lt;li&gt;&lt;a href="https://openprovenance.org/prov-json/" target="_blank"&gt;PROV-JSON Specification (W3C)&lt;/a&gt;&lt;/li&gt;
+    &lt;li&gt;&lt;a href="https://openprovenance.org/prov-json/schema" target="_blank"&gt;Official JSON Schema&lt;/a&gt;&lt;/li&gt;
+    &lt;li&gt;&lt;a href="https://www.jsonschemavalidator.net/" target="_blank"&gt;jsonschemavalidator.net&lt;/a&gt;&lt;/li&gt;
+    &lt;li&gt;&lt;a href="https://www.w3.org/TR/prov-dm/" target="_blank"&gt;PROV Data Model&lt;/a&gt;&lt;/li&gt;
+  &lt;/ul&gt;
+&lt;/div&gt;
+&lt;div class="foot"&gt;No data leaves your browser.&lt;/div&gt;
+&lt;/div&gt;
+&lt;script&gt;
+var OUTPUT_JSON = ${escaped};
+document.getElementById('output').value = OUTPUT_JSON;
+&nbsp;
+var SCHEMA = {"$id": "https://openprovenance.org/prov-json/schema#", "$schema": "http://json-schema.org/draft-04/schema#", "type": "object", "allOf": [{"$ref": "#/definitions/bundle"}, {"properties": {"bundle": {"type": "object", "additionalProperties": {"$ref": "#/definitions/bundle"}}}}], "definitions": {"literal-simple": {"oneOf": [{"type": "string"}, {"type": "boolean"}, {"type": "number"}]}, "literal-typed": {"type": "object", "properties": {"$": {"$ref": "#/definitions/literal-simple"}, "type": {"type": "string"}}, "required": ["$", "type"], "additionalProperties": false}, "literal-international-string": {"type": "object", "properties": {"$": {"type": "string"}, "lang": {"type": "string"}}, "required": ["$", "lang"], "additionalProperties": false}, "literal-complex": {"anyOf": [{"$ref": "#/definitions/literal-typed"}, {"$ref": "#/definitions/literal-international-string"}]}, "literal-single": {"oneOf": [{"$ref": "#/definitions/literal-simple"}, {"$ref": "#/definitions/literal-complex"}]}, "literal-array": {"type": "array", "items": {"$ref": "#/definitions/literal-single"}}, "literal": {"oneOf": [{"$ref": "#/definitions/literal-single"}, {"$ref": "#/definitions/literal-array"}]}, "entity": {"type": "object", "additionalProperties": {"$ref": "#/definitions/literal"}}, "agent": {"$ref": "#/definitions/entity"}, "activity": {"type": "object", "properties": {"prov:startTime": {"type": "string"}, "prov:endTime": {"type": "string"}}, "additionalProperties": {"$ref": "#/definitions/literal"}}, "generation": {"type": "object", "properties": {"prov:entity": {"type": "string"}, "prov:activity": {"type": "string"}, "prov:time": {"type": "string"}}, "required": ["prov:entity"], "additionalProperties": {"$ref": "#/definitions/literal"}}, "usage": {"type": "object", "properties": {"prov:entity": {"type": "string"}, "prov:activity": {"type": "string"}, "prov:time": {"type": "string"}}, "required": ["prov:activity"], "additionalProperties": {"$ref": "#/definitions/literal"}}, "derivation": {"type": "object", "properties": {"prov:generatedEntity": {"type": "string"}, "prov:usedEntity": {"type": "string"}, "prov:activity": {"type": "string"}, "prov:generation": {"type": "string"}, "prov:usage": {"type": "string"}}, "required": ["prov:generatedEntity", "prov:usedEntity"], "additionalProperties": {"$ref": "#/definitions/literal"}}, "attribution": {"type": "object", "properties": {"prov:entity": {"type": "string"}, "prov:agent": {"type": "string"}}, "required": ["prov:entity", "prov:agent"], "additionalProperties": {"$ref": "#/definitions/literal"}}, "association": {"type": "object", "properties": {"prov:activity": {"type": "string"}, "prov:agent": {"type": "string"}, "prov:plan": {"type": "string"}}, "required": ["prov:activity"], "additionalProperties": {"$ref": "#/definitions/literal"}}, "bundle": {"type": "object", "properties": {"prefix": {"type": "object", "patternProperties": {"^[a-zA-Z0-9_\\-]+$": {"type": "string"}}, "additionalProperties": false}, "entity": {"type": "object", "additionalProperties": {"$ref": "#/definitions/entity"}}, "agent": {"type": "object", "additionalProperties": {"$ref": "#/definitions/agent"}}, "activity": {"type": "object", "additionalProperties": {"$ref": "#/definitions/activity"}}, "wasGeneratedBy": {"type": "object", "additionalProperties": {"$ref": "#/definitions/generation"}}, "used": {"type": "object", "additionalProperties": {"$ref": "#/definitions/usage"}}, "wasDerivedFrom": {"type": "object", "additionalProperties": {"$ref": "#/definitions/derivation"}}, "wasAttributedTo": {"type": "object", "additionalProperties": {"$ref": "#/definitions/attribution"}}, "wasAssociatedWith": {"type": "object", "additionalProperties": {"$ref": "#/definitions/association"}}}}}};
+document.getElementById('schema').value = JSON.stringify(SCHEMA, null, 2);
+&nbsp;
+function doVal() {
+  var errs = [], doc;
+  try { doc = JSON.parse(document.getElementById('output').value); }
+  catch(e) { show(false, ['JSON parse error: ' + e.message]); return; }
+  vp(doc, '', errs);
+  show(errs.length === 0, errs);
+}
+&nbsp;
+function show(ok, errs) {
+  var d = document.getElementById('results'), b = document.getElementById('badge');
+  d.style.display = 'block';
+  if (ok) {
+    d.className = 'results ok';
+    d.innerHTML = '&lt;strong&gt;No errors found.&lt;/strong&gt; Validates against the PROV-JSON schema.';
+    b.style.display = ''; b.textContent = 'Valid'; b.className = 'pbadge ok';
+  } else {
+    d.className = 'results err';
+    d.innerHTML = '&lt;strong&gt;Errors:&lt;/strong&gt;&lt;ul&gt;' + errs.map(function(e){return '&lt;li&gt;'+esc(e)+'&lt;/li&gt;';}).join('') + '&lt;/ul&gt;';
+    b.style.display = ''; b.textContent = 'Invalid';
+    b.style.cssText = 'display:inline-block;background:rgba(248,81,73,0.15);color:#f85149;border:1px solid rgba(248,81,73,0.3);font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600';
+  }
+}
+&nbsp;
+function esc(s){return String(s).replace(/&amp;/g,'&amp;amp;').replace(/&lt;/g,'&amp;lt;').replace(/&gt;/g,'&amp;gt;');}
+&nbsp;
+function vp(doc, p, errs) {
+  if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) { errs.push(p+': root must be object'); return; }
+  if ('bundle' in doc &amp;&amp; doc.bundle != null) { if (typeof doc.bundle !== 'object' || Array.isArray(doc.bundle)) errs.push(p+'.bundle: must be object'); }
+  if (doc.entity) em(doc.entity, p+'.entity', errs);
+  if (doc.agent) em(doc.agent, p+'.agent', errs);
+  if (doc.activity) am(doc.activity, p+'.activity', errs);
+  if (doc.wasGeneratedBy) rl(doc.wasGeneratedBy, p+'.wasGeneratedBy', ['prov:entity'], errs);
+  if (doc.used) rl(doc.used, p+'.used', ['prov:activity'], errs);
+  if (doc.wasAttributedTo) rl(doc.wasAttributedTo, p+'.wasAttributedTo', ['prov:entity','prov:agent'], errs);
+  if (doc.wasAssociatedWith) rl(doc.wasAssociatedWith, p+'.wasAssociatedWith', ['prov:activity'], errs);
+  if (doc.wasDerivedFrom) rl(doc.wasDerivedFrom, p+'.wasDerivedFrom', ['prov:generatedEntity','prov:usedEntity'], errs);
+}
+&nbsp;
+function em(m, p, errs) {
+  for (var id in m) { var e = m[id]; if (typeof e !== 'object' || e === null) { errs.push(p+'.'+id+': must be object'); continue; } for (var a in e) vl(e[a], p+'.'+id+'.'+a, errs); }
+}
+&nbsp;
+function am(m, p, errs) {
+  for (var id in m) { var a = m[id]; if (typeof a !== 'object' || a === null) { errs.push(p+'.'+id+': must be object'); continue; }
+    if ('prov:startTime' in a &amp;&amp; typeof a['prov:startTime'] !== 'string') errs.push(p+'.'+id+'.startTime: must be string');
+    if ('prov:endTime' in a &amp;&amp; typeof a['prov:endTime'] !== 'string') errs.push(p+'.'+id+'.endTime: must be string');
+    for (var k in a) { if (k === 'prov:startTime' || k === 'prov:endTime') continue; vl(a[k], p+'.'+id+'.'+k, errs); }
+  }
+}
+&nbsp;
+function rl(m, p, req, errs) {
+  for (var id in m) { var r = m[id]; if (typeof r !== 'object' || r === null) { errs.push(p+'.'+id+': must be object'); continue; }
+    for (var i=0;i&lt;req.length;i++) { if (!(req[i] in r)) errs.push(p+'.'+id+': missing "'+req[i]+'"'); else if (typeof r[req[i]] !== 'string') errs.push(p+'.'+id+'.'+req[i]+': must be string'); }
+    for (var k in r) { if (req.indexOf(k) &gt;= 0) continue; vl(r[k], p+'.'+id+'.'+k, errs); }
+  }
+}
+&nbsp;
+function vl(v, p, errs) {
+  if (v === null) { errs.push(p+': must not be null'); return; }
+  if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return;
+  if (Array.isArray(v)) { for (var i=0;i&lt;v.length;i++) vl(v[i], p+'['+i+']', errs); return; }
+  if (typeof v === 'object') {
+    if (!('$' in v)) { errs.push(p+': literal needs "$"'); return; }
+    if (!('type' in v) &amp;&amp; !('lang' in v)) { errs.push(p+': literal needs "type" or "lang"'); return; }
+    for (var k in v) if (k !== '$' &amp;&amp; k !== 'type' &amp;&amp; k !== 'lang') errs.push(p+': unexpected "'+k+'"');
+  }
+}
+&nbsp;
+function dl() {
+  var blob = new Blob([document.getElementById('output').value], {type: 'application/json'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = 'prov-json-' + Date.now() + '.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+&nbsp;
+window.onload = function() { setTimeout(doVal, 100); };
+&lt;/script&gt;
+&lt;/body&gt;&lt;/html&gt;`;
+}
+&nbsp;</pre></td></tr></table></pre>
+
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-10-05T15:30:56.601Z
+            </div>
+        <script src="../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../sorter.js"></script>
+        <script src="../block-navigation.js"></script>
+    </body>
+</html>
+    

@@ -1,0 +1,72 @@
+{
+  "relation_density": 0.048625792811839326,
+  "reverse_traversability": 1.0,
+  "reverse_traversability_mutual": 0.0,
+  "decentralisation": 0.9491375236294897,
+  "modularity": 0.5272329867674859,
+  "relation_type_heterogeneity": 0.8479766551720445,
+  "transclusion_multicontextuality": 0.045454545454545456,
+  "structural_entropy": 0.8921533872603252,
+  "path_compactness": 0.34952766531713897,
+  "structural_robustness": 0.3125,
+  "generative_capacity": 0.022727272727272728,
+  "node_count": 44,
+  "edge_count": 92,
+  "self_edges": 0,
+  "label_histogram": {
+    "comment": 8,
+    "disagreement": 11,
+    "quotation": 8,
+    "reference": 11,
+    "see-also": 20,
+    "transclusion": 2,
+    "type-1050": 31,
+    "web": 1
+  },
+  "transclusion_count": 2,
+  "transcluded_sources": 2,
+  "mean_contexts_per_source": 1.0,
+  "xudanu_version": "1.17.0",
+  "author_type_counts": {
+    "human": 445
+  },
+  "hg_by_author": {
+    "human": {
+      "edge_count": 2,
+      "relation_density": 0.0010570824524312897,
+      "reverse_traversability_mutual": 0.0,
+      "decentralisation": 0.625,
+      "modularity": 0.0,
+      "relation_type_heterogeneity": 0.0,
+      "structural_entropy": 0.2660710931970283,
+      "path_compactness": 0.4285714285714286,
+      "structural_robustness": 0.3333333333333333,
+      "node_count": 44
+    },
+    "unattributed": {
+      "edge_count": 90,
+      "relation_density": 0.04756871035940803,
+      "reverse_traversability_mutual": 0.0,
+      "decentralisation": 0.9474691358024692,
+      "modularity": 0.5321604938271605,
+      "relation_type_heterogeneity": 0.8712852950427064,
+      "structural_entropy": 0.887323440568832,
+      "path_compactness": 0.3490566037735849,
+      "structural_robustness": 0.21875,
+      "node_count": 44
+    }
+  },
+  "methodology": {
+    "decentralisation": "1 - HHI(degree shares), undirected degrees",
+    "generative_capacity": "fraction of works with revision_count > 1 (static-corpus lower bound of the live property)",
+    "modularity": "Q over label-propagation communities (id-order, smallest-label tie-break)",
+    "path_compactness": "1 / (1 + mean shortest path), exact BFS",
+    "relation_density": "|E| / (|V|*(|V|-1)), directed, self-edges excluded",
+    "relation_type_heterogeneity": "H(link-type label distribution) / ln(k)",
+    "reverse_traversability": "systemic: fraction of edges whose reverse query the data model answers (links store both ends; backfollow for transclusions). Xudanu = 1.0 by construction",
+    "reverse_traversability_mutual": "fraction of ordered pairs with represented edges in both directions (structural reading; comparable to IRA 8.99e-5 in Adamski et al.)",
+    "structural_entropy": "H(frequency distribution of degree values) / ln(K)",
+    "structural_robustness": "giant component after targeted top-1% hub removal / before",
+    "transclusion_multicontextuality": "(works that are the source of >=1 inline transclusion) / |V|"
+  }
+}

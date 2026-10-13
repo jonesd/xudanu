@@ -3645,6 +3645,20 @@ pub struct BacklinkEntryPayload {
     /// backlinks whose origin document is archived.
     #[cfg_attr(feature = "serde", serde(default))]
     pub source_archived: bool,
+    /// FR-87: the incoming link's trust chain — the incoming swamp
+    /// must filter by endorser exactly like the outgoing list
+    /// (Miller §16.12: the First Amendment is swamped from outside).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
+    pub endorsements: Vec<LinkEndorserPayload>,
+    /// FR-87: 1 = author only; 2+ = third-party vouches present.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub endorsement_count: u32,
+    /// FR-87: true when a vouch was withdrawn and not re-made.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub link_contested: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

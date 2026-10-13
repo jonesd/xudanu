@@ -137,9 +137,9 @@ fn build_link_payload(
     let author_club = srv.link_author_club(link_id);
     let author_name = author_club.and_then(|cid| srv.club_display_name_by_id(cid));
     let endorsement_count = endorsements.len() as u32;
-    // Contested = had endorsements and lost them. Legacy links (created
-    // before the endorsement system) have always had zero — not contested.
-    let link_contested = false; // no un-endorsement tracking yet
+    // FR-87: contested = at least one vouch withdrawn and not
+    // re-made (recorded, not erased — Miller §16.12).
+    let link_contested = srv.link_is_contested(link_id);
     LinkPayload {
         link_id,
         origin,

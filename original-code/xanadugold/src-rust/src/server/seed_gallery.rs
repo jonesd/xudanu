@@ -1,6 +1,6 @@
 //! FR-40 story 6: the Gallery of Unusual Connections — a museum of
 //! exotic link structures seeded as real works with real links.
-//! Nine exhibit rooms across three wings, a lobby whose floor plan
+//! Ten exhibit rooms across four wings, a lobby whose floor plan
 //! is itself wired with links, a published Curator's Tour trail
 //! threading the rooms, and the exhibition gathers layer (a
 //! "Gathers" link type binding cover and members into one
@@ -116,7 +116,19 @@ const R8_TEXT: &str = "Two documents, four disagreements, both directions. The u
 
 const R9_TEXT: &str = "The two barred passages in this room are not quotations and not links — they are windows. Live transclusions: the text you see is the text that lives in the other document, and if its author revises, this window revises with it.\n\nHow to read it: the vertical bar marks a window; hover to see where the text actually lives.\n\nWhat to try: open the Original Pronouncement and edit the passage — return here and the window will have moved with it.";
 
-const LOBBY_TEXT: &str = "THE GALLERY OF UNUSUAL CONNECTIONS\n\nThree wings, nine rooms, one tour. Every exhibit is a live structure — nothing here is a picture of a link; everything is the thing itself. The room names below are wired: click one to walk there.\n\nWING I · FORM — the shapes a connection can take.\nRoom 1: The Spectrum Sentence — six kinds of connection on one sentence.\nRoom 2: The Junction Word — one word, five departures, two arrivals.\nRoom 3: The Nested Scope — a link inside a link, and one across the border.\n\nWING II · DEPTH — connection leading to connection.\nRoom 4: Genealogy of a Quotation — 1965 to 1974 to 1987 to this gallery.\nRoom 5: A Link About a Link — commentary attached to connections, three deep.\n\nWING III · CONTENTION — many ends, many voices.\nRoom 6: The Rebuttal Constellation — three passages, one end, one answer.\nRoom 7: The Five-Way Junction — one connection, five named ends.\nRoom 8: The Standing Dispute — four disagreements, both directions.\n\nTHE FABRIC — beyond links.\nRoom 9: The Live Window — transclusions: windows, not copies.\n\nThe Curator's Tour (in the Trails panel) threads the rooms in order. The annexes hold the far ends; every underline in every room leads somewhere real.";
+const ANNEX_SWAMP_ESTABLISHMENT: &str = "The Establishment Notes\n\nTwo religions, one government, and a clause that keeps them apart: the establishment reading here is historical, careful, and footnoted. What the clause forbids is not faith but establishment — the adoption of one church by the machinery of the state.";
+
+const ANNEX_SWAMP_FREE_EXERCISE: &str = "On the Free Exercise\n\nThe free-exercise clause protects belief absolutely and conduct only provisionally: the classic tension, traced through the cases, with the dissenting readings preserved alongside the majority's.";
+
+const ANNEX_SWAMP_PRESS: &str = "A Press History\n\nThe press clause was never only about printing: it is a standing argument about who may publish, on what terms, and who answers for it. This history disagrees with the room's framing on purpose — read both, then decide.";
+
+const ANNEX_SWAMP_ASSEMBLY: &str = "Assembly and Petition\n\nAssembly and petition are the clause's pair of civic verbs: gathering, and asking. The commentary gathers the case law on both, and notes where the two rights pull against each other.";
+
+const ANNEX_SWAMP_DRIVEBY: &str = "The Drive-By Commentary\n\nThis annex is the junk drawer: the commentary anyone may attach to an important document, worth exactly what its vouches say it is worth. Nothing here is hidden — the filter sorts it, the reader judges it. (No official truths; only who said what.)";
+
+const R10_TEXT: &str = "Below is the First Amendment. In an open system anyone may link to it — and on exactly the document where good commentary matters most, worthless links pile highest. Nine connections swarm this one sentence. Two clubs have vouched for a few of them, one club vouched and then withdrew, and the rest nobody has answered for at all.\n\nCongress shall make no law respecting an establishment of religion, or prohibiting the free exercise thereof; or abridging the freedom of speech, or of the press; or the right of the people peaceably to assemble, and to petition the Government for a redress of grievances.\n\nHow to read it: filter by endorser — the Links panel's \"Endorsed by\" control keeps only the connections a club whose judgment you weigh has vouched for. A vouch is a review, not a like: the name on it is answerable for your time.\n\nWhat to try: set \"Endorsed by\" to each club in turn and watch the swamp thin to what that club stands behind. One connection carries a contested mark — vouched, then withdrawn. Then clear the filter and notice how little you trust the remainder.";
+
+const LOBBY_TEXT: &str = "THE GALLERY OF UNUSUAL CONNECTIONS\n\nThree wings, nine rooms, one tour. Every exhibit is a live structure — nothing here is a picture of a link; everything is the thing itself. The room names below are wired: click one to walk there.\n\nWING I · FORM — the shapes a connection can take.\nRoom 1: The Spectrum Sentence — six kinds of connection on one sentence.\nRoom 2: The Junction Word — one word, five departures, two arrivals.\nRoom 3: The Nested Scope — a link inside a link, and one across the border.\n\nWING II · DEPTH — connection leading to connection.\nRoom 4: Genealogy of a Quotation — 1965 to 1974 to 1987 to this gallery.\nRoom 5: A Link About a Link — commentary attached to connections, three deep.\n\nWING III · CONTENTION — many ends, many voices.\nRoom 6: The Rebuttal Constellation — three passages, one end, one answer.\nRoom 7: The Five-Way Junction — one connection, five named ends.\nRoom 8: The Standing Dispute — four disagreements, both directions.\n\nTHE FABRIC — beyond links.\nRoom 9: The Live Window — transclusions: windows, not copies.\n\nWING IV · TRUST — reputation as the reader's lens.\nRoom 10: The Swamped Passage — the First Amendment, nine connections, and the filter that finds the good ones.\n\nThe Curator's Tour (in the Trails panel) threads the rooms in order. The annexes hold the far ends; every underline in every room leads somewhere real.";
 
 const GATHERS_DEF_TEXT: &str = "Gathers\n\nA gathers link asserts exhibition membership: the origin is the exhibition COVER, the destination is a MEMBER. The unit is referenceable from anywhere (the cover is a work), membership is bidirectional for free, and the boundary is an indication — never a barrier — when a reader crosses the member set.";
 
@@ -609,6 +621,138 @@ pub fn seed_gallery(server: &mut Server) {
     // from the revised edition — known bug); re-set it after placing.
     server.set_work_title(r9, r9_title.to_string());
 
+    // ---- Room 10: The Swamped Passage (FR-87 §16.12)
+    // Miller's junk problem made walkable: one important paragraph,
+    // nine incoming-style connections, and a trust layer — two
+    // clubs vouch, one withdraws (contested), three link rows carry
+    // no vouch at all. The endorser filter is the exhibit.
+    let annex_swamp_establishment = make_work(
+        server,
+        sid,
+        "Gallery Annex — The Establishment Notes",
+        ANNEX_SWAMP_ESTABLISHMENT,
+    );
+    let annex_swamp_free_exercise = make_work(
+        server,
+        sid,
+        "Gallery Annex — On the Free Exercise",
+        ANNEX_SWAMP_FREE_EXERCISE,
+    );
+    let annex_swamp_press = make_work(
+        server,
+        sid,
+        "Gallery Annex — A Press History",
+        ANNEX_SWAMP_PRESS,
+    );
+    let annex_swamp_assembly = make_work(
+        server,
+        sid,
+        "Gallery Annex — Assembly and Petition",
+        ANNEX_SWAMP_ASSEMBLY,
+    );
+    let annex_swamp_driveby = make_work(
+        server,
+        sid,
+        "Gallery Annex — The Drive-By Commentary",
+        ANNEX_SWAMP_DRIVEBY,
+    );
+    let r10 = make_work(
+        server,
+        sid,
+        "Gallery — Wing IV · Room 10: The Swamped Passage",
+        R10_TEXT,
+    );
+    // The nine connections. (marker, annex, type)
+    let swamp_links: Vec<u64> = [
+        (
+            "respecting an establishment of religion",
+            annex_swamp_establishment,
+            2u64,
+        ),
+        ("prohibiting the free exercise thereof", annex_swamp_free_exercise, 2),
+        (
+            "abridging the freedom of speech, or of the press",
+            annex_swamp_press,
+            3,
+        ),
+        (
+            "the right of the people peaceably to assemble",
+            annex_swamp_assembly,
+            2,
+        ),
+        (
+            "and to petition the Government for a redress of grievances",
+            annex_swamp_assembly,
+            1,
+        ),
+        ("freedom of speech", annex_swamp_driveby, 3),
+        ("or of the press", annex_swamp_driveby, 4),
+        ("the people", annex_swamp_driveby, 5),
+        ("Congress shall make no law", annex_swamp_establishment, 1),
+    ]
+    .iter()
+    .map(|(m, annex, t)| {
+        make_link(
+            server,
+            sid,
+            ref_at(r10, R10_TEXT, m, &format!("swamp connection: {}", m)),
+            work_ref(*annex),
+            &[*t],
+        )
+    })
+    .collect();
+
+    // The reputations: named endorser clubs with their own sessions,
+    // so `link_endorse` stamps THEIR identity ("no one may endorse
+    // with the identity of another").
+    let make_endorser = |server: &mut Server, name: &str| -> SessionId {
+        let club = server
+            .create_named_club(
+                sid,
+                &format!("gallery-endorser-{}", name.to_lowercase().replace(' ', "-")),
+                Edition::from_text(&format!("gallery endorser: {}", name)),
+            )
+            .expect("gallery: endorser club");
+        if let Some(c) = server.clubs.get_mut(&club) {
+            c.set_display_name(Some(name.to_string()));
+            c.set_is_personal(true);
+        }
+        server.dirty_clubs.insert(club);
+        // A fresh session speaking ONLY for this club: first login
+        // fixes initial_login = the club, and the club is personal,
+        // so resolve_author_club lands exactly there.
+        let vsid = server.connect();
+        if let Some(sess) = server.sessions.get_mut(&vsid) {
+            sess.set_key_master(crate::server::keymaster::KeyMaster::make_all(
+                [club].into_iter().collect(),
+            ));
+        }
+        vsid
+    };
+    let convocation = make_endorser(server, "The Convocation");
+    let reviewer = make_endorser(server, "The Evening Reviewer");
+    let skeptic = make_endorser(server, "The Skeptic");
+    // Scholarly vouches (The Convocation): links 0,1,2.
+    for &i in &[0usize, 1, 2] {
+        server.link_endorse(convocation, swamp_links[i]).expect("gallery: vouch");
+    }
+    // The Evening Reviewer vouches links 2,3,4 (overlaps the
+    // Convocation on the press clause — two reputations, one row).
+    for &i in &[2usize, 3, 4] {
+        server.link_endorse(reviewer, swamp_links[i]).expect("gallery: vouch");
+    }
+    // The Skeptic vouched for the final link, then withdrew — the
+    // contested state (recorded, not erased).
+    server.link_endorse(skeptic, swamp_links[8]).expect("gallery: vouch");
+    server
+        .link_unendorse(skeptic, swamp_links[8])
+        .expect("gallery: withdraw");
+    tracing::info!(
+        "[seed-gallery] the swamp is stocked: room={:x} links={} vouches=6 contested=1 junk=3",
+        r10,
+        swamp_links.len(),
+    );
+
     // ---- The Lobby (the floor plan)
     let lobby_title = "Gallery — Lobby: The Gallery of Unusual Connections";
     let lobby = make_work(server, sid, lobby_title, LOBBY_TEXT);
@@ -622,6 +766,7 @@ pub fn seed_gallery(server: &mut Server) {
         ("Room 7: The Five-Way Junction", r7),
         ("Room 8: The Standing Dispute", r8),
         ("Room 9: The Live Window", r9),
+        ("Room 10: The Swamped Passage", r10),
     ];
     let mut floor_plan_links = Vec::new();
     for (label, target) in room_targets {
@@ -662,6 +807,10 @@ pub fn seed_gallery(server: &mut Server) {
         (r7, "five named ends"),
         (r8, "the standing dispute"),
         (r9, "The Fabric — windows, not copies"),
+        (
+            r10,
+            "Wing IV · Trust — the swamp, filtered by who vouched",
+        ),
     ] {
         server
             .trail_add_stop(sid, trail, work, None, None, Some(note.to_string()), None)
@@ -714,6 +863,11 @@ pub fn seed_gallery(server: &mut Server) {
         annex_against,
         annex_note_1,
         annex_note_2,
+        annex_swamp_establishment,
+        annex_swamp_free_exercise,
+        annex_swamp_press,
+        annex_swamp_assembly,
+        annex_swamp_driveby,
     ];
     let mut annex_links = 0;
     for annex in annexes {
@@ -736,7 +890,7 @@ pub fn seed_gallery(server: &mut Server) {
     tracing::info!(
         "[seed-gallery] gallery ready: lobby={:x} rooms={:?} annexes={} trail={} gathers_type={}",
         lobby,
-        [r1, r2, r3, r4, r5, r6, r7, r8, r9],
+        [r1, r2, r3, r4, r5, r6, r7, r8, r9, r10],
         annexes.len(),
         trail,
         gathers
@@ -767,9 +921,11 @@ mod tests {
             "Gallery — Wing III · Room 7: The Five-Way Junction",
             "Gallery — Wing III · Room 8: The Standing Dispute",
             "Gallery — The Fabric · Room 9: The Live Window",
+            "Gallery — Wing IV · Room 10: The Swamped Passage",
             "Gallery Annex — Six Voices",
             "Gallery Annex — The Rebuttal",
             "Gallery Annex — The Note on the Note",
+            "Gallery Annex — The Drive-By Commentary",
             "Gallery — Link Type: Gathers",
         ] {
             assert!(
@@ -778,10 +934,11 @@ mod tests {
                 needle
             );
         }
-        // 6 + 7 + 3 + 3 + 3 + 1 + 1 + 4 + 9 floor plan + 16 gathers
+        // 6 + 7 + 3 + 3 + 3 + 1 + 1 + 4 + 9 swamp + 10 floor plan
+        // + 21 gathers
         assert!(
-            server.links.len() >= 53,
-            "expected at least 53 gallery links, got {}",
+            server.links.len() >= 68,
+            "expected at least 68 gallery links, got {}",
             server.links.len()
         );
         // The gathered end on the constellation: 3 attachments.
@@ -806,14 +963,14 @@ mod tests {
             })
             .expect("the five-way junction is seeded");
         assert_eq!(five_way.end_names().len(), 5);
-        // The Curator's Tour exists, published, 10 stops in order.
+        // The Curator's Tour exists, published, 11 stops in order.
         let trail = server
             .trails
             .values()
             .find(|t| t.name == "The Curator's Tour")
             .expect("curator's tour seeded");
         assert!(trail.published, "the curator's tour is published");
-        assert_eq!(trail.stops.len(), 10);
+        assert_eq!(trail.stops.len(), 11);
         // The Gathers type is registered and equals its definition work.
         let def_id = server
             .works
@@ -822,6 +979,74 @@ mod tests {
             .map(|(id, _)| *id)
             .expect("gathers definition work");
         assert_eq!(server.link_type_definition(def_id), Some(def_id));
+        // FR-87: the swamp carries a working trust layer — ≥3 links
+        // with third-party vouches from ≥2 distinct named clubs,
+        // ≥1 contested link (vouch withdrawn), and ≥2 unvouched
+        // junk rows for the filter to sort away.
+        let r10_id = server
+            .works
+            .iter()
+            .find(|(_, ws)| ws.cached_title() == "Gallery — Wing IV · Room 10: The Swamped Passage")
+            .map(|(id, _)| *id)
+            .expect("swamped passage room");
+        let swamp: Vec<(u64, &crate::server::server::LinkState)> = server
+            .links
+            .iter()
+            .filter(|(_, ls)| {
+                ls.link
+                    .end_names()
+                    .iter()
+                    .flat_map(|n| ls.link.attachments_at(n).unwrap_or(&[]))
+                    .any(|hr| hr.work_context() == Some(r10_id))
+            })
+            .map(|(id, ls)| (*id, ls))
+            .collect();
+        assert!(swamp.len() >= 9, "the swamp has nine connections");
+        let vouched: Vec<_> = swamp
+            .iter()
+            .filter(|(_, ls)| {
+                ls.endorsements
+                    .iter()
+                    .any(|e| e.kind == crate::server::server::LinkEndorsementKind::Vouch)
+            })
+            .collect();
+        assert!(vouched.len() >= 3, "at least three vouched links");
+        let endorser_clubs: std::collections::HashSet<_> = vouched
+            .iter()
+            .flat_map(|(_, ls)| {
+                ls.endorsements
+                    .iter()
+                    .filter(|e| e.kind == crate::server::server::LinkEndorsementKind::Vouch)
+                    .map(|e| e.club_id)
+            })
+            .collect();
+        assert!(
+            endorser_clubs.len() >= 2,
+            "at least two distinct endorser clubs"
+        );
+        let contested = swamp
+            .iter()
+            .filter(|(_, ls)| !ls.withdrawn_vouches.is_empty())
+            .count();
+        assert!(contested >= 1, "the skeptic's withdrawal leaves a contested link");
+        let unvouched = swamp.len()
+            - swamp
+                .iter()
+                .filter(|(_, ls)| {
+                    ls.endorsements
+                        .iter()
+                        .any(|e| e.kind != crate::server::server::LinkEndorsementKind::Author)
+                })
+                .count();
+        assert!(unvouched >= 2, "the junk rows carry no vouch");
+        // Named clubs render names in the filter dropdown.
+        for name in ["The Convocation", "The Evening Reviewer", "The Skeptic"] {
+            assert!(
+                server.clubs.values().any(|c| c.display_name() == Some(name)),
+                "endorser club {} exists with a display name",
+                name
+            );
+        }
     }
 
     #[test]

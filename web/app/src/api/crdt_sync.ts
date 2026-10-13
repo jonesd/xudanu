@@ -389,6 +389,12 @@ export interface BacklinkEntry {
   excerpt?: string;
   title?: string;
   source_archived?: boolean;
+  /** FR-87: the incoming link's trust chain (reputation filtering
+   * covers the incoming swamp — Miller §16.12). */
+  endorsements?: LinkEndorser[];
+  endorsement_count?: number;
+  /** True when a vouch was withdrawn and not re-made. */
+  link_contested?: boolean;
 }
 
 export interface LinkTypeInfo {
@@ -1823,7 +1829,7 @@ export class CrdtSyncClient {
     });
     const val = extractValue(resp);
     if (typeof val === "string") return val;
-    return (val as { text?: string }).text || "";
+    return ((val as { text?: string } | null) ?? {}).text || "";
   }
 
   async workRevisionDescribe(workId: number, revisionId: number, description: string): Promise<void> {

@@ -1189,6 +1189,16 @@ pub(crate) struct LinkState {
     /// Trust chain: who vouches for this link's claim. Auto-seeded
     /// with the author's endorsement at creation (Gold's model).
     pub(crate) endorsements: Vec<LinkEndorsement>,
+    /// FR-87: strike-out records — (club, struck_at) for every
+    /// vouch withdrawn and not re-made. Non-empty = contested.
+    /// Implements the semantics Gold described but never shipped:
+    /// "removed endorsements will become inactive, but it will be
+    /// possible to detect that they once had been present. The
+    /// intent is for a removed endorsement to be analogous to a
+    /// signature that has been struck out. You can express that you
+    /// changed your mind, but you can't undo the past."
+    /// (nkernelx.hxx FeEdition::retract(), Udanax Gold, ~1995)
+    pub(crate) withdrawn_vouches: Vec<(BeId, u64)>,
     /// FR-85 Phase 3: the link this link responds to (exact
     /// argument-chain semantics). When a rebuttal link carries
     /// responds_to = <disagreement link id>, the chain computation
@@ -10190,6 +10200,12 @@ impl Server {
                 kind: LinkEndorsementKind::Vouch,
                 timestamp: now,
             });
+            // "Redoing an endorse() undoes a retract()"
+            // (nkernelx.hxx FeEdition::endorse()): re-vouching
+            // clears the strike-out — the club's current position
+            // is vouching again. The past strike is not rewritten,
+            // only superseded.
+            ls.withdrawn_vouches.retain(|(c, _)| *c != club_id);
             if let Err(e) = self.wal.append_link_endorse(link_id, club_id) {
                 tracing::warn!("[wal] link_endorse append failed: {}", e);
             }
@@ -10215,9 +10231,23 @@ impl Server {
         ls.endorsements
             .retain(|e| !(e.club_id == club_id && e.kind == LinkEndorsementKind::Vouch));
         if ls.endorsements.len() == before {
-            return Err(ServerError::InvalidArgument(
-                "no vouch from this club to withdraw".into(),
-            ));
+            // Gold's retract() contract: "Ignores all endorsements
+            // which you could have removed, but which don't happen
+            // to be there right now." Withdrawing authority you hold
+            // over a vouch that isn't present is a silent no-op —
+            // only lacking signature authority blasts.
+            // (nkernelx.hxx FeEdition::retract())
+            return Ok(());
+        }
+        // The withdrawal is recorded, not erased: the strike-out is
+        // itself a historical act with a time. Readers see the link
+        // as contested until (and unless) the club re-vouches.
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        if !ls.withdrawn_vouches.iter().any(|(c, _)| *c == club_id) {
+            ls.withdrawn_vouches.push((club_id, now));
         }
         if let Err(e) = self.wal.append_link_unendorse(link_id, club_id) {
             tracing::warn!("[wal] link_unendorse append failed: {}", e);
@@ -10246,6 +10276,15 @@ impl Server {
                 (e.club_id, kind, e.timestamp)
             })
             .collect())
+    }
+
+    /// FR-87: true when at least one vouch was withdrawn and not
+    /// re-made — the contested indicator (Miller §16.12).
+    pub fn link_is_contested(&self, link_id: BeId) -> bool {
+        self.links
+            .get(&link_id)
+            .map(|ls| !ls.withdrawn_vouches.is_empty())
+            .unwrap_or(false)
     }
 
     pub fn lattice_is_write_primary(&self, work_be_id: BeId) -> bool {
@@ -12158,12 +12197,20 @@ impl Server {
                     timestamp: now,
                 });
             }
+            ls.withdrawn_vouches.retain(|(c, _)| *c != club_id);
         }
     }
 
     pub(crate) fn wal_replay_link_unendorse(&mut self, link_id: BeId, club_id: BeId) {
         if let Some(ls) = self.links.get_mut(&link_id) {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
             ls.endorsements.retain(|e| e.club_id != club_id);
+            if !ls.withdrawn_vouches.iter().any(|(c, _)| *c == club_id) {
+                ls.withdrawn_vouches.push((club_id, now));
+            }
         }
     }
 
@@ -12512,6 +12559,7 @@ impl Server {
                     // manifest restore path carries the field.
                     author_club: None,
                     endorsements,
+                    withdrawn_vouches: Vec::new(),
                     // FR-85: responds_to is set post-creation (the
                     // set op is checkpoint-persisted, not WAL'd).
                     responds_to: None,
@@ -16100,7 +16148,30 @@ impl Server {
                     cross_server_notify: None,
                     home_document: link.home_document,
                     author_club: link.author_club,
-                    endorsements: Vec::new(),
+                    // FR-87: the trust chain is checkpoint-persisted;
+                    // restore rebuilds the typed kinds from the
+                    // string forms. Unknown kinds drop (forward
+                    // compat) rather than failing the whole restore.
+                    endorsements: link
+                        .endorsements
+                        .iter()
+                        .filter_map(|e| {
+                            let kind = match e.kind.as_str() {
+                                "author" => LinkEndorsementKind::Author,
+                                "vouch" => LinkEndorsementKind::Vouch,
+                                "type" => LinkEndorsementKind::Type(
+                                    e.type_work.unwrap_or(e.club_id),
+                                ),
+                                _ => return None,
+                            };
+                            Some(LinkEndorsement {
+                                club_id: e.club_id,
+                                kind,
+                                timestamp: e.timestamp,
+                            })
+                        })
+                        .collect(),
+                    withdrawn_vouches: link.withdrawn_vouches.clone(),
                     responds_to: link.responds_to,
                 },
             );
@@ -17588,6 +17659,7 @@ impl Server {
                 home_document,
                 author_club,
                 endorsements,
+                withdrawn_vouches: Vec::new(),
                 responds_to: None,
             },
         );
@@ -17700,6 +17772,7 @@ impl Server {
                 home_document,
                 author_club,
                 endorsements,
+                withdrawn_vouches: Vec::new(),
                 responds_to: None,
             },
         );
@@ -17906,6 +17979,7 @@ impl Server {
                 home_document,
                 author_club,
                 endorsements,
+                withdrawn_vouches: Vec::new(),
                 responds_to: None,
             },
         );
@@ -19608,6 +19682,24 @@ impl Server {
             } else {
                 "outgoing"
             };
+            // FR-87: the incoming link's trust chain rides the
+            // backlink row so the endorser filter covers the
+            // incoming swamp too.
+            let endorsements: Vec<super::transport::protocol::LinkEndorserPayload> = self
+                .link_endorsements(lid)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(club_id, kind, timestamp)| {
+                    super::transport::protocol::LinkEndorserPayload {
+                        club_id,
+                        name: self.club_display_name_by_id(club_id),
+                        kind,
+                        timestamp,
+                    }
+                })
+                .collect();
+            let endorsement_count = endorsements.len() as u32;
+            let link_contested = self.link_is_contested(lid);
             results.push(super::transport::protocol::BacklinkEntryPayload {
                 source_work_id,
                 link_id: lid,
@@ -19615,6 +19707,9 @@ impl Server {
                 excerpt,
                 title,
                 source_archived,
+                endorsements,
+                endorsement_count,
+                link_contested,
             });
         }
         Ok(results)
@@ -27709,6 +27804,15 @@ pub(crate) mod persist_snapshot {
             serde(default, skip_serializing_if = "Option::is_none")
         )]
         responds_to: Option<BeId>,
+        /// FR-87: the link's trust chain (see manifest LinkEntry —
+        /// same contract, snapshot form). Restores what the port
+        /// used to drop on every checkpoint (see the manifest
+        /// LinkEntry comment for the fixed bug).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        endorsements: Vec<crate::persist::manifest::LinkEndorsementEntry>,
+        /// FR-87: strike-out records (club, struck_at).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        withdrawn_vouches: Vec<(BeId, u64)>,
     }
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -27968,6 +28072,26 @@ pub(crate) mod persist_snapshot {
                             cross_server_notify: ls.cross_server_notify.clone(),
                             author_club: ls.author_club,
                             responds_to: ls.responds_to,
+                            endorsements: ls
+                                .endorsements
+                                .iter()
+                                .map(|e| {
+                                    let (kind, type_work) = match &e.kind {
+                                        LinkEndorsementKind::Author => ("author".to_string(), None),
+                                        LinkEndorsementKind::Vouch => ("vouch".to_string(), None),
+                                        LinkEndorsementKind::Type(w) => {
+                                            ("type".to_string(), Some(*w))
+                                        }
+                                    };
+                                    crate::persist::manifest::LinkEndorsementEntry {
+                                        club_id: e.club_id,
+                                        kind,
+                                        type_work,
+                                        timestamp: e.timestamp,
+                                    }
+                                })
+                                .collect(),
+                            withdrawn_vouches: ls.withdrawn_vouches.clone(),
                         }
                     })
                     .collect(),
@@ -28351,7 +28475,29 @@ pub(crate) mod persist_snapshot {
                         cross_server_notify: ls.cross_server_notify.clone(),
                         home_document: ls.home_document,
                         author_club: ls.author_club,
-                        endorsements: Vec::new(),
+                        // FR-87: rebuild the trust chain from the
+                        // snapshot entries (same tolerance as the
+                        // manifest path: unknown kinds drop).
+                        endorsements: ls
+                            .endorsements
+                            .iter()
+                            .filter_map(|e| {
+                                let kind = match e.kind.as_str() {
+                                    "author" => LinkEndorsementKind::Author,
+                                    "vouch" => LinkEndorsementKind::Vouch,
+                                    "type" => {
+                                        LinkEndorsementKind::Type(e.type_work.unwrap_or(e.club_id))
+                                    }
+                                    _ => return None,
+                                };
+                                Some(LinkEndorsement {
+                                    club_id: e.club_id,
+                                    kind,
+                                    timestamp: e.timestamp,
+                                })
+                            })
+                            .collect(),
+                        withdrawn_vouches: ls.withdrawn_vouches.clone(),
                         responds_to: ls.responds_to,
                     },
                 );
@@ -28770,6 +28916,30 @@ pub(crate) mod persist_snapshot {
                             cross_server_notify: ls.cross_server_notify.clone(),
                             author_club: ls.author_club,
                             responds_to: ls.responds_to,
+                            endorsements: ls
+                                .endorsements
+                                .iter()
+                                .map(|e| {
+                                    let (kind, type_work) = match &e.kind {
+                                        LinkEndorsementKind::Author => {
+                                            ("author".to_string(), None)
+                                        }
+                                        LinkEndorsementKind::Vouch => {
+                                            ("vouch".to_string(), None)
+                                        }
+                                        LinkEndorsementKind::Type(w) => {
+                                            ("type".to_string(), Some(*w))
+                                        }
+                                    };
+                                    crate::persist::manifest::LinkEndorsementEntry {
+                                        club_id: e.club_id,
+                                        kind,
+                                        type_work,
+                                        timestamp: e.timestamp,
+                                    }
+                                })
+                                .collect(),
+                            withdrawn_vouches: ls.withdrawn_vouches.clone(),
                         }
                     })
                     .collect();
@@ -29294,6 +29464,30 @@ pub(crate) mod persist_snapshot {
                             cross_server_notify: ls.cross_server_notify.clone(),
                             author_club: ls.author_club,
                             responds_to: ls.responds_to,
+                            endorsements: ls
+                                .endorsements
+                                .iter()
+                                .map(|e| {
+                                    let (kind, type_work) = match &e.kind {
+                                        LinkEndorsementKind::Author => {
+                                            ("author".to_string(), None)
+                                        }
+                                        LinkEndorsementKind::Vouch => {
+                                            ("vouch".to_string(), None)
+                                        }
+                                        LinkEndorsementKind::Type(w) => {
+                                            ("type".to_string(), Some(*w))
+                                        }
+                                    };
+                                    crate::persist::manifest::LinkEndorsementEntry {
+                                        club_id: e.club_id,
+                                        kind,
+                                        type_work,
+                                        timestamp: e.timestamp,
+                                    }
+                                })
+                                .collect(),
+                            withdrawn_vouches: ls.withdrawn_vouches.clone(),
                         }
                     })
                     .collect();
@@ -49232,9 +49426,136 @@ mod tests {
         let after = server.link_endorsements(link_id).unwrap();
         assert_eq!(after.len(), 1, "no duplicate: {:?}", after);
 
-        // Withdraw: author endorsement not a vouch, so nothing to withdraw
-        let result = server.link_unendorse(sid, link_id);
-        assert!(result.is_err(), "cannot withdraw author endorsement");
+        // Withdraw with no vouch present: Gold's retract() contract —
+        // "Ignores all endorsements which you could have removed, but
+        // which don't happen to be there right now." Silent no-op,
+        // and the author endorsement stays.
+        server.link_unendorse(sid, link_id).unwrap();
+        let after_noop = server.link_endorsements(link_id).unwrap();
+        assert_eq!(after_noop.len(), 1, "author endorsement untouched");
+        assert!(!server.link_is_contested(link_id), "no strike was recorded");
+    }
+
+    /// FR-87 §16.12: the reader's vouch lifecycle across two
+    /// identities — vouch, withdraw (contested), re-vouch (cleared).
+    /// "No one may endorse with the identity of another": each
+    /// session stamps only its own club.
+    #[test]
+    fn link_endorsement_reader_vouch_contestation() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work_a = server
+            .create_work(sid, Edition::from_text("important paragraph"))
+            .unwrap();
+        let work_b = server
+            .create_work(sid, Edition::from_text("commentary"))
+            .unwrap();
+        let link_id = server.create_link(sid, work_a, work_b, None, None).unwrap();
+
+        // A second identity (the reader/reviewer) vouches.
+        let (reviewer_club, reviewer_sid) = ac_create_user(&mut server, "reviewer", b"rev-pass-1");
+        server.link_endorse(reviewer_sid, link_id).unwrap();
+        let endorsements = server.link_endorsements(link_id).unwrap();
+        assert!(
+            endorsements
+                .iter()
+                .any(|(club, kind, _)| *club == reviewer_club && kind == "vouch"),
+            "reviewer's vouch is stamped with THEIR club: {:?}",
+            endorsements
+        );
+        assert_eq!(endorsements.len(), 2, "author + one vouch");
+        assert!(!server.link_is_contested(link_id));
+
+        // Withdraw: the vouch disappears, the contest remains.
+        server.link_unendorse(reviewer_sid, link_id).unwrap();
+        let after = server.link_endorsements(link_id).unwrap();
+        assert_eq!(after.len(), 1, "only the author remains: {:?}", after);
+        assert!(
+            server.link_is_contested(link_id),
+            "withdrawal is recorded, not erased"
+        );
+
+        // A third identity that never vouched: Gold's contract —
+        // authority held, vouch not present → silent no-op, and no
+        // strike is recorded for a club that never vouched.
+        let (_, other_sid) = ac_create_user(&mut server, "other", b"oth-pass-1");
+        server.link_unendorse(other_sid, link_id).unwrap();
+        assert!(
+            server.link_is_contested(link_id),
+            "the reviewer's strike stands; the no-op added none"
+        );
+        let strikes = &server
+            .links
+            .get(&link_id)
+            .unwrap()
+            .withdrawn_vouches;
+        assert_eq!(strikes.len(), 1, "exactly one strike on record");
+        assert_eq!(strikes[0].0, reviewer_club, "the strike is the reviewer's");
+
+        // Re-vouch clears the contestation mark.
+        server.link_endorse(reviewer_sid, link_id).unwrap();
+        assert!(
+            !server.link_is_contested(link_id),
+            "re-vouching clears the mark — the current position is vouching"
+        );
+    }
+
+    /// FR-87: the trust chain must survive checkpoint → restore. The
+    /// WAL alone is insufficient once a checkpoint truncates it, so
+    /// endorsements and withdrawals ride the link snapshot
+    /// (manifest.rs LinkEntry).
+    #[test]
+    #[cfg(feature = "server")]
+    fn link_endorsements_survive_checkpoint_restore() {
+        let dir = TempDir::new("endorsements");
+
+        let link_id;
+        let reviewer_club;
+        {
+            let (mut server, sid) = setup_logged_in_server();
+            let work_a = server
+                .create_work(sid, Edition::from_text("swamped passage"))
+                .unwrap();
+            let work_b = server
+                .create_work(sid, Edition::from_text("good commentary"))
+                .unwrap();
+            let work_c = server
+                .create_work(sid, Edition::from_text("contested commentary"))
+                .unwrap();
+            let good = server.create_link(sid, work_a, work_b, None, None).unwrap();
+            let contested = server.create_link(sid, work_a, work_c, None, None).unwrap();
+
+            let (rc, reviewer_sid) = ac_create_user(&mut server, "reviewer", b"rev-pass-1");
+            reviewer_club = rc;
+            server.link_endorse(reviewer_sid, good).unwrap();
+            server.link_endorse(reviewer_sid, contested).unwrap();
+            server.link_unendorse(reviewer_sid, contested).unwrap();
+            link_id = good;
+
+            server.checkpoint_to_file(&dir.snapshot_path()).unwrap();
+        }
+        {
+            let mut server = Server::restore_from_file(&dir.snapshot_path()).unwrap();
+            let endorsements = server.link_endorsements(link_id).unwrap();
+            assert!(
+                endorsements
+                    .iter()
+                    .any(|(club, kind, _)| *club == reviewer_club && kind == "vouch"),
+                "the vouch survives restart: {:?}",
+                endorsements
+            );
+            assert!(endorsements.iter().any(|(_, kind, _)| kind == "author"));
+            // The contested link keeps its withdrawal record.
+            let contested_state = server
+                .links
+                .values()
+                .find(|ls| ls.withdrawn_vouches.iter().any(|(c, _)| *c == reviewer_club))
+                .expect("withdrawal record survives restore");
+            assert!(!contested_state.withdrawn_vouches.is_empty());
+            assert!(
+                contested_state.withdrawn_vouches[0].1 > 0,
+                "the strike carries its timestamp"
+            );
+        }
     }
 
     #[test]
