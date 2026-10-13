@@ -20,15 +20,32 @@ of magnitude.
 
 Three independent measurements on the same corpus are cited:
 
-1. **Deliberate porting** (Gregory 2026): lock-step C and Rust
-   implementations, value-for-value against a Pharo oracle, in four
-   days [src].
+1. **Deliberate porting** (Gregory 2026) — PRIVATE, DO NOT PUBLISH:
+   lock-step implementations verified against an oracle. Source of
+   the "conformance vectors" concept AND the "1992 transliteration
+   bug recovered by re-derivation" anecdote — both are his result,
+   learned in the private 2026 contact. Excluded from all public
+   material per the xanadu-contact-history rule (2026-10-12).
 2. **Product-scale migration** (Jones 2026): the 1992 C++ engine
    migrated to Rust in weeks; a live multi-user system five months
    later — one developer, 3,700+ tests [src].
-3. **Archaeology** (Jones 2026): an unrelated 1992 Borland OWL
-   frontend (~130 files) understood to summary level in an
-   afternoon [src].
+3. **REMOVED (2026-10-12) — unusable:** the "unrelated Borland OWL
+   frontend" archaeology item was likely a garbled winfe reference;
+   David cannot source the session (confirmed 2026-10-12:
+   "not sure where the Borland or winfe came from — skip it").
+   Permanently excluded from public material.
+
+**Replacement evidence (Jones 2026, repo-documented):** the splay
+terminal-arms latent content-loss bug — IN OUR OWN FR-34 splay
+implementation (design descended from Gold's access assumptions;
+NOT a Gold-source bug — confirmed 2026-10-13 when David
+challenged the provenance). Caught by measurement against the
+model's guarantees, fixed, regression-tested; the same
+measurement showed the splay unnecessary for our access pattern
+(docs/dev/GOLD-VS-XUDANU.md S3). Plus the dual-write shadow
+oracle catching merge-garbling defects F6/F10 (paper
+skeleton §3). These carry the verification argument with
+checkable provenance.
 
 The proposed multiplier is stated as a spectrum, not a number:
 reading (~100×) > translation (~50×) > new-system construction

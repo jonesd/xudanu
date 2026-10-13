@@ -111,6 +111,24 @@ and code/test mapping. Updated with each commit.
 
 See `FR-34-enfilade-native.md` for the full design document.
 
+## Reputation Filtering (FR-87)
+
+Source: Miller, Tribble, Pandya, Stiegler, "The Open Society and its
+Media" (1995) §16.12. Server machinery (link endorse/unendorse ops,
+payload fields, canopy endorsement bits) is shipped; the reader story
+is the FR scope.
+
+| Story | Feature | Status | Key Files | Tests |
+|-------|---------|--------|-----------|-------|
+| S1 | Endorser filter in Links panel (endorser ∩ type) | 📋 | WorkspaceShell.tsx, LinkPayload.endorsements (protocol.rs) | planned: filter predicate unit tests |
+| S2 | Vouch/withdraw as a reader action (ungate from canEdit) | 📋 | dispatch.rs (link_endorse/link_unendorse — server side done) | integration: link_endorsements_lifecycle |
+| S3 | Endorsed guides surfaced in link swamps | 📋 | phase-13 work endorsements, TrailsPanel.tsx | — |
+| S4 | The Swamped Passage gallery demo (seeded swamp + named endorser clubs) | 📋 | seed_gallery.rs | planned: seed tests |
+| S5 | Backlinks carry endorsement fields | 📋 | protocol.rs (BacklinkEntry), backlinks query | — |
+
+See `FR-87-reputation-filtering.md` for the full design document.
+Completes `miller-eight-features.md` feature #6.
+
 ## Planned / Not Started
 
 | FR | Feature | Status | Notes |
@@ -143,6 +161,15 @@ See `FR-34-enfilade-native.md` for the full design document.
 - FR-32: Security model
 - FR-33: Identity attestation
 - FR-34+: Future features
+- FR-87: Reputation filtering — reader-side endorsements
+  ("The Open Society and its Media" §16.12)
+
+## Library & Embedding
+
+| FR | Feature | Status | Key Files | Tests |
+|----|---------|--------|-----------|-------|
+| FR-88 | Engine extraction — core crate, dependency firewall, in-process demo client | 📋 | edition/, space/, ent/, crypto/, persist/ → xudanu-core; server/otree_crdt.rs, crdt_manager.rs, reuse_match.rs promoted | full suite relocates (G5); demo binary e2e |
+| FR-89 | Opt-in anonymous telemetry — H(G)/H(AI), usage aggregates, preview-exact-JSON consent, audit-logged sends | 📋 | hg_profile.rs; admin console; audit log; new payload serializer | leak proptest (zero title/text substrings) |
 
 ## Commit Convention
 

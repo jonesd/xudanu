@@ -58,9 +58,9 @@ XUDANU_ADMIN_PASSPHRASE=<your-admin-pass> node scripts/seed-exhibition-gathers.m
 
 Then open the **Gallery — Lobby** in the Library, or walk **The Curator's Tour** in the Trails panel. Seeding against the Docker quickstart (port 8080)? Add `SEED_ORIGIN=http://localhost:8080` to the commands. Both seeders are idempotent — re-running is safe.
 
-### Operating a server
+### Hosting a shared docuverse
 
-Self-hosting is a first-class case, and the admin console is built for it: live metrics and health checks, session management, and audit logging with **authoritative chain verification** — the same full cryptographic walk the `verify-security-log` CLI performs, available in one click. A quick check may warn; only the full walk may say *tampering*.
+One binary, one command — and a community has a place to write together: live multi-user editing without locks, published works readable by anyone with no account, and cross-server federation when the conversation outgrows a single machine. The admin console keeps the whole network watchable — live metrics and health checks, session management, and audit logging with **authoritative chain verification** — the same full cryptographic walk the `verify-security-log` CLI performs, available in one click. A quick check may warn; only the full walk may say *tampering*.
 
 | | |
 |---|---|

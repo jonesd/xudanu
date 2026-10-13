@@ -204,8 +204,10 @@ FR-60-ots-anchoring.md.
 - Measured matching: 6-word window; fires at first completed
   window; top-rank precision 100% on the corpus; p99 ~130µs
   (E-0 matrix); the honest noise analysis
-- Authorship typing: human / machine / transcluded as
-  first-class provenance classes (the disclosure-report substrate)
+- Authorship typing: human / LLM / historical (plus unattributed)
+  as first-class, per-span provenance classes (the disclosure-report
+  substrate) — matches the code enum exactly
+  (`edition/provenance.rs`: Human, Llm, Historical)
 - The interaction grammar: hover = peek, click = travel to the
   passage's document, gather = passages jointly filling a blank;
   LLM assistance as authoring layer, never as content provenance
@@ -321,7 +323,7 @@ THREE DIRECT HOOKS FOR US:
 1. His §7.3 design consideration — "Systems for scholarly knowledge
    work should encode provenance at finer granularity than
    'AI-generated' versus 'human-written'" — Xudanu HAS this:
-   AuthorType (human/llm/historical/machine) per span, signed.
+   AuthorType (human/llm/historical) per span, signed.
    Cite as the community asking for what we shipped.
 2. The #human tag — manual, paragraph-level, trust-based provenance
    marking. Our per-span signatures + disclosure reports make the
@@ -368,10 +370,16 @@ our §4 from "our engine is fast" into "our docuverse occupies the
 corner of H(G)-space the field has only theorised." Plan: compute
 the ten coordinates over the seeded docuverse + navigation-tour
 corpus; one figure + one table in §4 or §6.
+**DONE baseline (2026-10-12):** fresh reproducible seed run saved
+at `docs/dev/hg-profile-fresh-seed-2026-10-12.json` — 44 nodes /
+92 edges, θ = 0.045 (2 structural transclusions), η = 0.848,
+ρrt = 1.0 systemic / 0.0 mutual (the IRA-comparable reading —
+report BOTH; the tool's methodology block documents the split).
+Label corpus provenance: curated/reproducible, not organic.
 
 Also quotable for §1: the Xanadu-reread sentence, and their framing
 of the AI question ("phantom nodes: σ without genuine τ") connects
-to our provenance typing (machine-authored spans are marked, signed
+to our provenance typing (LLM-authored spans are marked, signed
 — never phantom).
 
 ## Citation list to assemble (verify each before submission)
