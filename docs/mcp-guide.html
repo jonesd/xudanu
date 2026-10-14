@@ -60,6 +60,7 @@ code{font-family:'JetBrains Mono',monospace}
 <p>Xudanu content can be reached four ways, and they are good at different things. MCP is the one that turns the docuverse into <em>a conversation partner's reference shelf</em>: an LLM client that can search, read, trace connections, and verify quotations on your behalf, while you stay in the chat you already work in.</p>
 
 <p>The distinctive gain is <strong>grounded multi-step research</strong>. Ask "what disputes the spectrum sentence, and who wrote the passages doing the disputing?" and the agent chains the tools — search, read, backlinks, provenance — returning answers anchored to real spans with hashes, not recollections. Compared with pasting a page into a chat window, the agent reads the live corpus, cites it precisely, and cannot quietly misquote without the verification tools catching it.</p>
+<p>Most MCP servers expose a feed &mdash; your steps, your repos, your calendar. This one exposes a <strong>document model</strong>: the agent reads a corpus of connected works, quotes by transclusion with attribution, and &mdash; in write mode &mdash; contributes with every change stamped as machine-authored in the provenance chain. A research assistant whose footnotes are structural, not asserted.</p>
 
 <h3>The four access methods</h3>
 
@@ -214,6 +215,14 @@ detector_ack(id)                                  ← marks read; never deletes<
 
 <h2 id="write-mode">8. Note on the write mode</h2>
 
+<h2 id="agent-scope">Scoping an agent&rsquo;s access</h2>
+<p>Agents ride the same dispatcher as every other session: <strong>club permissions decide what they can read</strong>, and the client has no separate authority to remove. To scope an agent, give it a club:</p>
+<ol>
+<li>Create a club for the agent and place into it exactly the works it should see.</li>
+<li>Run <code>xudanu-mcp</code> with that club&rsquo;s session (login arguments or session token file).</li>
+<li>The agent sees only what its club holds. Enforcement is server-side &mdash; no client cooperation required, and no way around it from the client side.</li>
+</ol>
+<p>Different agents, different clubs: least-privilege by construction, every action attributed. This is the 1990s security model &mdash; clubs, endorsement, per-span provenance &mdash; turned out to be exactly what the agent era needed.</p>
 <p>An opt-in write mode exists (<code>--enable-agent-writes</code>): agents can create works, transclude, link, and revise, with every change stamped as LLM-authored in the provenance system and the chained audit log. It is additionally gated by the server's edit policy — an owner-only server refuses agent writes no matter what the client requests.</p>
 
 <p>It is deliberately undocumented beyond this note. Guidance while it matures: enable it only against sandbox copies, never against data you care about, and never on a server you share with strangers.</p>

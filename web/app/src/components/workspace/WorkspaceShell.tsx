@@ -4335,7 +4335,7 @@ export function WorkspaceShell() {
                   className="ws-more-tab-btn"
                   onClick={() => window.open(`/?work=${workIdDisplay}`, "_blank")}
                 >
-                  Open in classic editor
+                  Open in Parallel view
                 </button>
               </div>
             )}
@@ -5258,7 +5258,7 @@ export function WorkspaceShell() {
                             setMoreMenuOpen(false);
                           }}
                         >
-                          Open in classic editor
+                          Open in Parallel view
                         </button>
                         <div className="ws-more-sep" />
                         <button
@@ -7447,7 +7447,7 @@ export function WorkspaceShell() {
         <button
           className="ws-studio-layout-fab"
           onClick={() => setStudio((v) => !v)}
-          title={studio ? "Switch to classic layout" : "Switch to studio layout"}
+          title={studio ? "Switch to Parallel layout" : "Switch to studio layout"}
         >
           {studio ? "◨ Classic" : "◧ Studio"}
         </button>

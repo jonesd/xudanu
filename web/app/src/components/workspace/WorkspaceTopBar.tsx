@@ -224,10 +224,10 @@ export function WorkspaceTopBar({
         <a
           className="ws-nav-tab"
           href={classicWorkId != null ? `/classic/index.html#w${classicWorkId}` : "/classic/"}
-          title={classicWorkId != null ? "Open this work in the classic Xanadu client" : "Open the classic Xanadu client"}
+          title={classicWorkId != null ? "Open this work in the Parallel view" : "Open the Parallel view"}
           style={{ textDecoration: "none" }}
         >
-          Classic&nbsp;↗
+          Parallel&nbsp;↗
         </a>
       </nav>
 
