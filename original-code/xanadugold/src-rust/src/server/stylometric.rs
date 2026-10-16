@@ -62,37 +62,105 @@ pub struct StylometricReport {
 /// than in human writing baselines (English-language models).
 const LLM_FREQUENT_TERMS: &[&str] = &[
     // Intensifiers and emphasis
-    "crucial", "pivotal", "paramount", "instrumental", "delve",
-    "delving", "multifaceted", "nuanced", "intricate", "intricacies",
-    "comprehensive", "holistic", "robust", "seamless", "cutting-edge",
-    "state-of-the-art", "innovative", "groundbreaking", "transformative",
-    "revolutionary", "unprecedented", "invaluable", "indispensable",
-
+    "crucial",
+    "pivotal",
+    "paramount",
+    "instrumental",
+    "delve",
+    "delving",
+    "multifaceted",
+    "nuanced",
+    "intricate",
+    "intricacies",
+    "comprehensive",
+    "holistic",
+    "robust",
+    "seamless",
+    "cutting-edge",
+    "state-of-the-art",
+    "innovative",
+    "groundbreaking",
+    "transformative",
+    "revolutionary",
+    "unprecedented",
+    "invaluable",
+    "indispensable",
     // Structure markers
-    "furthermore", "moreover", "additionally", "consequently",
-    "subsequently", "nevertheless", "nonetheless", "notwithstanding",
-    "accordingly", "henceforth", "thereby", "wherein", "whereby",
-
+    "furthermore",
+    "moreover",
+    "additionally",
+    "consequently",
+    "subsequently",
+    "nevertheless",
+    "nonetheless",
+    "notwithstanding",
+    "accordingly",
+    "henceforth",
+    "thereby",
+    "wherein",
+    "whereby",
     // Metaphorical framing
-    "tapestry", "landscape", "navigate", "navigating", "journey",
-    "framework", "realm", "sphere", "domain", "paradigm",
-    "synergy", "synergies", "leverage", "leveraging", "hone",
-    "foster", "fostering", "cultivate", "cultivating", "embark",
-    "embarking", "unravel", "unveil", "unveiling", "spearhead",
-    "champion", "championing", "bolster", "bolstering",
-
+    "tapestry",
+    "landscape",
+    "navigate",
+    "navigating",
+    "journey",
+    "framework",
+    "realm",
+    "sphere",
+    "domain",
+    "paradigm",
+    "synergy",
+    "synergies",
+    "leverage",
+    "leveraging",
+    "hone",
+    "foster",
+    "fostering",
+    "cultivate",
+    "cultivating",
+    "embark",
+    "embarking",
+    "unravel",
+    "unveil",
+    "unveiling",
+    "spearhead",
+    "champion",
+    "championing",
+    "bolster",
+    "bolstering",
     // Hedging phrases (checked as word sequences)
-    "arguably", "perhaps", "potentially", "seemingly",
-    "importantly", "notably", "significantly", "particularly",
-
+    "arguably",
+    "perhaps",
+    "potentially",
+    "seemingly",
+    "importantly",
+    "notably",
+    "significantly",
+    "particularly",
     // Characteristic verbs
-    "underscore", "underscores", "underscored", "highlight",
-    "highlights", "highlighted", "exemplify", "exemplifies",
-    "demonstrate", "demonstrates", "demonstrated",
-    "facilitate", "facilitates", "facilitated",
-    "encompass", "encompasses", "encompassed",
-    "elucidate", "elucidates", "elucidated",
-    "encompassing", "underscored",
+    "underscore",
+    "underscores",
+    "underscored",
+    "highlight",
+    "highlights",
+    "highlighted",
+    "exemplify",
+    "exemplifies",
+    "demonstrate",
+    "demonstrates",
+    "demonstrated",
+    "facilitate",
+    "facilitates",
+    "facilitated",
+    "encompass",
+    "encompasses",
+    "encompassed",
+    "elucidate",
+    "elucidates",
+    "elucidated",
+    "encompassing",
+    "underscored",
 ];
 
 /// LLM-characteristic phrases (multi-word, checked as sequences).
@@ -111,7 +179,7 @@ const LLM_FREQUENT_PHRASES: &[&str] = &[
     "in this context",
     "in conclusion",
     "ultimately,",
-    "not only",  // parallel construction marker
+    "not only", // parallel construction marker
     "but also",
     "a testament to",
     "plays a crucial role",
@@ -155,10 +223,7 @@ pub fn analyse(text: &str) -> StylometricReport {
     }
 
     // === Burstiness ===
-    let sentence_lengths: Vec<usize> = sentences
-        .iter()
-        .map(|s| split_words(s).len())
-        .collect();
+    let sentence_lengths: Vec<usize> = sentences.iter().map(|s| split_words(s).len()).collect();
     let burstiness = coefficient_of_variation(&sentence_lengths);
 
     // === Vocabulary fingerprint ===
@@ -238,10 +303,8 @@ fn type_token_ratio(words: &[String]) -> f64 {
 /// Count LLM-frequent terms and compute density per 100 words.
 fn vocabulary_fingerprint(words: &[String], full_text: &str) -> (f64, Vec<String>) {
     let mut matched: Vec<String> = Vec::new();
-    let lower_words: std::collections::HashSet<String> = words
-        .iter()
-        .map(|w| w.to_lowercase())
-        .collect();
+    let lower_words: std::collections::HashSet<String> =
+        words.iter().map(|w| w.to_lowercase()).collect();
 
     // Check single-word terms
     for term in LLM_FREQUENT_TERMS {
@@ -294,10 +357,8 @@ fn combine_signals(
     let uniformity_score = clamp01((0.5 - paragraph_uniformity) / 0.4);
 
     // Weighted combination (burstiness and vocabulary are strongest)
-    let score = 0.30 * burst_score
-        + 0.30 * vocab_score
-        + 0.15 * diversity_score
-        + 0.25 * uniformity_score;
+    let score =
+        0.30 * burst_score + 0.30 * vocab_score + 0.15 * diversity_score + 0.25 * uniformity_score;
 
     clamp01(score)
 }
@@ -357,7 +418,8 @@ mod tests {
         assert!(
             human.burstiness > llm.burstiness,
             "human burstiness ({:.3}) should exceed LLM burstiness ({:.3})",
-            human.burstiness, llm.burstiness
+            human.burstiness,
+            llm.burstiness
         );
     }
 
@@ -368,7 +430,8 @@ mod tests {
         assert!(
             llm.vocabulary_density > human.vocabulary_density,
             "LLM vocabulary density ({:.1}) should exceed human ({:.1})",
-            llm.vocabulary_density, human.vocabulary_density
+            llm.vocabulary_density,
+            human.vocabulary_density
         );
     }
 
@@ -379,14 +442,18 @@ mod tests {
         assert!(
             llm.ai_likelihood > human.ai_likelihood,
             "LLM score ({:.3}) should exceed human ({:.3})",
-            llm.ai_likelihood, human.ai_likelihood
+            llm.ai_likelihood,
+            human.ai_likelihood
         );
     }
 
     #[test]
     fn matched_terms_are_reported() {
         let llm = analyse(LLM_TEXT);
-        assert!(!llm.matched_terms.is_empty(), "LLM text should have matched terms");
+        assert!(
+            !llm.matched_terms.is_empty(),
+            "LLM text should have matched terms"
+        );
         assert!(
             llm.matched_terms.iter().any(|t| t.contains("crucial")),
             "should find 'crucial' in LLM text"
@@ -434,8 +501,10 @@ mod tests {
 
     #[test]
     fn type_token_ratio_computes_correctly() {
-        let words: Vec<String> = vec!["a", "b", "a", "c"].iter()
-            .map(|s| s.to_string()).collect();
+        let words: Vec<String> = vec!["a", "b", "a", "c"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         assert!((type_token_ratio(&words) - 0.75).abs() < 0.01);
     }
 }

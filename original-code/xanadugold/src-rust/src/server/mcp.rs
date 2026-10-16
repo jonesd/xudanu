@@ -541,8 +541,12 @@ fn parse_declaration(args: &Value) -> Option<Declaration> {
 fn call_tool(agent: &mut AgentSession, name: &str, args: &Value) -> Result<Value, String> {
     match name {
         "compare_versions" => return call_mutation_tool(agent, name, args),
-        "create_work" | "transclude" | "create_link" | "revise"
-        | "create_reasoning_path" | "create_evidence_set" => {
+        "create_work"
+        | "transclude"
+        | "create_link"
+        | "revise"
+        | "create_reasoning_path"
+        | "create_evidence_set" => {
             require_writes(agent)?;
             return call_mutation_tool(agent, name, args);
         }
@@ -550,7 +554,8 @@ fn call_tool(agent: &mut AgentSession, name: &str, args: &Value) -> Result<Value
     }
     let session = agent.session;
     let server = &mut agent.server;
-    match name {        "search_works" => {
+    match name {
+        "search_works" => {
             let query = args
                 .get("query")
                 .and_then(|v| v.as_str())
@@ -1033,8 +1038,12 @@ fn call_tool(agent: &mut AgentSession, name: &str, args: &Value) -> Result<Value
                         }],
                         "interpretation": "content matches another work — check authorship"
                     }),
-                    Ok(None) => json!({"matches": [], "interpretation": "no cross-work content match"}),
-                    Err(e) => json!({"matches": [], "interpretation": format!("check failed: {}", e)}),
+                    Ok(None) => {
+                        json!({"matches": [], "interpretation": "no cross-work content match"})
+                    }
+                    Err(e) => {
+                        json!({"matches": [], "interpretation": format!("check failed: {}", e)})
+                    }
                 }
             } else {
                 json!({"matches": [], "interpretation": "text too short for paste-match"})
@@ -1279,7 +1288,11 @@ fn call_mutation_tool(agent: &mut AgentSession, name: &str, args: &Value) -> Res
             let title = args
                 .get("title")
                 .and_then(|v| v.as_str())
-                .unwrap_or(if is_path { "Reasoning Path" } else { "Evidence Set" });
+                .unwrap_or(if is_path {
+                    "Reasoning Path"
+                } else {
+                    "Evidence Set"
+                });
             let items = args
                 .get(items_key)
                 .and_then(|v| v.as_array())
@@ -1307,10 +1320,12 @@ fn call_mutation_tool(agent: &mut AgentSession, name: &str, args: &Value) -> Res
                         items_key, i, start, end
                     ));
                 }
-                server
-                    .ensure_can_read(session, work)
-                    .map_err(|e| format!("{}[{}]: work {} not readable: {}", items_key, i, work, e))?;
-                spans.push(crate::edition::range_element::SpanRef::new(work, start, end));
+                server.ensure_can_read(session, work).map_err(|e| {
+                    format!("{}[{}]: work {} not readable: {}", items_key, i, work, e)
+                })?;
+                spans.push(crate::edition::range_element::SpanRef::new(
+                    work, start, end,
+                ));
             }
             let element = if is_path {
                 crate::edition::RangeElement::path(spans)
@@ -1622,13 +1637,17 @@ mod tests {
     fn create_reasoning_path_produces_structural_work() {
         let (mut agent, works) = agent_with_works();
         agent.enable_writes("").unwrap();
-        let result = call(&mut agent, "create_reasoning_path", json!({
-            "title": "Test Chain",
-            "steps": [
-                {"work": works[0], "start": 0, "end": 5},
-                {"work": works[1], "start": 0, "end": 4}
-            ]
-        }))
+        let result = call(
+            &mut agent,
+            "create_reasoning_path",
+            json!({
+                "title": "Test Chain",
+                "steps": [
+                    {"work": works[0], "start": 0, "end": 5},
+                    {"work": works[1], "start": 0, "end": 4}
+                ]
+            }),
+        )
         .unwrap();
         assert!(result.get("work_id").is_some());
         assert_eq!(result["kind"], "path");
@@ -1639,14 +1658,18 @@ mod tests {
     fn create_evidence_set_produces_structural_work() {
         let (mut agent, works) = agent_with_works();
         agent.enable_writes("").unwrap();
-        let result = call(&mut agent, "create_evidence_set", json!({
-            "title": "Supporting Evidence",
-            "members": [
-                {"work": works[0], "start": 6, "end": 10},
-                {"work": works[1], "start": 5, "end": 12},
-                {"work": works[0], "start": 12, "end": 17}
-            ]
-        }))
+        let result = call(
+            &mut agent,
+            "create_evidence_set",
+            json!({
+                "title": "Supporting Evidence",
+                "members": [
+                    {"work": works[0], "start": 6, "end": 10},
+                    {"work": works[1], "start": 5, "end": 12},
+                    {"work": works[0], "start": 12, "end": 17}
+                ]
+            }),
+        )
         .unwrap();
         assert!(result.get("work_id").is_some());
         assert_eq!(result["kind"], "set");
@@ -1657,9 +1680,13 @@ mod tests {
     fn reasoning_path_rejects_empty_steps() {
         let (mut agent, _) = agent_with_works();
         agent.enable_writes("").unwrap();
-        let err = call(&mut agent, "create_reasoning_path", json!({
-            "steps": []
-        }))
+        let err = call(
+            &mut agent,
+            "create_reasoning_path",
+            json!({
+                "steps": []
+            }),
+        )
         .unwrap_err();
         assert!(err.contains("at least one"));
     }
@@ -1667,9 +1694,13 @@ mod tests {
     #[test]
     fn reasoning_path_rejected_without_write_mode() {
         let (mut agent, works) = agent_with_works();
-        let err = call(&mut agent, "create_reasoning_path", json!({
-            "steps": [{"work": works[0], "start": 0, "end": 5}]
-        }))
+        let err = call(
+            &mut agent,
+            "create_reasoning_path",
+            json!({
+                "steps": [{"work": works[0], "start": 0, "end": 5}]
+            }),
+        )
         .unwrap_err();
         assert!(err.contains("write"));
     }

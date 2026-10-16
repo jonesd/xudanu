@@ -3,10 +3,10 @@
 //!
 //! These verify that features built independently actually work together.
 
-use crate::server::Server;
-use crate::server::stylometric;
-use crate::edition::Edition;
 use crate::edition::range_element::RangeElement;
+use crate::edition::Edition;
+use crate::server::stylometric;
+use crate::server::Server;
 
 // ═══════════════════════════════════════════════════════════════
 // Test helpers
@@ -25,14 +25,18 @@ fn setup_server_with_accented_works() -> (Server, crate::server::SessionId, Vec<
     server.login_public(session).unwrap();
 
     let work_a = server
-        .create_work(session, Edition::from_text(
-            "The café on the corner serves excellent café au lait every morning."
-        ))
+        .create_work(
+            session,
+            Edition::from_text(
+                "The café on the corner serves excellent café au lait every morning.",
+            ),
+        )
         .unwrap();
     let work_b = server
-        .create_work(session, Edition::from_text(
-            "A completely different topic about gardening and plants."
-        ))
+        .create_work(
+            session,
+            Edition::from_text("A completely different topic about gardening and plants."),
+        )
         .unwrap();
 
     (server, session, vec![work_a, work_b])
@@ -51,11 +55,10 @@ fn nfc_paste_match_detects_nfd_paste_of_nfc_source() {
     // base + combining acute accent). After NFC normalisation, both
     // should produce the same content and the paste-match should fire.
 
-    let nfd_text = "The cafe\u{0301} on the corner serves excellent cafe\u{0301} au lait every morning.";
+    let nfd_text =
+        "The cafe\u{0301} on the corner serves excellent cafe\u{0301} au lait every morning.";
 
-    let result = server
-        .paste_match_check(session, nfd_text)
-        .unwrap();
+    let result = server.paste_match_check(session, nfd_text).unwrap();
 
     assert!(
         result.is_some(),
@@ -160,9 +163,11 @@ fn stylometric_works_on_nfc_normalised_text() {
     );
 
     // The analysis should be the same whether we pass NFC or NFD input
-    let nfd_text = "The cafe\u{0301} on the corner serves excellent cafe\u{0301} au lait every morning.";
+    let nfd_text =
+        "The cafe\u{0301} on the corner serves excellent cafe\u{0301} au lait every morning.";
     let report_nfd = stylometric::analyse(nfd_text);
-    let report_nfc = stylometric::analyse("The café on the corner serves excellent café au lait every morning.");
+    let report_nfc =
+        stylometric::analyse("The café on the corner serves excellent café au lait every morning.");
     // Sentence and word counts should be identical (the combining marks
     // don't affect word/sentence splitting)
     assert_eq!(report_nfd.sentence_count, report_nfc.sentence_count);
@@ -288,7 +293,8 @@ fn full_loop_nfc_sign_paste_detect_stylometric() {
     );
 
     // Step 3: paste the same text in NFD form — paste-match should fire
-    let nfd_paste = "The cafe\u{0301} on the corner serves excellent cafe\u{0301} au lait every morning.";
+    let nfd_paste =
+        "The cafe\u{0301} on the corner serves excellent cafe\u{0301} au lait every morning.";
     let match_result = server.paste_match_check(session, nfd_paste).unwrap();
     assert!(
         match_result.is_some(),
@@ -301,9 +307,7 @@ fn full_loop_nfc_sign_paste_detect_stylometric() {
     assert!(report.sentence_count > 0);
 
     // Step 5: a Path referencing this work's spans has the correct content
-    let spans = vec![
-        crate::edition::range_element::SpanRef::new(works[0], 0, 10),
-    ];
+    let spans = vec![crate::edition::range_element::SpanRef::new(works[0], 0, 10)];
     let path = RangeElement::path(spans);
     assert!(path.is_path());
 }

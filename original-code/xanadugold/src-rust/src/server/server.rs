@@ -996,7 +996,8 @@ pub struct Server {
     pub(crate) reuse: crate::server::reuse_match::ReuseService,
     /// Self-declarations of authorship, keyed by (work_id, revision).
     /// Purely additive — populated only when a submitter explicitly declares.
-    pub(crate) declarations: std::collections::HashMap<(BeId, u64), crate::server::mcp::Declaration>,
+    pub(crate) declarations:
+        std::collections::HashMap<(BeId, u64), crate::server::mcp::Declaration>,
     /// FR-60: OpenTimestamps anchoring of the attribution chain head
     /// (default off — the single-player no-outbound stance).
     ots_anchor_enabled: bool,
@@ -10987,7 +10988,8 @@ impl Server {
         revision: u64,
         declaration: crate::server::mcp::Declaration,
     ) {
-        self.declarations.insert((work_be_id, revision), declaration);
+        self.declarations
+            .insert((work_be_id, revision), declaration);
     }
 
     /// Retrieve a recorded declaration for a work revision, if any.
@@ -28262,8 +28264,8 @@ pub(crate) mod persist_snapshot {
                 lattice_deferred: HashMap::new(),
                 lattice_shadow_enabled: false,
                 reuse_suggestions_enabled: false,
-            reuse: crate::server::reuse_match::ReuseService::new(),
-            declarations: std::collections::HashMap::new(),
+                reuse: crate::server::reuse_match::ReuseService::new(),
+                declarations: std::collections::HashMap::new(),
                 ots_anchor_enabled: false,
                 ots_anchor_requested: false,
                 log_checkpoint_entries_threshold: 10_000,
@@ -31018,7 +31020,10 @@ mod tests {
         let session = server.connect();
         server.login_public(session).unwrap();
         server
-            .create_work(session, Edition::from_text("completely unrelated content about gardening"))
+            .create_work(
+                session,
+                Edition::from_text("completely unrelated content about gardening"),
+            )
             .unwrap();
         let result = server.paste_match_check(session,
             "This is entirely original prose that has never appeared in the docuverse before now."

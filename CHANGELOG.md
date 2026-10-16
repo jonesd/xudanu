@@ -6,6 +6,24 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.19.0] — 2026-10-15
+
+The **attribution** release: per-passage authorship identification, detection, and audit — the infrastructure for accountable machine reasoning.
+
+### Added
+- **Agent reasoning chains** (FR-58 extension): `create_reasoning_path` and `create_evidence_set` MCP tools — agents produce structural reasoning objects (ordered paths through sources, unordered evidence collections), each span carrying its own provenance
+- **Stylometric analysis**: probabilistic AI-content detection — burstiness, vocabulary fingerprint, paragraph uniformity — pure statistics, no ML dependency. Returns likelihood score + explainable matched terms.
+- **Self-declaration**: MCP tools accept optional `declared_author_type` and `declared_model` — the submitter's explicit claim, recorded alongside the interface-inferred type. Mismatches are flagged, not blocked.
+- **Paste-match detection** (FR-58 extension): `paste_match_check` wire op — detects when text matches existing docuverse content across authorship boundaries. NFD paste (macOS) matches NFC source (FR-90 bridging).
+- **NFC normalisation** (FR-90): all text entering the model is Unicode NFC — the same visible text always produces the same BLAKE3 hash, regardless of platform. Deployed ASCII corpus unaffected (zero crums changed).
+- **Comprehensive document audit**: `verify_work` MCP tool now returns provenance signatures + declaration + stylometric analysis + paste-match results + transclusion status in a single call
+- **Op-code collision protection**: tests enforce globally unique wire op codes and correct allocation sequence (prevents protocol regressions)
+- **FR-91 distributed docuverse spec** + FR-91-P2 design brief (BeBe protocol, promise layer, Miller lineage)
+- **AI attribution robustness analysis** (docs/dev/ai-attribution-robustness.md)
+
+### Fixed
+- NFC × paste-match bridging: NFD paste from macOS now matches NFC-normalised stored content (both are normalised before comparison)
+
 ## [v1.17.3] — 2026-10-06
 
 The **durability** release: four data-loss mechanisms fixed, and the

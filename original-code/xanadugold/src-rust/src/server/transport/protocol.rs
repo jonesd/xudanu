@@ -5248,7 +5248,11 @@ mod lattice_shadow_wire_tests {
         for (wire, code) in OperationCode::OP_CODE_TABLE {
             let name = format!("{:?}", code);
             if let Some(prev) = seen.get(wire) {
-                let max = OperationCode::OP_CODE_TABLE.iter().map(|(w, _)| *w).max().unwrap();
+                let max = OperationCode::OP_CODE_TABLE
+                    .iter()
+                    .map(|(w, _)| *w)
+                    .max()
+                    .unwrap();
                 panic!(
                     "OP CODE COLLISION: 0x{:04X} maps to both {} and {}.\n\
                      Fix: use OperationCode::next_free_code(0x0300, 0x03FF) — never hand-pick.\n\
@@ -5273,7 +5277,8 @@ mod lattice_shadow_wire_tests {
         assert!(
             next > max_used,
             "next_free_code (0x{:04X}) must be above the highest used code (0x{:04X})",
-            next, max_used
+            next,
+            max_used
         );
     }
 

@@ -93,6 +93,10 @@ mod tests {
         assert_eq!(to_nfc(ligature), ligature, "NFC must not destroy ligatures");
 
         let superscript = "x\u{00B2}"; // x²
-        assert_eq!(to_nfc(superscript), superscript, "NFC must not destroy superscripts");
+        assert_eq!(
+            to_nfc(superscript),
+            superscript,
+            "NFC must not destroy superscripts"
+        );
     }
 }
