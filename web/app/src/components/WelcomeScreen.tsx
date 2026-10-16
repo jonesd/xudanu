@@ -1,3 +1,20 @@
+import { useState, useEffect } from "react";
+
+/** Fetch the server's actual version from /health — always accurate,
+ *  falls back to the build-time version if /health is unreachable. */
+function useServerVersion(): string {
+  const [version, setVersion] = useState(__APP_VERSION__);
+  useEffect(() => {
+    fetch("/health")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.version) setVersion(d.version);
+      })
+      .catch(() => {});
+  }, []);
+  return version;
+}
+
 /** One showcase entry: a seeded demo work the visitor can open in a
  *  single click (FR-77). */
 export interface ShowcaseEntry {
@@ -176,7 +193,7 @@ export function WelcomeScreen({
         </div>
       )}
       <div style={{ marginTop: 32, fontSize: 11, color: "var(--text-dim)", textAlign: "center", maxWidth: 400 }}>
-        <strong>Xudanu v{__APP_VERSION__} — from Gold, toward the docuverse</strong>
+        <strong>Xudanu v{useServerVersion()} — from Gold, toward the docuverse</strong>
         <div style={{ marginTop: 4, fontSize: 10 }}>
           Independent open-source project (Apache 2.0). Not affiliated with Project Xanadu&trade; or the Udanax team.
         </div>

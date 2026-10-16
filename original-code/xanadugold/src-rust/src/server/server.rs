@@ -20657,6 +20657,7 @@ impl Server {
         };
         serde_json::json!({
             "status": status,
+            "version": env!("CARGO_PKG_VERSION"),
             "background_verification": self
                 .background_verifying
                 .load(std::sync::atomic::Ordering::Relaxed),
