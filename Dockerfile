@@ -16,8 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential pkg-config libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /repo
-# Workspace root manifest + the crate (the only workspace member)
-COPY Cargo.toml ./
+# Workspace root manifest + lockfile (reproducible builds) + the crate (the only workspace member)
+COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY original-code/xanadugold/src-rust ./original-code/xanadugold/src-rust
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
