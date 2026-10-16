@@ -190,7 +190,8 @@ impl RangeElement {
     }
 
     pub fn text(s: impl Into<String>) -> Self {
-        RangeElement::Text { text: s.into() }
+        // FR-90: NFC normalisation at the element boundary
+        RangeElement::Text { text: super::nfc::to_nfc(&s.into()) }
     }
 
     pub fn edition(id: u64) -> Self {

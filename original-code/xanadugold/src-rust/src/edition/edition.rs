@@ -402,6 +402,10 @@ impl Edition {
     }
 
     pub fn from_text(text: &str) -> Self {
+        // FR-90: NFC normalisation at the ingestion boundary —
+        // the same visible text always produces the same hash,
+        // regardless of the input platform's normalisation form.
+        let text = super::nfc::to_nfc(text);
         let entries: Vec<(i64, Arc<Carrier>)> = text
             .chars()
             .enumerate()
@@ -430,6 +434,8 @@ impl Edition {
     }
 
     pub fn from_text_batched(text: &str) -> Self {
+        // FR-90: NFC normalisation (same boundary as from_text)
+        let text = &super::nfc::to_nfc(text);
         if text.is_empty() {
             return Edition::empty();
         }

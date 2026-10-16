@@ -74,6 +74,56 @@ assistance is what moves it.
 
 ### Quotable passages from HT '26 (cite directly in §1, §7)
 
+**From John Walker's Autodesk/Xanadu press-conference statement,
+April 8, 1988** (The Autodesk File, ch. 2.64, fourmilab.ch —
+primary source, verified 2026-10-15):
+
+- Flexibility of models: "the only system that has the potential
+  to serve the individual, the workgroup or small company, the
+  large corporation, and eventually the entire world as a
+  repository for information in all forms: text, graphics,
+  sound, animation, scientific and engineering data, and more."
+  — cite for the orgl/media-type generality claim; Walker's
+  Autodesk lens: Xanadu as data/project manager for CAD users
+- Power through generality (the prophetic one — "difficult,
+  protracted, and expensive" all came true): "The Xanadu design
+  is unique in that it rejects from the outset all limits on
+  generality, capacity, and extensibility. Implementing it in
+  its entirety will be difficult, protracted, and expensive,
+  but no system less ambitious can be as useful, as powerful,
+  or as important for the long term." — cite in §2 (the
+  inherited model) or §8 (what remains hard)
+- The broken promise xudanu keeps: "Xanadu is an open
+  architecture system. Our access protocols will be fully
+  disclosed and published. We will encourage others to invent
+  innovative ways to encode, store, retrieve, and organise
+  information stored in our ever-growing address space." —
+  cite when positioning the frozen wire contract / Rosetta
+  stack: the protocols were never published; ours are
+- The timeline (for the essay's epigraph if ever needed):
+  "In 1964, Xanadu was a dream in a single mind. In 1980, it
+  was the shared goal of a small group of brilliant
+  technologists. By 1989, it will be a product. And by 1995 it
+  will begin to change the world." — wrong by thirty years and
+  one week
+- Also available: Walker's "Farewell, Xanadu" (Aug 20, 1992;
+  ch. 2.103) — checked 2026-10-15: contains only the press
+  releases + Bartz memo, no personal essay. Note: the 1992
+  divestment press release itself describes Xanadu as "the
+  ideal underpinning upon which to build collaborative and
+  groupware applications" with tools "links, version
+  management, detectors, endorsements, and access control" —
+  the FR-88 engine-first thesis, stated by Autodesk in 1992;
+  quotable.
+- SPELUNKING QUEUE (agreed 2026-10-15): search the AutoFile
+  chapters for Walker's personal Xanadu verdict. Priority:
+  "Valedictory", "L'Envoi: the First Six Years" (his farewell
+  essays — most likely), "Where's It All Going?" (immediately
+  pre-Xanadu), "Understanding AMIX" (sibling project
+  analysis), "The Dark Night of the Soul", "Ten Years After".
+  Trailhead: fourmilab.ch/autofile/www/chapters.html
+
+
 **On the renaissance (Adamski et al., §5.3):**
 "Xanadu is reread not as a failed project but as an uncompromising
 attempt to make high-dimensional hypertextality an explicit design

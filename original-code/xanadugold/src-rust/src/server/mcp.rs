@@ -146,6 +146,16 @@ impl WorkRef {
     }
 }
 
+use crate::edition::BeId;
+
+/// Self-declaration of authorship, optionally provided at submission time.
+/// Recorded alongside the interface-inferred type; mismatches are flagged.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Declaration {
+    pub author_type: String,
+    pub declared_model: Option<String>,
+}
+
 pub fn tool_descriptors(writes_enabled: bool) -> Vec<Value> {
     let mut tools = vec![
         json!({
@@ -304,11 +314,14 @@ pub fn tool_descriptors(writes_enabled: bool) -> Vec<Value> {
         tools.extend(vec![
             json!({
                 "name": "create_work",
-                "description": "Create a new work from text. Revisions are signed as LLM-authored with the agent's model identity.",
+                "description": "Create a new work with text content. The revision is signed as LLM-authored (using the session's model identity). Optionally self-declare the author type — if the declaration differs from the interface-inferred type, the mismatch is recorded.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "text": {"type": "string", "description": "Full text of the new work"}
+                        "text": {"type": "string", "description": "Text content"},
+                        "title": {"type": "string", "description": "Optional title"},
+                        "declared_author_type": {"type": "string", "enum": ["human", "llm"], "description": "Optional self-declaration: is this text human-written or LLM-generated? Recorded alongside the interface-inferred type. Mismatches are flagged."},
+                        "declared_model": {"type": "string", "description": "Optional: the specific model that generated this text (e.g. 'claude-3.5', 'gpt-4')"}
                     },
                     "required": ["text"]
                 }
@@ -343,14 +356,64 @@ pub fn tool_descriptors(writes_enabled: bool) -> Vec<Value> {
             }),
             json!({
                 "name": "revise",
-                "description": "Replace a work's full text (grabs the edit lock, revises, releases). The revision is signed as LLM-authored.",
+                "description": "Replace a work's full text (grabs the edit lock, revises, releases). The revision is signed as LLM-authored. Optionally self-declare the author type.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "work": {"type": "integer", "description": "Work id"},
-                        "text": {"type": "string", "description": "New full text"}
+                        "text": {"type": "string", "description": "New full text"},
+                        "declared_author_type": {"type": "string", "enum": ["human", "llm"], "description": "Optional self-declaration"},
+                        "declared_model": {"type": "string", "description": "Optional: specific model"}
                     },
                     "required": ["work", "text"]
+                }
+            }),
+            json!({
+                "name": "create_reasoning_path",
+                "description": "Create a reasoning chain: an ordered sequence of passages from other works, forming a step-by-step argument or analysis. Each step is a span reference (work, start, end). The path is a first-class structural object — order matters, it is fingerprinted, and it persists as a navigable work.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string", "description": "Title for the reasoning path"},
+                        "steps": {
+                            "type": "array",
+                            "description": "Ordered passages forming the reasoning chain",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "work": {"type": "integer", "description": "Work id"},
+                                    "start": {"type": "integer", "description": "Start char offset (inclusive)"},
+                                    "end": {"type": "integer", "description": "End char offset (exclusive)"}
+                                },
+                                "required": ["work", "start", "end"]
+                            }
+                        }
+                    },
+                    "required": ["steps"]
+                }
+            }),
+            json!({
+                "name": "create_evidence_set",
+                "description": "Create an evidence collection: an unordered set of passages from other works, gathered as one logical value. Use when multiple passages jointly support a claim — the collection is the evidence, not any single passage. Order does not matter (the fingerprint is order-insensitive).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string", "description": "Title for the evidence set"},
+                        "members": {
+                            "type": "array",
+                            "description": "Passages forming the evidence collection",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "work": {"type": "integer", "description": "Work id"},
+                                    "start": {"type": "integer", "description": "Start char offset (inclusive)"},
+                                    "end": {"type": "integer", "description": "End char offset (exclusive)"}
+                                },
+                                "required": ["work", "start", "end"]
+                            }
+                        }
+                    },
+                    "required": ["members"]
                 }
             }),
         ]);
@@ -462,10 +525,24 @@ fn route(target: &mut Docuverse, method: &str, params: &Value) -> Result<Value, 
     }
 }
 
+/// Parse the optional self-declaration fields from MCP tool args.
+fn parse_declaration(args: &Value) -> Option<Declaration> {
+    let author_type = args.get("declared_author_type").and_then(|v| v.as_str())?;
+    let declared_model = args
+        .get("declared_model")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    Some(Declaration {
+        author_type: author_type.to_string(),
+        declared_model,
+    })
+}
+
 fn call_tool(agent: &mut AgentSession, name: &str, args: &Value) -> Result<Value, String> {
     match name {
         "compare_versions" => return call_mutation_tool(agent, name, args),
-        "create_work" | "transclude" | "create_link" | "revise" => {
+        "create_work" | "transclude" | "create_link" | "revise"
+        | "create_reasoning_path" | "create_evidence_set" => {
             require_writes(agent)?;
             return call_mutation_tool(agent, name, args);
         }
@@ -473,8 +550,7 @@ fn call_tool(agent: &mut AgentSession, name: &str, args: &Value) -> Result<Value
     }
     let session = agent.session;
     let server = &mut agent.server;
-    match name {
-        "search_works" => {
+    match name {        "search_works" => {
             let query = args
                 .get("query")
                 .and_then(|v| v.as_str())
@@ -903,9 +979,73 @@ fn call_tool(agent: &mut AgentSession, name: &str, args: &Value) -> Result<Value
                 Ok(doc) => serde_json::from_str::<Value>(doc).is_ok(),
                 Err(_) => false,
             };
+            // Report the self-declaration if present (for mismatch detection)
+            let edition_revision = server
+                .work(work)
+                .map_err(|e| format!("work {} not found: {}", work, e))?
+                .revision_count();
+            let declaration_json = match server.get_declaration(work, edition_revision) {
+                Some(d) => {
+                    let inferred = "llm"; // MCP context
+                    json!({
+                        "declared_author_type": d.author_type,
+                        "declared_model": d.declared_model,
+                        "interface_inferred": inferred,
+                        "mismatch": d.author_type != inferred
+                    })
+                }
+                None => json!(null),
+            };
+
+            // On-demand stylometric analysis
+            let text = server.work_text_fresh(work).unwrap_or_default();
+            let stylometric_json = if text.len() >= 50 {
+                let report = crate::server::stylometric::analyse(&text);
+                json!({
+                    "ai_likelihood": report.ai_likelihood,
+                    "burstiness": format!("{:.3}", report.burstiness),
+                    "vocabulary_density": format!("{:.1}", report.vocabulary_density),
+                    "matched_terms": report.matched_terms,
+                    "sentence_count": report.sentence_count,
+                    "word_count": report.word_count,
+                    "interpretation": if report.ai_likelihood > 0.6 {
+                        "LLM-like statistical fingerprints detected"
+                    } else if report.ai_likelihood > 0.3 {
+                        "mixed signals — inconclusive"
+                    } else {
+                        "no strong LLM signal"
+                    }
+                })
+            } else {
+                json!({"interpretation": "text too short for stylometric analysis"})
+            };
+
+            // On-demand paste-match (cross-authorship check)
+            let paste_match_json = if text.len() >= 30 {
+                match server.paste_match_check(session, &text) {
+                    Ok(Some(card)) => json!({
+                        "matches": [{
+                            "work_id": card.work_id,
+                            "title": card.title,
+                            "windows": card.windows,
+                            "span_start": card.span_start,
+                            "span_end": card.span_end
+                        }],
+                        "interpretation": "content matches another work — check authorship"
+                    }),
+                    Ok(None) => json!({"matches": [], "interpretation": "no cross-work content match"}),
+                    Err(e) => json!({"matches": [], "interpretation": format!("check failed: {}", e)}),
+                }
+            } else {
+                json!({"matches": [], "interpretation": "text too short for paste-match"})
+            };
+
             Ok(json!({
                 "work_id": work,
                 "uri": WorkRef::work(work).to_uri(),
+                "declaration": declaration_json,
+                "stylometric": stylometric_json,
+                "paste_match": paste_match_json,
                 "provenance": {
                     "spans": signatures_total,
                     "valid_signatures": signatures_valid,
@@ -961,10 +1101,29 @@ fn call_mutation_tool(agent: &mut AgentSession, name: &str, args: &Value) -> Res
             let work = server
                 .create_work(session, crate::edition::Edition::from_text(text))
                 .map_err(|e| format!("create failed: {}", e))?;
+
+            // Self-declaration: record if present
+            let declaration = parse_declaration(args);
+            let declaration_info = match &declaration {
+                Some(d) => {
+                    server.record_declaration(work, 0, d.clone());
+                    let inferred = "llm"; // MCP write path always infers "llm"
+                    let mismatch = d.author_type != inferred;
+                    json!({
+                        "declared_author_type": d.author_type,
+                        "declared_model": d.declared_model,
+                        "interface_inferred": inferred,
+                        "mismatch": mismatch
+                    })
+                }
+                None => json!(null),
+            };
+
             Ok(json!({
                 "work_id": work,
                 "uri": WorkRef::work(work).to_uri(),
-                "revision": 0
+                "revision": 0,
+                "declaration": declaration_info
             }))
         }
         "transclude" => {
@@ -1110,6 +1269,65 @@ fn call_mutation_tool(agent: &mut AgentSession, name: &str, args: &Value) -> Res
             release.map_err(|e| format!("release failed: {}", e))?;
             Ok(json!({
                 "work_id": work,
+                "revision": revision,
+                "uri": WorkRef::work(work).to_uri()
+            }))
+        }
+        "create_reasoning_path" | "create_evidence_set" => {
+            let is_path = name == "create_reasoning_path";
+            let items_key = if is_path { "steps" } else { "members" };
+            let title = args
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or(if is_path { "Reasoning Path" } else { "Evidence Set" });
+            let items = args
+                .get(items_key)
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| format!("missing {}", items_key))?;
+            if items.is_empty() {
+                return Err(format!("{} must contain at least one passage", items_key));
+            }
+            let mut spans: Vec<crate::edition::range_element::SpanRef> = Vec::new();
+            for (i, item) in items.iter().enumerate() {
+                let work = item
+                    .get("work")
+                    .and_then(|v| v.as_u64())
+                    .ok_or_else(|| format!("{}[{}]: missing work", items_key, i))?;
+                let start = item
+                    .get("start")
+                    .and_then(|v| v.as_i64())
+                    .ok_or_else(|| format!("{}[{}]: missing start", items_key, i))?;
+                let end = item
+                    .get("end")
+                    .and_then(|v| v.as_i64())
+                    .ok_or_else(|| format!("{}[{}]: missing end", items_key, i))?;
+                if start >= end {
+                    return Err(format!(
+                        "{}[{}]: invalid span [{}, {}) — start must be < end",
+                        items_key, i, start, end
+                    ));
+                }
+                server
+                    .ensure_can_read(session, work)
+                    .map_err(|e| format!("{}[{}]: work {} not readable: {}", items_key, i, work, e))?;
+                spans.push(crate::edition::range_element::SpanRef::new(work, start, end));
+            }
+            let element = if is_path {
+                crate::edition::RangeElement::path(spans)
+            } else {
+                crate::edition::RangeElement::set(spans)
+            };
+            let work = server
+                .create_work(session, crate::edition::Edition::from_text(""))
+                .map_err(|e| format!("work create failed: {}", e))?;
+            let revision = server
+                .element_insert(session, work, 0, element)
+                .map_err(|e| format!("element placement failed: {}", e))?;
+            let _ = server.work_publish(session, work);
+            Ok(json!({
+                "work_id": work,
+                "kind": if is_path { "path" } else { "set" },
+                "span_count": items.len(),
                 "revision": revision,
                 "uri": WorkRef::work(work).to_uri()
             }))
@@ -1399,6 +1617,62 @@ fn verify_one_work_offline(server: &mut Server, session: SessionId, work: u64) -
 mod tests {
     use super::*;
     use crate::edition::Edition;
+
+    #[test]
+    fn create_reasoning_path_produces_structural_work() {
+        let (mut agent, works) = agent_with_works();
+        agent.enable_writes("").unwrap();
+        let result = call(&mut agent, "create_reasoning_path", json!({
+            "title": "Test Chain",
+            "steps": [
+                {"work": works[0], "start": 0, "end": 5},
+                {"work": works[1], "start": 0, "end": 4}
+            ]
+        }))
+        .unwrap();
+        assert!(result.get("work_id").is_some());
+        assert_eq!(result["kind"], "path");
+        assert_eq!(result["span_count"], 2);
+    }
+
+    #[test]
+    fn create_evidence_set_produces_structural_work() {
+        let (mut agent, works) = agent_with_works();
+        agent.enable_writes("").unwrap();
+        let result = call(&mut agent, "create_evidence_set", json!({
+            "title": "Supporting Evidence",
+            "members": [
+                {"work": works[0], "start": 6, "end": 10},
+                {"work": works[1], "start": 5, "end": 12},
+                {"work": works[0], "start": 12, "end": 17}
+            ]
+        }))
+        .unwrap();
+        assert!(result.get("work_id").is_some());
+        assert_eq!(result["kind"], "set");
+        assert_eq!(result["span_count"], 3);
+    }
+
+    #[test]
+    fn reasoning_path_rejects_empty_steps() {
+        let (mut agent, _) = agent_with_works();
+        agent.enable_writes("").unwrap();
+        let err = call(&mut agent, "create_reasoning_path", json!({
+            "steps": []
+        }))
+        .unwrap_err();
+        assert!(err.contains("at least one"));
+    }
+
+    #[test]
+    fn reasoning_path_rejected_without_write_mode() {
+        let (mut agent, works) = agent_with_works();
+        let err = call(&mut agent, "create_reasoning_path", json!({
+            "steps": [{"work": works[0], "start": 0, "end": 5}]
+        }))
+        .unwrap_err();
+        assert!(err.contains("write"));
+    }
 
     fn agent_with_works() -> (AgentSession, Vec<u64>) {
         let mut server = Server::new();

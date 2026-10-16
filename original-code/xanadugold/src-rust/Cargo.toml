@@ -67,6 +67,7 @@ getrandom = { version = "0.2", features = ["js"] }
 
 [dependencies]
 blake3 = "1"
+unicode-normalization = "0.1"
 epub-parser = { version = "0.3", optional = true }
 chrono = { version = "0.4", features = ["serde"] }
 wasm-bindgen = { version = "0.2", optional = true }

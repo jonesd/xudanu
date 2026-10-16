@@ -170,6 +170,7 @@ Completes `miller-eight-features.md` feature #6.
 |----|---------|--------|-----------|-------|
 | FR-88 | Engine extraction — core crate, dependency firewall, in-process demo client | 📋 | edition/, space/, ent/, crypto/, persist/ → xudanu-core; server/otree_crdt.rs, crdt_manager.rs, reuse_match.rs promoted | full suite relocates (G5); demo binary e2e |
 | FR-89 | Opt-in anonymous telemetry — H(G)/H(AI), usage aggregates, preview-exact-JSON consent, audit-logged sends | 📋 | hg_profile.rs; admin console; audit log; new payload serializer | leak proptest (zero title/text substrings) |
+| FR-91 | Distributed docuverse architecture — bloom filters in directory, push detectors, cookbook/recipes, BeBe, enfilade portability, cross-server resolution | 📋 | bloom.rs, server_directory.rs, detectors.rs, VirtualSpec/derived; C++ heritage: cookbkx/portalx/promanx/negoti8x | per sub-FR (§7) |
 
 ## Commit Convention
 

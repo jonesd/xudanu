@@ -28,6 +28,7 @@ pub mod fetext;
 pub mod grandmap;
 pub mod hoist;
 pub mod label;
+pub mod nfc;
 pub mod license_overlay;
 pub mod link_canopy;
 pub mod links;

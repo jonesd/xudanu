@@ -52,11 +52,13 @@ ws.on("open", async () => {
       sizes.push([w.title ?? w.work_id, chars]);
       total += chars; n++;
     }
-    const humans = works.filter(w => w && typeof w === "object" && w.owner !== 1001).length;
+    const strangers = works.filter(w => w && typeof w === "object" && w.owner !== 1001 && w.owner !== 1000);
+    console.log("STRANGER-CREATED DOCS (owner not 1000/1001):", strangers.length);
+    for (const w of strangers.slice(0, 8)) console.log(`   [${w.owner}] "${(w.title || "(untitled)")}": ${w.char_count} chars, rev ${w.revision_count}`);
     console.log("DOCS:", n);
     console.log("TOTAL TEXT CHARS:", total);
     console.log("AVG CHARS/DOC:", n ? Math.round(total / n) : 0);
-    console.log("DOCS NOT OWNED BY ADMIN (owner!=1001):", humans);
+    console.log("NOT ADMIN-OWNED (incl. system 1000):", works.filter(w => w && typeof w === "object" && w.owner !== 1001).length);
     sizes.sort((a, b) => b[1] - a[1]);
     console.log("Largest:", sizes.slice(0, 5).map(s => `${s[0]} (${s[1]})`).join(" | "));
     console.log("Smallest:", sizes.slice(-3).map(s => `${s[0]} (${s[1]})`).join(" | "));

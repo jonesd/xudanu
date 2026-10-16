@@ -1358,6 +1358,12 @@ fn dispatch_inner(
             srv.reuse_suggestions_set_enabled(session_id, enabled)?;
             Ok(ResponseValue::Void)
         }
+        WireRequest::PasteMatchCheck { text } => {
+            let card = srv.paste_match_check(session_id, &text)?;
+            let json =
+                serde_json::to_value(&card).map_err(|e| ServerError::Internal(e.to_string()))?;
+            Ok(ResponseValue::Json(json))
+        }
         WireRequest::OtsAnchorStatus {} => {
             srv.ensure_admin(session_id)?;
             Ok(ResponseValue::Json(srv.ots_anchor_status()))

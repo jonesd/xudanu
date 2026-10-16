@@ -994,6 +994,9 @@ pub struct Server {
     reuse_suggestions_enabled: bool,
     /// FR-58 S1: the reuse n-gram index (lazy per-work reindex).
     pub(crate) reuse: crate::server::reuse_match::ReuseService,
+    /// Self-declarations of authorship, keyed by (work_id, revision).
+    /// Purely additive — populated only when a submitter explicitly declares.
+    pub(crate) declarations: std::collections::HashMap<(BeId, u64), crate::server::mcp::Declaration>,
     /// FR-60: OpenTimestamps anchoring of the attribution chain head
     /// (default off — the single-player no-outbound stance).
     ots_anchor_enabled: bool,
@@ -1765,6 +1768,7 @@ impl Server {
             lattice_shadow_enabled: false,
             reuse_suggestions_enabled: false,
             reuse: crate::server::reuse_match::ReuseService::new(),
+            declarations: std::collections::HashMap::new(),
             ots_anchor_enabled: false,
             ots_anchor_requested: false,
             log_checkpoint_entries_threshold: 10_000,
@@ -10967,7 +10971,85 @@ impl Server {
         Ok(visible)
     }
 
-    /// FR-51 cutover integration: immutable lattice read (for &self
+    /// FR-58 paste extension: check whether a bulk-pasted text matches
+    /// existing docuverse content with a different author_type. Returns
+    /// the best match with the source's attribution, so the caller can
+    /// detect mis-attribution (LLM text pasted via the human path).
+    /// Purely additive: does not modify the work, does not auto-transclude.
+    /// FR-58 self-declaration: record a submitter's declared author type
+    /// for a specific work revision. Purely additive — when absent,
+    /// the interface-inferred type is used (existing behaviour unchanged).
+    /// Mismatches between declared and interface-inferred types are
+    /// detection events, not errors.
+    pub fn record_declaration(
+        &mut self,
+        work_be_id: BeId,
+        revision: u64,
+        declaration: crate::server::mcp::Declaration,
+    ) {
+        self.declarations.insert((work_be_id, revision), declaration);
+    }
+
+    /// Retrieve a recorded declaration for a work revision, if any.
+    pub fn get_declaration(
+        &self,
+        work_be_id: BeId,
+        revision: u64,
+    ) -> Option<&crate::server::mcp::Declaration> {
+        self.declarations.get(&(work_be_id, revision))
+    }
+
+    pub fn paste_match_check(
+        &mut self,
+        session_id: SessionId,
+        pasted_text: &str,
+    ) -> Result<Option<crate::server::reuse_match::SuggestionCard>, ServerError> {
+        self.ensure_session(session_id)?;
+        // FR-90: normalise before matching so NFD paste (e.g. from macOS)
+        // matches NFC-normalised stored content
+        let pasted_text = &crate::edition::nfc::to_nfc(pasted_text);
+        if pasted_text.len() < 30 {
+            return Ok(None);
+        }
+        if pasted_text.len() > 8_000 {
+            return Err(ServerError::InvalidArgument(
+                "paste match text too long".into(),
+            ));
+        }
+        let ids: Vec<BeId> = self.works.keys().copied().collect();
+        for id in ids {
+            if self.reuse.needs_rebuild(id) {
+                match self.work_edition(id) {
+                    Ok(ed) => {
+                        let paras =
+                            crate::server::reuse_match::paragraphs_with_spans(&ed.to_text());
+                        self.reuse.rebuild(id, paras);
+                    }
+                    Err(_) => self.reuse.remove(id),
+                }
+            }
+        }
+        let cards = self.reuse.query(0, pasted_text);
+        let mut best: Option<crate::server::reuse_match::SuggestionCard> = None;
+        for mut card in cards {
+            if self.ensure_can_read(session_id, card.work_id).is_err() {
+                continue;
+            }
+            card.title = self
+                .works
+                .get(&card.work_id)
+                .map(|ws| ws.cached_title.clone())
+                .unwrap_or_default();
+            let is_better = match &best {
+                None => true,
+                Some(b) => card.windows > b.windows,
+            };
+            if is_better {
+                best = Some(card);
+            }
+        }
+        Ok(best)
+    }
     /// paths). Uses the shadow's cached text if available.
     pub fn lattice_shadow_read(&self, work_be_id: BeId) -> Option<String> {
         // FR-51 C-5 read path: served from the view cache (refreshed
@@ -28180,7 +28262,8 @@ pub(crate) mod persist_snapshot {
                 lattice_deferred: HashMap::new(),
                 lattice_shadow_enabled: false,
                 reuse_suggestions_enabled: false,
-                reuse: crate::server::reuse_match::ReuseService::new(),
+            reuse: crate::server::reuse_match::ReuseService::new(),
+            declarations: std::collections::HashMap::new(),
                 ots_anchor_enabled: false,
                 ots_anchor_requested: false,
                 log_checkpoint_entries_threshold: 10_000,
@@ -30910,6 +30993,48 @@ fn test_user2_credential() -> &'static [u8] {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn paste_match_detects_cross_authorship_reuse() {
+        let mut server = Server::new();
+        let session = server.connect();
+        server.login_public(session).unwrap();
+        let source = server
+            .create_work(session, Edition::from_text(
+                "The evidence supports the conclusion that transclusion is the correct mechanism for verifiable quotation in distributed systems."
+            ))
+            .unwrap();
+        let result = server.paste_match_check(session,
+            "The evidence supports the conclusion that transclusion is the correct mechanism for verifiable quotation"
+        ).unwrap();
+        assert!(result.is_some(), "should match the source work");
+        let card = result.unwrap();
+        assert_eq!(card.work_id, source);
+        assert!(card.windows > 0);
+    }
+
+    #[test]
+    fn paste_match_returns_none_for_original_text() {
+        let mut server = Server::new();
+        let session = server.connect();
+        server.login_public(session).unwrap();
+        server
+            .create_work(session, Edition::from_text("completely unrelated content about gardening"))
+            .unwrap();
+        let result = server.paste_match_check(session,
+            "This is entirely original prose that has never appeared in the docuverse before now."
+        ).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn paste_match_rejects_short_text() {
+        let mut server = Server::new();
+        let session = server.connect();
+        server.login_public(session).unwrap();
+        let result = server.paste_match_check(session, "too short").unwrap();
+        assert!(result.is_none());
+    }
+
     macro_rules! test_cred {
         ($($part:literal),*) => {{
             static CRED: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();

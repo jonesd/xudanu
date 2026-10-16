@@ -206,6 +206,7 @@ pub enum OperationCode {
     LatticeWriteDemote,
     SuggestionQuery,
     SuggestionConfigSet,
+    PasteMatchCheck,
     RevisionCompare,
     OtsAnchorStatus,
     OtsAnchorSetEnabled,
@@ -598,6 +599,7 @@ impl OperationCode {
         (0x0366, OperationCode::LatticeWriteDemote),
         (0x0358, OperationCode::SuggestionQuery),
         (0x0359, OperationCode::SuggestionConfigSet),
+        (0x0367, OperationCode::PasteMatchCheck),
         (0x035a, OperationCode::RevisionCompare),
         (0x035b, OperationCode::OtsAnchorStatus),
         (0x035c, OperationCode::OtsAnchorSetEnabled),
@@ -1170,6 +1172,9 @@ pub enum WireRequest {
     },
     SuggestionConfigSet {
         enabled: bool,
+    },
+    PasteMatchCheck {
+        text: String,
     },
     RevisionCompare {
         work_id: BeId,
@@ -5238,6 +5243,41 @@ mod lattice_shadow_wire_tests {
     use super::*;
 
     #[test]
+    fn op_codes_globally_unique() {
+        let mut seen: std::collections::HashMap<u16, String> = std::collections::HashMap::new();
+        for (wire, code) in OperationCode::OP_CODE_TABLE {
+            let name = format!("{:?}", code);
+            if let Some(prev) = seen.get(wire) {
+                let max = OperationCode::OP_CODE_TABLE.iter().map(|(w, _)| *w).max().unwrap();
+                panic!(
+                    "OP CODE COLLISION: 0x{:04X} maps to both {} and {}.\n\
+                     Fix: use OperationCode::next_free_code(0x0300, 0x03FF) — never hand-pick.\n\
+                     Current highest: 0x{:04X}",
+                    wire, prev, name, max
+                );
+            }
+            seen.insert(*wire, name);
+        }
+    }
+
+    #[test]
+    fn next_free_code_is_above_all_used() {
+        let next = OperationCode::next_free_code(0x0300, 0x03FF)
+            .expect("next_free_code should return a value");
+        let max_used = OperationCode::OP_CODE_TABLE
+            .iter()
+            .map(|(w, _)| *w)
+            .filter(|w| *w >= 0x0300 && *w <= 0x03FF)
+            .max()
+            .unwrap_or(0x0300);
+        assert!(
+            next > max_used,
+            "next_free_code (0x{:04X}) must be above the highest used code (0x{:04X})",
+            next, max_used
+        );
+    }
+
+    #[test]
     fn op_codes_round_trip() {
         for code in [
             OperationCode::LatticeShadowEnroll,
@@ -5249,6 +5289,7 @@ mod lattice_shadow_wire_tests {
             OperationCode::LatticeWriteDemote,
             OperationCode::SuggestionQuery,
             OperationCode::SuggestionConfigSet,
+            OperationCode::PasteMatchCheck,
             OperationCode::RevisionCompare,
             OperationCode::OtsAnchorStatus,
             OperationCode::OtsAnchorSetEnabled,
@@ -5336,6 +5377,7 @@ mod lattice_shadow_wire_tests {
             (0x0364, OperationCode::WorkDuplicate),
             (0x0365, OperationCode::LatticeWritePromote),
             (0x0366, OperationCode::LatticeWriteDemote),
+            (0x0367, OperationCode::PasteMatchCheck),
         ];
         for (wire, want) in targets {
             assert_eq!(OperationCode::from_u16(wire), Some(want));

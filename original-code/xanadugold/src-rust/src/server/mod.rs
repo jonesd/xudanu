@@ -36,6 +36,8 @@ pub mod hg_profile;
 pub mod ots_anchor;
 pub mod overlay_anchor;
 pub mod reuse_match;
+pub mod stylometric;
+pub mod stylometric_cross_tests;
 
 #[cfg(feature = "server")]
 pub mod ollama;
