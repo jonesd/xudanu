@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Ladder of Links — from the web you know to the system you don't</title>
+<meta name="description" content="Ten kinds of connection, from the one-way hyperlink to gathered end-sets — each one running, each one visible from both ends.">
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --text-muted: #8b949e;
+  --text-bright: #e6edf3;
+  --link-blue: #58a6ff;
+  --link-green: #3fb950;
+  --link-red: #f85149;
+  --link-purple: #a371f7;
+  --link-amber: #d29922;
+  --link-teal: #39d2c0;
+  --link-orange: #f0883e;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-mono: "SF Mono", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 0;
+  background: var(--bg); color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 16px; line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+main { max-width: 920px; margin: 0 auto; padding: 3rem 1.5rem 6rem; }
+h1 { font-size: 2rem; font-weight: 800; color: var(--text-bright); margin: 0 0 0.5rem; line-height: 1.2; }
+.subtitle { color: var(--text-muted); font-size: 1.1rem; margin-bottom: 3rem; }
+h2 { font-size: 1.35rem; font-weight: 700; color: var(--text-bright); margin: 3.5rem 0 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
+.rung-num { display: inline-block; width: 2rem; height: 2rem; border-radius: 50%; background: var(--surface); border: 1px solid var(--border); text-align: center; line-height: 2rem; font-size: 0.85rem; font-weight: 700; color: var(--text-muted); margin-right: 0.75rem; vertical-align: middle; }
+p { margin: 0 0 1.2rem; }
+.enable { color: var(--link-teal); font-style: italic; margin-top: 0.75rem; font-size: 0.95rem; }
+.enable::before { content: "→ "; }
+a { color: var(--link-blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* === Document rendering (mimics the actual UI) === */
+.doc {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1.25rem 1.5rem;
+  margin: 1.5rem 0;
+  position: relative;
+  overflow-x: auto;
+}
+.doc-title { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem; font-family: var(--font-mono); }
+.doc-text { font-size: 0.95rem; line-height: 2; }
+
+/* Colored underlines (the actual link rendering) */
+.u-blue   { text-decoration: underline; text-decoration-color: var(--link-blue);   text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.u-green  { text-decoration: underline; text-decoration-color: var(--link-green);  text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.u-red    { text-decoration: underline; text-decoration-color: var(--link-red);    text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.u-purple { text-decoration: underline; text-decoration-color: var(--link-purple); text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.u-amber  { text-decoration: underline; text-decoration-color: var(--link-amber);  text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.u-teal   { text-decoration: underline; text-decoration-color: var(--link-teal);   text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.u-orange { text-decoration: underline; text-decoration-color: var(--link-orange); text-decoration-thickness: 2px; text-underline-offset: 4px; }
+
+/* Margin bars (the actual rendering) */
+.margin-bar {
+  display: inline-block;
+  width: 3px; height: 1em;
+  border-radius: 2px;
+  vertical-align: text-bottom;
+  margin: 0 4px;
+}
+.mb-blue   { background: var(--link-blue); }
+.mb-green  { background: var(--link-green); }
+.mb-red    { background: var(--link-red); }
+.mb-purple { background: var(--link-purple); }
+.mb-amber  { background: var(--link-amber); }
+.mb-teal   { background: var(--link-teal); }
+.mb-orange { background: var(--link-orange); }
+
+/* Gathered chips (the actual rendering) */
+.chip {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 10px;
+  vertical-align: super;
+  margin-left: 2px;
+  font-family: var(--font-mono);
+}
+.chip-orange { background: rgba(240,136,62,0.15); color: var(--link-orange); border: 1px solid rgba(240,136,62,0.3); }
+.chip-red    { background: rgba(248,81,73,0.15);  color: var(--link-red);    border: 1px solid rgba(248,81,73,0.3); }
+
+/* Identity box (transclusion rendering) */
+.tbox {
+  display: inline-block;
+  border: 1.5px dashed var(--link-teal);
+  border-radius: 4px;
+  padding: 0.35em 0.6em;
+  margin: 0.15em 0;
+  position: relative;
+  background: rgba(57,210,192,0.04);
+  font-size: 0.95rem;
+}
+.tbox-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.65rem;
+  color: var(--link-teal);
+  font-family: var(--font-mono);
+  margin-right: 0.4em;
+}
+.tbox-tab::before { content: "↩"; font-size: 0.8em; }
+
+/* Connections panel (the actual right panel) */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
+  margin: 1rem 0;
+  font-size: 0.85rem;
+}
+.panel-header { font-weight: 700; color: var(--text-bright); margin-bottom: 0.5rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.panel-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.panel-row .type-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.panel-row .excerpt { color: var(--text-muted); font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Diagram containers */
+.diagram {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1.5rem;
+  margin: 1.5rem 0;
+  text-align: center;
+  overflow-x: auto;
+}
+.diagram svg { max-width: 100%; height: auto; }
+.diagram-label { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.75rem; font-style: italic; }
+
+/* Side-by-side documents */
+.doc-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.5rem 0; }
+@media (max-width: 700px) { .doc-pair { grid-template-columns: 1fr; } }
+
+/* Summary table */
+table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; font-size: 0.9rem; }
+th { text-align: left; padding: 0.5rem 0.75rem; color: var(--text-muted); font-weight: 600; border-bottom: 2px solid var(--border); }
+td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
+.yes { color: var(--link-green); } .no { color: var(--link-red); }
+
+/* Close section */
+.close { text-align: center; margin-top: 4rem; padding: 2rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+.close p { margin: 0.5rem 0; }
+.close .try { font-size: 1.1rem; font-weight: 700; color: var(--text-bright); }
+.close .links a { display: inline-block; margin: 0.5rem 1rem; font-size: 1rem; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>The Ladder of Links</h1>
+<p class="subtitle">From the web you know to the system you don't — ten kinds of connection, each one running.</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2><span class="rung-num">1</span>The one-way link <span style="font-weight:400;color:var(--text-muted);font-size:0.85rem;">(what you already know)</span></h2>
+
+<p>You already know this one. A hyperlink on a webpage:</p>
+
+<div class="doc">
+<div class="doc-title">any-webpage.html</div>
+<div class="doc-text">
+For more information, <a href="#" style="color:var(--link-blue);text-decoration:underline">click here</a>.
+</div>
+</div>
+
+<p>One direction. Points at a whole page. The target page has no idea who points at it. If the source page disappears, the link breaks. That's the web.</p>
+
+<div class="diagram">
+<svg width="500" height="80" viewBox="0 0 500 80">
+<rect x="20" y="15" width="180" height="50" rx="6" fill="#161b22" stroke="#30363d"/>
+<text x="110" y="45" text-anchor="middle" fill="#c9d1d9" font-size="13" font-family="sans-serif">Page A</text>
+<line x1="210" y1="40" x2="280" y2="40" stroke="#8b949e" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="290" y="15" width="180" height="50" rx="6" fill="#161b22" stroke="#30363d"/>
+<text x="380" y="45" text-anchor="middle" fill="#c9d1d9" font-size="13" font-family="sans-serif">Page B</text>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#8b949e"/></marker></defs>
+</svg>
+<div class="diagram-label">One direction. B doesn't know A exists.</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2><span class="rung-num">2</span>The bidirectional link <span style="font-weight:400;color:var(--text-muted);font-size:0.85rem;">(both ends see it)</span></h2>
+
+<p>Now imagine the same link, but <strong>both documents know about it</strong>. Document B can see who connected to it, without anyone editing Document B.</p>
+
+<div class="diagram">
+<svg width="500" height="80" viewBox="0 0 500 80">
+<rect x="20" y="15" width="180" height="50" rx="6" fill="#161b22" stroke="#58a6ff"/>
+<text x="110" y="38" text-anchor="middle" fill="#c9d1d9" font-size="13" font-family="sans-serif">Document A</text>
+<text x="110" y="55" text-anchor="middle" fill="#8b949e" font-size="10" font-family="sans-serif">"outgoing: to B"</text>
+<line x1="210" y1="40" x2="280" y2="40" stroke="#58a6ff" stroke-width="2" marker-end="url(#arrow-b)"/>
+<line x1="280" y1="45" x2="210" y2="45" stroke="#58a6ff" stroke-width="2" marker-end="url(#arrow-b)" opacity="0.5"/>
+<rect x="290" y="15" width="180" height="50" rx="6" fill="#161b22" stroke="#58a6ff"/>
+<text x="380" y="38" text-anchor="middle" fill="#c9d1d9" font-size="13" font-family="sans-serif">Document B</text>
+<text x="380" y="55" text-anchor="middle" fill="#58a6ff" font-size="10" font-family="sans-serif">"incoming: from A"</text>
+<defs><marker id="arrow-b" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="#58a6ff"/></marker></defs>
+</svg>
+<div class="diagram-label">Both ends see the same connection. Nobody edited Document B.</div>
+</div>
+
+<p>Here's what that looks like in the actual system — a real document with its Connections panel showing who linked to it:</p>
+
+<div class="doc">
+<div class="doc-title">Document B</div>
+<div class="doc-text">
+<span class="u-blue">The passage that was commented on.</span> It knows who connected to it.
+</div>
+<div class="panel">
+<div class="panel-header">Connections</div>
+<div class="panel-row">
+<span class="type-dot" style="background:var(--link-blue)"></span>
+<b>Comment</b> — from Document A: <span class="excerpt">"this claim needs more evidence..."</span>
+</div>
+</div>
+</div>
+
+<p class="enable">"Who disagrees with me?" is a query, not a research project.</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2><span class="rung-num">3</span>The typed link <span style="font-weight:400;color:var(--text-muted);font-size:0.85rem;">(connections carry meaning)</span></h2>
+
+<p>On the web, all links are the same — a hyperlink is a hyperlink. Here, each link has a <strong>type</strong> that says what kind of relationship it is. The type determines the colour of the underline.</p>
+
+<p>Here's a passage that two different people connected to, in different ways:</p>
+
+<div class="doc">
+<div class="doc-title">A passage being connected to</div>
+<div class="doc-text">
+<span class="u-blue">This claim about transclusion needs more evidence.</span>
+</div>
+</div>
+
+<p>The <span style="color:var(--link-blue)">blue underline</span> means one person made a <b>Comment</b>. Here's the same passage with a different kind of connection:</p>
+
+<div class="doc">
+<div class="doc-title">Same passage, different connection</div>
+<div class="doc-text">
+<span class="u-red">This claim about transclusion needs more evidence.</span>
+</div>
+</div>
+
+<p>The <span style="color:var(--link-red)">red underline</span> means someone <b>Disagrees</b> with this passage specifically — not the whole document, this exact sentence.</p>
+
+<p>There are six built-in types, each with its own colour:</p>
+
+<div class="doc">
+<div class="doc-title">All six types on one sentence</div>
+<div class="doc-text">
+<span class="u-blue">A comment</span> that doubts,
+<span class="u-green">a reference</span> that grounds,
+<span class="u-red">a disagreement</span> that pushes back,
+<span class="u-purple">a quotation</span> that borrows,
+<span class="u-amber">a see-also</span> that gestures sideways,
+and <span class="u-teal">a web link</span> that leaves the system.
+</div>
+</div>
+
+<div class="panel">
+<div class="panel-row"><span class="type-dot" style="background:var(--link-blue)"></span> <b>Comment</b> — "this passage makes me think..."</div>
+<div class="panel-row"><span class="type-dot" style="background:var(--link-green)"></span> <b>Reference</b> — "this is supported by..."</div>
+<div class="panel-row"><span class="type-dot" style="background:var(--link-red)"></span> <b>Disagreement</b> — "this specific claim is wrong because..."</div>
+<div class="panel-row"><span class="type-dot" style="background:var(--link-purple)"></span> <b>Quotation</b> — "this passage quotes..."</div>
+<div class="panel-row"><span class="type-dot" style="background:var(--link-amber)"></span> <b>See Also</b> — "these belong in one conversation"</div>
+<div class="panel-row"><span class="type-dot" style="background:var(--link-teal)"></span> <b>Web Link</b> — "this points outward"</div>
+</div>
+
+<p class="enable">"Show me only the disagreements" — filtering by relationship type.</p>
+
+<h2><span class="rung-num">4</span>The span-level link <span style="font-weight:400;color:var(--text-muted);font-size:0.85rem;">(passages, not pages)</span></h2>
+
+<p>Web links point at whole pages. Here, links point at <strong>specific passages</strong> — a sentence, a phrase, even a single word.</p>
+
+<div class="doc">
+<div class="doc-title">A document</div>
+<div class="doc-text">
+The evidence suggests that <span class="u-red">transclusion is the correct mechanism
+for verifiable quotation</span> in distributed systems, though
+<span class="u-amber">some disagree with the overhead claim</span>.
+</div>
+</div>
+
+<p>Two different links on two different passages in the same document. The red one disagrees with the mechanism claim. The amber one flags the overhead debate as a "see also." Each targets an exact span.</p>
+
+<p><strong>The link survives edits.</strong> If someone inserts a paragraph above the red-underlined sentence, the address tracks the content — not the position. The link still points at the same sentence.</p>
+
+<p class="enable">Cite the exact sentence you disagree with, not "somewhere in that document."</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2><span class="rung-num">5</span>The multi-ended link <span style="font-weight:400;color:var(--text-muted);font-size:0.85rem;">(one connection, many ends)</span></h2>
+
+<p>A regular link has two ends: origin and destination. But here, a single link can have <strong>three, four, five ends</strong>. Not a chain of links — one connection with multiple endpoints.</p>
+
+<div class="diagram">
+<svg width="600" height="160" viewBox="0 0 600 160">
+<rect x="20" y="55" width="140" height="50" rx="6" fill="#161b22" stroke="#d29922"/>
+<text x="90" y="85" text-anchor="middle" fill="#c9d1d9" font-size="13" font-family="sans-serif">One passage</text>
+<path d="M 170 80 Q 250 40 340 30" fill="none" stroke="#58a6ff" stroke-width="2"/>
+<path d="M 170 80 Q 250 80 340 80" fill="none" stroke="#3fb950" stroke-width="2"/>
+<path d="M 170 80 Q 250 120 340 130" fill="none" stroke="#f85149" stroke-width="2"/>
+<rect x="340" y="10" width="180" height="38" rx="6" fill="#161b22" stroke="#58a6ff"/>
+<text x="430" y="34" text-anchor="middle" fill="#58a6ff" font-size="11" font-family="sans-serif">Target A (Comment)</text>
+<rect x="340" y="62" width="180" height="38" rx="6" fill="#161b22" stroke="#3fb950"/>
+<text x="430" y="86" text-anchor="middle" fill="#3fb950" font-size="11" font-family="sans-serif">Target B (Reference)</text>
+<rect x="340" y="114" width="180" height="38" rx="6" fill="#161b22" stroke="#f85149"/>
+<text x="430" y="138" text-anchor="middle" fill="#f85149" font-size="11" font-family="sans-serif">Target C (Disagreement)</text>
+</svg>
+<div class="diagram-label">One passage, three ends — one connection, not three links.</div>
+</div>
+
+<p>Here's what it looks like in the actual rendering — one word carrying five connections:</p>
+
+<div class="doc">
+<div class="doc-title">The Junction Word</div>
+<div class="doc-text">
+One word can be a station.
+The word <span class="u-amber">everywhere</span> below is the
+meeting point of five departing connections — five colours,
+five destinations, one passage.
+</div>
+</div>
+
+<p class="enable">"These three documents, connected at this one point" — a junction, not a list.</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2><span class="rung-num">6</span>The gathered end-set <span style="font-weight:400;color:var(--text-muted);font-size:0.85rem;">(many passages, one voice)</span></h2>
+
+<p>This is the one nobody has seen before. <strong>A gathered end-set is multiple passages — from different documents — acting as one end of a connection.</strong> Not three separate links. One connection, with one end made of three passages.</p>
+
+<div class="doc-pair">
+<div>
+<div class="doc">
+<div class="doc-title">Claim 1</div>
+<div class="doc-text">
+<span class="u-red">The first claim<span class="chip chip-red">1 of 3</span></span>
+that together dispute the rebuttal.
+</div>
+</div>
+<div class="doc">
+<div class="doc-title">Claim 2</div>
+<div class="doc-text">
+<span class="u-red">The second claim<span class="chip chip-red">2 of 3</span></span>
+from a different document.
+</div>
+</div>
+<div class="doc">
+<div class="doc-title">Claim 3</div>
+<div class="doc-text">
+<span class="u-red">The third claim<span class="chip chip-red">3 of 3</span></span>
+from yet another source.
+</div>
+</div>
+</div>
+<div>
+<div class="doc">
+<div class="doc-title">The Rebuttal</div>
+<div class="doc-text">
+<span class="u-red">All three claims rest on four-week windows
+measured in a seasonal trough.</span> One year-over-year view
+would dissolve the entire argument.
+</div>
+<div class="panel">
+<div class="panel-header">This connection</div>
+<div class="panel-row">
+<span class="type-dot" style="background:var(--link-red)"></span>
+<b>Disagreement</b> · 4 ends
+</div>
+<div class="panel-row" style="padding-left:1.5rem; color:var(--text-muted)">
+├─ gathered end (3 passages)
+</div>
+<div class="panel-row" style="padding-left:1.5rem; color:var(--text-muted)">
+└─ this passage (the rebuttal)
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<p>The three passages aren't three separate links — they're <strong>one end of one connection</strong>, gathered. The chips ("1 of 3") are the visual indicator. Together they fill one blank in the connection.</p>
+
+<p><strong>This is not a list, not a tag, not a folder.</strong> It's a structural unit. If you add a fourth claim, the gathering grows. If you remove one, it shrinks. The connection stays. The evidence is the unit, not any single passage.</p>
+
+<table>
+<tr><th>Example</th><th>The gathering</th><th>Connects to</th></tr>
+<tr><td>Evidence</td><td>five quotes from five papers</td><td>the claim they jointly support</td></tr>
+<tr><td>Bill of materials</td><td>the parts that compose an assembly</td><td>the assembly</td></tr>
+<tr><td>Consensus</td><td>passages from different authors agreeing</td><td>the point of agreement</td></tr>
+<tr><td>Rebuttal</td><td>three disputed claims</td><td>the one rebuttal answering all three</td></tr>
+</table>
+
+<p class="enable">A bill of materials, a multi-source citation, "these five quotes together support this claim." — <a href="https://xudanu.com">see the Rebuttal Constellation live</a>.</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2><span class="rung-num">7</span>The link-about-link <span style="font-weight:400;color:var(--text-muted);font-size:0.85rem;">(commentary on a connection)</span></h2>
+
+<p>You can comment on a connection itself — not on either document, but on the relationship between them. The commentary attaches to the link.</p>
+
+<div class="doc-pair">
+<div class="doc">
+<div class="doc-title">Document A</div>
+<div class="doc-text">
+<span class="u-red">This passage disagrees</span> with Document B.
+</div>
+</div>
+<div class="doc">
+<div class="doc-title">Document B</div>
+<div class="doc-text">
+<span class="u-red">The disputed passage.</span>
+</div>
+</div>
+</div>
+<div class="panel">
+<div class="panel-header">Commentary on this connection</div>
+<div class="panel-row">
+<span class="type-dot" style="background:var(--link-blue)"></span>
+<b>Note:</b> this disagreement is about methodology, not the conclusion — both authors agree on the finding.
+</div>
+</div>
+
+<p class="enable">Meta-discussion: "the connection between these two ideas is itself problematic."</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2><span class="rung-num">8</span>The transclusion <span style="font-weight:400;color:var(--text-muted);font-size:0.85rem;">(a live window, not a copy)</span></h2>
+
+<p>Not a link. Not a copy. A <strong>live window</strong> onto text that lives in another document. Edit the source and this updates. The window carries the source's identity.</p>
+
+<div class="doc">
+<div class="doc-title">A document containing a transclusion</div>
+<div class="doc-text">
+The evidence suggests the following:
+<span class="tbox"><span class="tbox-tab">source doc</span>transclusion is inclusion by reference, preserving the identity of the original passage</span>
+which is why this matters for verifiable quotation.
+</div>
+</div>
+
+<p>The dashed border means "this text lives elsewhere." If the source document is edited, the window updates. If 1,000 documents quote the same passage, it's stored once and referenced 999 times.</p>
+
+<p class="enable">Quoting without copying. Identity preserved. <a href="https://xudanu.com">See the Live Window in the Gallery</a>.</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2><span class="rung-num">9</span>The trail <span style="font-weight:400;color:var(--text-muted);font-size:0.85rem;">(a curated path)</span></h2>
+
+<p>A sequence of documents, curated as a reading path. Not a link between two things — a path through many. Bush's associative trails, made structural.</p>
+
+<div class="panel">
+<div class="panel-header">The Curator's Tour</div>
+<div class="panel-row"><span style="color:var(--link-amber)">1.</span> Start at the Lobby</div>
+<div class="panel-row"><span style="color:var(--link-amber)">2.</span> The Spectrum Sentence — six types at once</div>
+<div class="panel-row"><span style="color:var(--link-amber)">3.</span> The Junction Word — five ends</div>
+<div class="panel-row"><span style="color:var(--link-amber)">4.</span> The Rebuttal Constellation — gathering</div>
+<div class="panel-row"><span style="color:var(--link-amber)">5.</span> The Live Window — transclusion</div>
+</div>
+
+<p class="enable">A guided tour, a curriculum, an argument that builds across documents.</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2><span class="rung-num">10</span>The exhibition <span style="font-weight:400;color:var(--text-muted);font-size:0.85rem;">(membership by connection)</span></h2>
+
+<p>A group of works defined by a <span class="u-orange">gathers</span> link from a cover document. Not a folder, not a tag — membership by connection. Crossing the boundary is indicated to the reader, never a barrier.</p>
+
+<div class="doc">
+<div class="doc-title">The Gallery of Unusual Connections</div>
+<div class="doc-text">
+<span class="u-orange">Wing I</span> · <span class="u-orange">Wing II</span> · <span class="u-orange">Wing III</span> — three exhibitions,
+each defined by a <span class="u-orange">gathers</span> link from the cover to each member work.
+</div>
+</div>
+
+<p class="enable">Curated collections, thematic groupings — the exhibition is itself a work.</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>Summary</h2>
+
+<table>
+<tr><th>#</th><th>Link type</th><th>One-line summary</th><th>The web?</th></tr>
+<tr><td>1</td><td>One-way link</td><td>points at a page</td><td class="yes">✓</td></tr>
+<tr><td>2</td><td>Bidirectional</td><td>both ends see it</td><td class="no">✗</td></tr>
+<tr><td>3</td><td>Typed</td><td>connections carry meaning</td><td class="no">✗</td></tr>
+<tr><td>4</td><td>Span-level</td><td>links point at passages</td><td class="no">✗</td></tr>
+<tr><td>5</td><td>Multi-ended</td><td>one link, many ends</td><td class="no">✗</td></tr>
+<tr><td>6</td><td><b>Gathered end-set</b></td><td><b>many passages, one voice</b></td><td class="no">✗</td></tr>
+<tr><td>7</td><td>Link-about-link</td><td>commentary on connections</td><td class="no">✗</td></tr>
+<tr><td>8</td><td>Transclusion</td><td>live windows, not copies</td><td class="no">✗</td></tr>
+<tr><td>9</td><td>Trail</td><td>curated reading paths</td><td class="no">✗</td></tr>
+<tr><td>10</td><td>Exhibition</td><td>membership by connection</td><td class="no">✗</td></tr>
+</table>
+
+<div class="close">
+<p class="try">Every one of these is running now.</p>
+<p class="links">
+<a href="https://xudanu.com">Read at xudanu.com</a>
+<a href="https://demo.transclusion.org">Write at demo.transclusion.org</a>
+<a href="https://github.com/jonesd/xudanu">Source at GitHub</a>
+</p>
+<p style="color:var(--text-muted);font-size:0.85rem;margin-top:1rem;">
+The document model descends from Ted Nelson's 1960 hypertext design.<br>
+Apache 2.0 · one binary · no account needed to read.
+</p>
+</div>
+
+</main>
+</body>
+</html>
