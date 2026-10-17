@@ -1081,6 +1081,9 @@ pub struct Server {
     /// FR-83: set while the post-bind background chunk verification
     /// (lazy restore) is walking the store; surfaced in /health.
     background_verifying: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// FR-83 slice 3: set by restore, cleared by the next checkpoint
+    /// commit — the schema-drift self-heal is deferred post-bind.
+    self_heal_pending: bool,
     tickets_dirty: bool,
 }
 
@@ -1819,6 +1822,7 @@ impl Server {
             // FR-83: true while the post-bind background chunk
             // verification is walking the store (lazy restore only).
             background_verifying: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            self_heal_pending: false,
             // TODO: Annotations use a simple HashMap for pragmatic first implementation.
             // Migrate to Ent/AssertionStore (src/ent/content.rs) for proper versioning,
             // transclusion survival, and materialize_annotation_indexed support.
@@ -11239,6 +11243,8 @@ impl Server {
                 .map_err(|e| ServerError::Internal(e.to_string()))?;
 
             self.migrate_link_spans_for_delta(work_be_id, ops);
+            // Annotations shift inside the otree apply itself (the
+            // a1_* tests) — a second migration here would double-shift.
             // FR-38 S3: maintain the span key map through the same
             // ops — inserts allocate between neighbours, deletes
             // retire. Best-effort: works without an initialized map
@@ -15164,18 +15170,21 @@ impl Server {
         Ok(())
     }
 
-    /// Schema-drift self-heal: write a checkpoint immediately after
-    /// restore so new default fields are persisted on THIS startup,
-    /// not deferred to the next autosave. Eliminates the repeated
-    /// SCHEMA DRIFT warning.
-    pub fn checkpoint_after_restore(&mut self) -> std::io::Result<()> {
-        if self.chunk_store().is_some() {
-            self.checkpoint_to_store()?;
-            tracing::info!(
-                "[restore] schema-drift self-heal: checkpoint written with current schema"
-            );
-        }
-        Ok(())
+    /// FR-83 slice 3: restore marks the schema-drift self-heal as
+    /// pending; the serving binary runs the checkpoint post-bind
+    /// (bind-first boot) instead of blocking the port on it.
+    /// /health reports it as `self_heal`; any successful checkpoint
+    /// commit clears it.
+    pub fn mark_self_heal_pending(&mut self) {
+        self.self_heal_pending = true;
+    }
+
+    pub fn self_heal_pending(&self) -> bool {
+        self.self_heal_pending
+    }
+
+    pub fn clear_self_heal_pending(&mut self) {
+        self.self_heal_pending = false;
     }
 
     pub fn restore_from_data_dir(
@@ -16583,6 +16592,12 @@ impl Server {
         self.rebuild_link_canopy();
 
         self.rebuild_pending_attributions();
+
+        // FR-83 slice 3: defer the schema-drift self-heal checkpoint
+        // to post-bind — restore never blocks serving on it.
+        if self.chunk_store.is_some() {
+            self.mark_self_heal_pending();
+        }
 
         Ok(())
     }
@@ -19915,6 +19930,7 @@ impl Server {
             if !ops.is_empty() {
                 self.migrate_link_spans_for_delta(work_id, &ops);
                 self.migrate_inline_transclusions_for_delta(work_id, &ops);
+                self.migrate_annotation_spans_for_delta(work_id, &ops);
             }
         }
         let edition = crate::edition::Edition::from_text_batched(text);
@@ -20661,6 +20677,7 @@ impl Server {
             "background_verification": self
                 .background_verifying
                 .load(std::sync::atomic::Ordering::Relaxed),
+            "self_heal": self.self_heal_pending,
             "works": self.works.len(),
             "archived_works": self.archived_work_count(),
             "dirty_works": self
@@ -23097,6 +23114,55 @@ impl Server {
         let affected_clone = affected_for_cache.clone();
         for wid in affected_clone {
             let _ = self.stamp_structural_transclusion_cache(wid);
+        }
+    }
+
+    /// Migrate annotation char spans through a text delta — the same
+    /// treatment links and inline transclusions get. Without this,
+    /// any text change before an annotation leaves its span on the
+    /// wrong characters (formatting/highlight drift; found via the
+    /// QA battery, October 2026: a highlight at [10,20] stayed put
+    /// after a 5-char prefix insert via work_set_text).
+    pub fn migrate_annotation_spans_for_delta(
+        &mut self,
+        work_id: BeId,
+        ops: &[crate::server::transport::protocol::TextDeltaOp],
+    ) {
+        use crate::edition::compound::{map_span_through_delta, DeltaOp};
+
+        let delta_ops: Vec<DeltaOp> = ops
+            .iter()
+            .map(|op| match op {
+                crate::server::transport::protocol::TextDeltaOp::Retain { count } => {
+                    DeltaOp::Retain(*count as usize)
+                }
+                crate::server::transport::protocol::TextDeltaOp::Insert { text } => {
+                    DeltaOp::Insert(text.chars().count())
+                }
+                crate::server::transport::protocol::TextDeltaOp::Delete { count } => {
+                    DeltaOp::Delete(*count as usize)
+                }
+            })
+            .collect();
+
+        let Ok(anns) = self.otree_crdt.annotation_list(work_id) else {
+            return;
+        };
+        let updates: Vec<(u64, usize, usize)> = anns
+            .iter()
+            .filter_map(|a| {
+                let (ns, ne) = map_span_through_delta(a.char_start, a.char_end, &delta_ops);
+                if ns != a.char_start || ne != a.char_end {
+                    Some((a.annotation_id, ns, ne))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for (annotation_id, char_start, char_end) in updates {
+            let _ = self
+                .otree_crdt
+                .annotation_update_range(work_id, annotation_id, char_start, char_end);
         }
     }
 
@@ -28348,6 +28414,7 @@ pub(crate) mod persist_snapshot {
                 background_verifying: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(
                     false,
                 )),
+                self_heal_pending: false,
             };
             for club_snap in &snapshot.clubs {
                 let work = club_snap
@@ -29815,6 +29882,7 @@ pub(crate) mod persist_snapshot {
 
             self.last_persisted_work_count = self.works.len() + self.quarantined_works.len();
             self.dirty_clubs.clear();
+            self.self_heal_pending = false;
             self.save_key_history();
 
             if let Err(e) = self.gc_orphaned_chunks() {
@@ -31881,6 +31949,48 @@ mod tests {
 
         let restored = Server::restore_from_file(&dir.snapshot_path()).unwrap();
         assert_eq!(restored.work_count(), 0);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn self_heal_flag_deferred_until_checkpoint_commits() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_selfheal_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        {
+            let mut s = Server::new();
+            s.init_data_dir(&data_dir, None).unwrap();
+            let sid = s.connect();
+            s.login_public(sid).unwrap();
+            let _ = s
+                .create_work(sid, crate::edition::Edition::from_text("drift me"))
+                .unwrap();
+            s.checkpoint_to_store().unwrap();
+        }
+        let mut r = Server::new();
+        assert!(!r.self_heal_pending(), "fresh server has no heal pending");
+        r.restore_from_data_dir(&data_dir, None).unwrap();
+        assert!(
+            r.self_heal_pending(),
+            "restore must mark the self-heal pending (FR-83 slice 3)"
+        );
+        assert!(
+            r.health_json().contains("\"self_heal\":true"),
+            "/health must surface self_heal while pending"
+        );
+        r.checkpoint_to_store().unwrap();
+        assert!(
+            !r.self_heal_pending(),
+            "a successful checkpoint commit clears the heal flag"
+        );
+        assert!(r.health_json().contains("\"self_heal\":false"));
+
+        let _ = std::fs::remove_dir_all(&data_dir);
     }
 
     #[test]
@@ -49542,6 +49652,30 @@ mod tests {
     /// work_set_text must migrate link spans through the old->new
     /// diff — the 2026-09-18 incident: a ## artifact cleanup shifted
     /// text and silently detached two links from their heading.
+    #[test]
+    fn work_set_text_migrates_annotation_spans() {
+        let (mut server, sid) = setup_logged_in_server();
+        let work = server
+            .create_work(sid, Edition::from_text("0123456789ABCDEFGHIJKLMNOPQRST"))
+            .unwrap();
+        server
+            .annotation_create(sid, work, 9001, "highlight".into(), String::new(), 10, 20, false)
+            .unwrap();
+
+        // 5-char prefix insert shifts the span right by 5
+        server
+            .work_set_text(sid, work, "XXXXX0123456789ABCDEFGHIJKLMNOPQRST")
+            .unwrap();
+
+        let anns = server.otree_crdt.annotation_list(work).unwrap();
+        let a = anns.iter().find(|a| a.annotation_id == 9001).unwrap();
+        assert_eq!(
+            (a.char_start, a.char_end),
+            (15, 25),
+            "annotation span must shift with the text (QA battery B2)"
+        );
+    }
+
     #[test]
     fn work_set_text_migrates_link_spans() {
         let (mut server, sid) = setup_logged_in_server();

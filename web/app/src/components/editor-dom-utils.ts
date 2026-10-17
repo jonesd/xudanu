@@ -184,7 +184,9 @@ export function buildTransclusionDom(
     }
   }
 
-  setCursorOffset(el, savedCursor);
+  if (savedCursor != null) {
+    setCursorOffset(el, savedCursor);
+  }
 }
 
 export function insertInlineImages(

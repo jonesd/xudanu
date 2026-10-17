@@ -316,7 +316,7 @@ impl BackfollowEngine {
         // (crums, dagwood, assertions) is unchanged. Returns the
         // journalable delta.
         let delta = self.update_work_delta(work_id, old_edition, new_work);
-        let new_edition = new_work.current_edition();
+        let _new_edition = new_work.current_edition();
 
         let parent_tp = self
             .edition_metas

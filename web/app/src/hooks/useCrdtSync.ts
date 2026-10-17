@@ -32,7 +32,7 @@ export interface CrdtSyncState {
   login: (clubName: string, password: string) => Promise<void>;
   createIdentity: (displayName: string, password: string) => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
-  createWork: () => Promise<number | null>;
+  createWork: () => Promise<number>;
   shareWork: () => Promise<void>;
   unshareWork: () => Promise<void>;
   narrateDiff: () => Promise<{ text: string; model: string; updatedText: string }>;
@@ -53,9 +53,29 @@ export interface CrdtSyncState {
   createAnnotation: (kind: string, payload: string, charStart: number, charEnd: number, isPrivate?: boolean) => Promise<void>;
   deleteAnnotation: (annotationId: number) => Promise<void>;
   connectionEpoch: number;
+  switchError: string | null;
   isAdmin: boolean;
   canEdit: boolean;
   recentChanges: ChangeHighlight[];
+}
+
+/**
+ * Extract a work id from a work_create response. The v2 wire
+ * envelope tags the value ({type:"id", value:N}); some paths wrap
+ * once more ({value: N}) or use {work_id: N}. Returns null when no
+ * id can be found — callers must treat that as a loud failure, never
+ * a silent no-op (the editor would keep showing the previous work).
+ */
+export function parseWorkCreateResponse(resp: unknown): number | null {
+  const r = resp as Record<string, unknown> | null;
+  const val =
+    r && typeof r === "object" && "value" in r ? r.value : resp;
+  if (typeof val === "number") return val;
+  if (val && typeof val === "object" && "work_id" in val) {
+    const wid = (val as Record<string, unknown>).work_id;
+    if (typeof wid === "number") return wid;
+  }
+  return null;
 }
 
 export function useCrdtSync(
@@ -69,6 +89,7 @@ export function useCrdtSync(
   const [offlineReading, setOfflineReading] = useState(false);
   const [accessDeniedWorkId, setAccessDeniedWorkId] = useState<number | null>(null);
   const [switchingWork, setSwitchingWork] = useState(false);
+  const [switchError, setSwitchError] = useState<string | null>(null);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [awareness, setAwareness] = useState<AwarenessState[]>([]);
@@ -213,12 +234,22 @@ export function useCrdtSync(
   useEffect(() => {
     if (!connected || workBeId === null) return;
     setAccessDeniedWorkId(null);
+    setSwitchError(null);
     setSwitchingWork(true);
     const client = clientRef.current;
     if (client) {
-      client.switchWork(workBeId).finally(() => {
-        setSwitchingWork(false);
-      });
+      client
+        .switchWork(workBeId)
+        .catch((e: unknown) => {
+          // A failed switch must never leave the user silently
+          // viewing the previous work's text.
+          setSwitchError(
+            e instanceof Error ? e.message : String(e),
+          );
+        })
+        .finally(() => {
+          setSwitchingWork(false);
+        });
     }
     // Send initial presence so other sessions see us immediately
     const t = setTimeout(() => {
@@ -478,18 +509,24 @@ export function useCrdtSync(
     await client.clubSetPassword(identity.club_id, newPassword);
   }, [identity]);
 
-  const createWork = useCallback(async (): Promise<number | null> => {
-    const client = clientRef.current;
-    if (!client || !client.isConnected()) return null;
-    const resp = await client.sendRequest("work_create", {
-      edition: { text: "" },
-    });
-    const r = resp as Record<string, unknown>;
-    const val = (r && typeof r === "object" && "value" in r) ? r.value : resp;
-    if (typeof val === "number") return val;
-    if (val && typeof val === "object" && "work_id" in val) return (val as Record<string, unknown>).work_id as number;
-    return null;
-  }, []);
+  const createWork = useCallback(async (): Promise<number> => {
+  const client = clientRef.current;
+  if (!client || !client.isConnected()) {
+    throw new Error(
+      "Not connected — the document was not created. Try again once the connection is back.",
+    );
+  }
+  const resp = await client.sendRequest("work_create", {
+    edition: { text: "" },
+  });
+  const id = parseWorkCreateResponse(resp);
+  if (id === null) {
+    throw new Error(
+      "Unexpected work_create response — the document may exist; check the library.",
+    );
+  }
+  return id;
+}, []);
 
   const shareWork = useCallback(async (): Promise<void> => {
     const client = clientRef.current;
@@ -689,7 +726,7 @@ export function useCrdtSync(
   }, [workBeId, annotations, refreshAnnotations]);
 
   return {
-    text, saveState, connected, authenticated, reconnectAttempt, switchingWork, awareness, setText, setTextLocal, sendCursor, sendSelection,
+    text, saveState, connected, authenticated, reconnectAttempt, switchingWork, switchError, awareness, setText, setTextLocal, sendCursor, sendSelection,
     offlineReading,
     accessDeniedWorkId,
     contentMatches, watchEnabled, toggleWatch, clientRef,

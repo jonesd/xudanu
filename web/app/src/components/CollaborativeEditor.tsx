@@ -4,7 +4,7 @@ import type { AttributionSpan, TransclusionMarker, AnnotationEntry, SpanRangePay
 import type { PendingTransclusion } from "../hooks/useTransclusion";
 import { authorColor } from "../author-color";
 import { TextBuffer } from "../api/text_buffer";
-import { extractStyleMarks, buildStyledText, getCursorOffset, setCaretModel, findUrls } from "../styled-text";
+import { extractStyleMarks, buildStyledText, getCursorOffset, setCaretModel, findUrls, modelOffsetFromPoint } from "../styled-text";
 
 import {
   getTextContent,
@@ -1512,6 +1512,10 @@ export function CollaborativeEditor({
       }
     }
     lastMarksRef.current = combinedKey;
+    // Preserve focus across the rebuild: a rebuild that lands while
+    // the editor holds focus must not silently drop the caret (the
+    // "cursor disappears after a pause" bug).
+    const hadFocus = el.contains(document.activeElement) || document.activeElement === el;
     const savedCursor = getCursorOffset(el);
     try {
         const html = buildStyledText(displayText, styleMarks, linkOpts);
@@ -1523,6 +1527,7 @@ export function CollaborativeEditor({
         if (displayText.endsWith("\n")) {
           el.appendChild(document.createTextNode("\u200B"));
         }
+      if (hadFocus) el.focus();
       setCaretModel(el, savedCursor);
     } catch (e) {
       console.error("[style-marks] rebuild failed, falling back to plain text:", e);
@@ -1581,6 +1586,7 @@ export function CollaborativeEditor({
     const marksChanged = marksKey !== lastMarksRef.current;
     lastMarksRef.current = marksKey;
     if (currentText !== displayText || marksChanged) {
+      const hadFocus = el.contains(document.activeElement) || document.activeElement === el;
       const savedCursor = getCursorOffset(el);
       try {
         if (displayText.length > LARGE_DOC_THRESHOLD) {
@@ -1598,6 +1604,7 @@ export function CollaborativeEditor({
             el.appendChild(document.createTextNode("\u200B"));
           }
         }
+        if (hadFocus) el.focus();
         setCaretModel(el, savedCursor);
       } catch (e) {
         console.error("[editor] DOM rebuild failed, falling back to plain text:", e);
@@ -1624,6 +1631,36 @@ export function CollaborativeEditor({
       });
     }
   }, [displayText, inlineResolvedText, hasInlineTransclusions, hasInlineBlobs, compoundSpanRanges, compoundSourceTitles, blobEntries]);
+
+  // Returning to the tab/page restores editor focus — but ONLY if the
+  // editor held it when the user left. Without this the user must
+  // click into the page before every keystroke registers.
+  useEffect(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    let hadFocus = false;
+    const mark = () => {
+      hadFocus = el.contains(document.activeElement) || document.activeElement === el;
+    };
+    const restore = () => {
+      if (hadFocus) {
+        hadFocus = false;
+        el.focus();
+      }
+    };
+    const onVisibility = () => {
+      if (document.hidden) mark();
+      else restore();
+    };
+    window.addEventListener("blur", mark);
+    window.addEventListener("focus", restore);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("blur", mark);
+      window.removeEventListener("focus", restore);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
 
   useEffect(() => {
     if (text === "") {
@@ -2045,14 +2082,8 @@ export function CollaborativeEditor({
       return { start: 0, end: 0 };
     }
     const range = sel.getRangeAt(0);
-    const pre = document.createRange();
-    pre.selectNodeContents(el);
-    pre.setEnd(range.startContainer, range.startOffset);
-    // FR-74 position fix: strip ZWSP (DOM-only artifact) so the
-    // reported position matches the MODEL text exactly
-    const start = pre.toString().replace(/\u200B/g, "").length;
-    pre.setEnd(range.endContainer, range.endOffset);
-    const end = pre.toString().length;
+    const start = modelOffsetFromPoint(el, range.startContainer, range.startOffset);
+    const end = modelOffsetFromPoint(el, range.endContainer, range.endOffset);
     return { start, end };
   }, []);
 
@@ -2073,9 +2104,18 @@ export function CollaborativeEditor({
   }, [getSelectionInEditor]);
 
   const restoreUndoEntry = useCallback((entry: UndoEntry, stack: "undo" | "redo") => {
-    isUndoRedoing.current = true;
     const el = editorRef.current;
-    if (!el) { isUndoRedoing.current = false; return; }
+    if (!el) return;
+    // Undo must never blank a non-empty document: early undo
+    // snapshots hold "" (the doc's birth state), and restoring one
+    // COMMITS a delete-all — observed live as revision "-48 chars,
+    // 100% changed" on work 0x6b5. Deliberate blanking is
+    // select-all-delete, never undo.
+    if (entry.text === "" && lastText.current !== "") {
+      console.warn("[undo] refused to restore empty text over non-empty document");
+      return;
+    }
+    isUndoRedoing.current = true;
     const prevText = lastText.current;
     const { start: prevStart, end: prevEnd } = getSelectionInEditor();
     if (entry.text === "") {
@@ -2136,6 +2176,28 @@ export function CollaborativeEditor({
     }
   }, [onTextChange, editable, pushUndo, hasInlineTransclusions]);
 
+  const performUndo = useCallback(() => {
+    if (undoTimer.current !== null) {
+      clearTimeout(undoTimer.current);
+      undoTimer.current = null;
+    }
+    const entry = undoStack.current.pop();
+    if (entry) {
+      restoreUndoEntry(entry, "undo");
+    } else if (onUndoLastTransclusion) {
+      onUndoLastTransclusion();
+    }
+  }, [restoreUndoEntry, onUndoLastTransclusion]);
+
+  const performRedo = useCallback(() => {
+    if (undoTimer.current !== null) {
+      clearTimeout(undoTimer.current);
+      undoTimer.current = null;
+    }
+    const entry = redoStack.current.pop();
+    if (entry) restoreUndoEntry(entry, "redo");
+  }, [restoreUndoEntry]);
+
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (!editable) { e.preventDefault(); return; }
     if (e.key === "Backspace" || e.key === "Delete") {
@@ -2180,26 +2242,12 @@ export function CollaborativeEditor({
     }
     if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
       e.preventDefault();
-      if (undoTimer.current !== null) {
-        clearTimeout(undoTimer.current);
-        undoTimer.current = null;
-      }
-      const entry = undoStack.current.pop();
-      if (entry) {
-        restoreUndoEntry(entry, "undo");
-      } else if (onUndoLastTransclusion) {
-        onUndoLastTransclusion();
-      }
+      performUndo();
       return;
     }
     if ((e.ctrlKey || e.metaKey) && (e.key === "Z" || e.key === "y")) {
       e.preventDefault();
-      if (undoTimer.current !== null) {
-        clearTimeout(undoTimer.current);
-        undoTimer.current = null;
-      }
-      const entry = redoStack.current.pop();
-      if (entry) restoreUndoEntry(entry, "redo");
+      performRedo();
       return;
     }
     if ((e.ctrlKey || e.metaKey) && e.altKey && e.key === "a") {
@@ -2342,7 +2390,32 @@ export function CollaborativeEditor({
       const end = start + sel.toString().length;
       if (start < end) onToggleStyle("italic", start, end);
     }
-  }, [handleInput, editable, onCreateAnnotation, onUndoLastTransclusion, restoreUndoEntry, onToggleStyle]);
+  }, [handleInput, editable, onCreateAnnotation, onUndoLastTransclusion, restoreUndoEntry, onToggleStyle, performUndo, performRedo]);
+
+  // Page-level undo fallback: Cmd+Z pressed while the editor has lost
+  // focus (the caret-disappearance bug class) previously reached no
+  // handler at all — the user's undo silently did nothing. Routes the
+  // keystroke to the editor's stack unless another surface already
+  // consumed it (defaultPrevented) or owns it (inputs, foreign
+  // editables).
+  useEffect(() => {
+    if (!editable) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
+      const t = e.target as HTMLElement | null;
+      if (t && t !== document.body) {
+        const tag = t.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+        if (t.isContentEditable && !editorRef.current?.contains(t)) return;
+      }
+      e.preventDefault();
+      if (e.shiftKey) performRedo();
+      else performUndo();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [editable, performUndo, performRedo]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     if (!editable) { e.preventDefault(); return; }
@@ -2372,26 +2445,17 @@ export function CollaborativeEditor({
 
   const handleSelectionChange = useCallback(() => {
     const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0 || !editorRef.current?.contains(sel.anchorNode)) {
+    const el = editorRef.current;
+    if (!sel || sel.rangeCount === 0 || !el?.contains(sel.anchorNode)) {
       return;
     }
     const range = sel.getRangeAt(0);
-    const el = editorRef.current;
-
-    const pre = document.createRange();
-    pre.selectNodeContents(el);
-    pre.setEnd(range.startContainer, range.startOffset);
-    // FR-74 position fix: strip ZWSP (DOM-only artifact) so the
-    // reported position matches the MODEL text exactly
-    const start = pre.toString().replace(/\u200B/g, "").length;
+    const start = modelOffsetFromPoint(el, range.startContainer, range.startOffset);
 
     if (sel.isCollapsed) {
       onCursorChange(start);
     } else {
-      const preEnd = document.createRange();
-      preEnd.selectNodeContents(el);
-      preEnd.setEnd(range.endContainer, range.endOffset);
-      let end = preEnd.toString().replace(/\u200B/g, "").length;
+      let end = modelOffsetFromPoint(el, range.endContainer, range.endOffset);
 
       if (start < end && compoundSpanRanges.length > 0) {
         for (const sr of compoundSpanRanges) {

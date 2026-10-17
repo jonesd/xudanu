@@ -6,6 +6,36 @@ SRC_RUST="$ROOT/original-code/xanadugold/src-rust"
 WEB_APP="$ROOT/web/app"
 BIN_DIR="$ROOT/target"
 DATA_DIR="$SRC_RUST/data"
+PASS_FILE="$ROOT/.dev-passphrase"
+
+# Resolve config BEFORE stopping anything: a config failure must never
+# kill a running session. Env var wins (service operators); otherwise a
+# generated dev passphrase persists in a gitignored file (app-style use).
+if [ -z "${XUDANU_ADMIN_PASSPHRASE:-}" ]; then
+  if [ ! -s "$PASS_FILE" ]; then
+    umask 077
+    printf '%s\n' "dev-$(openssl rand -hex 16)" > "$PASS_FILE"
+    echo "==> Generated dev admin passphrase -> $PASS_FILE"
+    echo "    Passphrase: $(cat "$PASS_FILE")"
+  fi
+  XUDANU_ADMIN_PASSPHRASE="$(cat "$PASS_FILE")"
+  export XUDANU_ADMIN_PASSPHRASE
+fi
+
+# FR-83 lazy restore: 609-work corpus boots in ~2s instead of ~10s
+# (chunk verification runs post-bind). Override with =0 for eager mode.
+export XUDANU_LAZY_RESTORE="${XUDANU_LAZY_RESTORE:-1}"
+
+BACKEND_BIN=""
+if [ -x "$BIN_DIR/release/xudanu-server" ]; then
+  BACKEND_BIN="$BIN_DIR/release/xudanu-server"
+elif [ -x "$BIN_DIR/debug/xudanu-server" ]; then
+  BACKEND_BIN="$BIN_DIR/debug/xudanu-server"
+else
+  echo "==> No pre-built binary found. Building (this may take a while)..."
+  (cd "$SRC_RUST" && cargo build --features server --bin xudanu-server)
+  BACKEND_BIN="$BIN_DIR/debug/xudanu-server"
+fi
 
 # SIGTERM triggers a final checkpoint inside xudanu-server; give it time to
 # flush before resorting to SIGKILL.
@@ -26,26 +56,11 @@ stop_port() {
 echo "==> Xudanu Development Server"
 echo ""
 
-# ── Stop existing processes ──────────────────────────────────────────────
 echo "==> Stopping existing processes (graceful, flushes checkpoint)..."
 stop_port 8080 30
 stop_port 5173 10
 
-# ── Start backend ────────────────────────────────────────────────────────
-BACKEND_BIN=""
-if [ -x "$BIN_DIR/release/xudanu-server" ]; then
-  BACKEND_BIN="$BIN_DIR/release/xudanu-server"
-  echo "==> Starting backend (release binary, port 8080)..."
-elif [ -x "$BIN_DIR/debug/xudanu-server" ]; then
-  BACKEND_BIN="$BIN_DIR/debug/xudanu-server"
-  echo "==> Starting backend (debug binary, port 8080)..."
-else
-  echo "==> No pre-built binary found. Building (this may take a while)..."
-  (cd "$SRC_RUST" && cargo build --features server --bin xudanu-server)
-  BACKEND_BIN="$BIN_DIR/debug/xudanu-server"
-  echo "==> Starting backend (fresh build, port 8080)..."
-fi
-
+echo "==> Starting backend ($("$BACKEND_BIN" --version 2>/dev/null || echo "xudanu-server"), port 8080)..."
 cd "$SRC_RUST"
 "$BACKEND_BIN" run 127.0.0.1:8080 "$DATA_DIR" \
   --allowed-origin http://localhost:8080 \
@@ -53,8 +68,7 @@ cd "$SRC_RUST"
   --allowed-origin http://localhost:5173 \
   --allowed-origin http://127.0.0.1:5173 \
   --csrf-token \
-  $XUDANU_ADMIN_PASSPHRASE \
-  --admin-passphrase "${XUDANU_ADMIN_PASSPHRASE:?set XUDANU_ADMIN_PASSPHRASE}" \
+  --admin-passphrase "$XUDANU_ADMIN_PASSPHRASE" \
   --allow-loopback &
 BACKEND_PID=$!
 cd "$ROOT"
@@ -78,7 +92,7 @@ if [ $ATTEMPTS -eq 30 ]; then
   exit 1
 fi
 
-# ── Start frontend ───────────────────────────────────────────────────────
+# ── Start frontend ────────────────────────────────────────────────────────
 echo "==> Starting frontend (Vite dev server, port 5173)..."
 (cd "$WEB_APP" && npm run dev) &
 FRONTEND_PID=$!

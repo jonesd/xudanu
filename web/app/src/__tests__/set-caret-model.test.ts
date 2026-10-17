@@ -106,4 +106,16 @@ describe("setCaretModel", () => {
       expect(getCursorOffset(editor)).toBe(off);
     }
   });
+
+  it("null (no prior caret) is a no-op — the selection is left untouched", () => {
+    editor = buildEditor([{ text: "keep me here" }]);
+    setCaretModel(editor, 4);
+    const selBefore = window.getSelection();
+    const anchorBefore = selBefore?.anchorNode;
+    const offsetBefore = selBefore?.anchorOffset;
+    setCaretModel(editor, null);
+    const selAfter = window.getSelection();
+    expect(selAfter?.anchorNode).toBe(anchorBefore);
+    expect(selAfter?.anchorOffset).toBe(offsetBefore);
+  });
 });

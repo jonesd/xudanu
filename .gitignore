@@ -3,6 +3,7 @@ ent/target/
 data/
 .DS_Store
 nohup.out
+/.dev-passphrase
 --data-dir
 *.key
 server.json

@@ -344,7 +344,63 @@ export function buildStyledText(
  * toolbar toggles, rebuild restores, click corrections, undo) must
  * route through this function.
  */
-export function setCaretModel(el: HTMLElement, modelOffset: number): void {
+/**
+ * Model-text offset of a DOM (node, offset) point inside `el`.
+ *
+ * The one true coordinate contract (mirrors the walkers in
+ * CollaborativeEditor's findTextNodeAt/modelTextLength):
+ *   - hidden marker text (`display:none` contenteditable=false spans,
+ *     e.g. "- ", "## ") is MODEL text — counted;
+ *   - visible decoration glyphs (bullets "•", ordered markers) are
+ *     DOM-only — NOT counted;
+ *   - ZWSP (\u200B) characters are DOM-only artifacts — not counted.
+ *
+ * Range.toString() violates this: it includes visible decorations,
+ * inflating offsets by one per list line — captured spans then render
+ * late (underlines starting mid-word) and caret restores drift
+ * forward. Every selection→model conversion must go through here.
+ */
+export function modelOffsetFromPoint(el: HTMLElement, node: Node, rawOffset: number): number {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let count = 0;
+  let cur: Node | null;
+  while ((cur = walker.nextNode())) {
+    const text = cur.textContent ?? "";
+    if (cur === node) {
+      const limit = Math.min(Math.max(rawOffset, 0), text.length);
+      for (let i = 0; i < limit; i++) {
+        if (text.charCodeAt(i) !== 0x200b) count++;
+      }
+      return count;
+    }
+    const parent = cur.parentElement;
+    if (
+      parent &&
+      parent.closest('[contenteditable="false"]') &&
+      el.contains(parent)
+    ) {
+      const hiddenSpan = parent.closest(
+        '[contenteditable="false"]',
+      ) as HTMLElement | null;
+      const isHidden =
+        hiddenSpan?.style?.display === "none" ||
+        parent.style?.display === "none";
+      if (isHidden) count += text.length;
+      continue;
+    }
+    for (let i = 0; i < text.length; i++) {
+      if (text.charCodeAt(i) !== 0x200b) count++;
+    }
+  }
+  return count;
+}
+
+export function setCaretModel(el: HTMLElement, modelOffset: number | null): void {
+  // null = "there was no caret inside the editor" — restoring one
+  // would MOVE the user's caret (historically to offset 0, the
+  // "cursor jumps to the start / disappears" bug). Leave the
+  // selection alone instead.
+  if (modelOffset == null) return;
   const sel = window.getSelection();
   if (!sel) return;
 
@@ -369,17 +425,29 @@ export function setCaretModel(el: HTMLElement, modelOffset: number): void {
       }
       continue;
     }
-    const len = node.textContent?.length ?? 0;
-    if (remaining <= len) {
+    // Editable text: anchor at the raw index whose non-ZWSP prefix
+    // length reaches the target — ZWSPs occupy no model position.
+    const text = node.textContent ?? "";
+    let modelLen = 0;
+    let anchor = -1;
+    for (let i = 0; i < text.length; i++) {
+      if (text.charCodeAt(i) === 0x200b) continue;
+      if (modelLen >= remaining) {
+        anchor = i;
+        break;
+      }
+      modelLen++;
+    }
+    if (anchor >= 0) {
       const range = document.createRange();
-      range.setStart(node, Math.max(0, Math.min(remaining, len)));
+      range.setStart(node, anchor);
       range.collapse(true);
       sel.removeAllRanges();
       sel.addRange(range);
       escapeNonEditable(sel, editorScope);
       return;
     }
-    remaining -= len;
+    remaining -= modelLen;
   }
 
   // Offset at/after end: anchor after the last EDITABLE content,
@@ -432,22 +500,18 @@ function lastEditableDescendant(el: HTMLElement): Node | null {
 }
 
 
-export function getCursorOffset(el: HTMLElement): number {
+/**
+ * Model-space caret offset, or null when the selection is not inside
+ * `el` (focus elsewhere, no caret). Callers must treat null as "do
+ * not restore" — coercing it to 0 relocates the user's caret.
+ */
+export function getCursorOffset(el: HTMLElement): number | null {
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0 || !el.contains(sel.anchorNode)) {
-    return 0;
+    return null;
   }
   const range = sel.getRangeAt(0);
-  const preRange = document.createRange();
-  preRange.selectNodeContents(el);
-  preRange.setEnd(range.startContainer, range.startOffset);
-
-  // FR-74 position fix: the preRange.toString() includes text inside
-  // hidden marker spans (## prefixes) and ZWSP (\u200B) characters.
-  // The hidden marker text IS in the model (it's the heading syntax),
-  // so we keep it. But ZWSPs are DOM-only artifacts — strip them so
-  // the offset matches the model text exactly.
-  return preRange.toString().replace(/\u200B/g, "").length;
+  return modelOffsetFromPoint(el, range.startContainer, range.startOffset);
 }
 
 export function setCursorOffset(el: HTMLElement, offset: number): void {

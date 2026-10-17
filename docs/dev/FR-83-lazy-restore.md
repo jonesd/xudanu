@@ -1,6 +1,6 @@
 # FR-83 — Lazy Restore: boot in seconds, materialize enfilades on demand
 
-**Status:** slice 1 shipped (September 2026) — flag-gated (`XUDANU_LAZY_RESTORE=1`), both test suites green in eager AND lazy modes. Measured on the dev corpus (499 works): eager-debug 74s → lazy-debug 13.5s → **lazy-release 2.82s to health**. Remaining checklist below.
+**Status:** slice 1 shipped (September 2026) — flag-gated (`XUDANU_LAZY_RESTORE=1`), both test suites green in eager AND lazy modes. Measured on the dev corpus (499 works): eager-debug 74s → lazy-debug 13.5s → **lazy-release 2.82s to health**. Slice 2 shipped (public-handler thaw gates, upgrade full-hydration). Slice 3 specced below (bind-first boot + warm tier). Remaining checklist below.
 **Diagnosed from:** dev-server restore of 499 works ≈ 35–40s to bind
 (the proximate cause of the "restart didn't work" session — the
 restart script's 30s wait expired and killed a healthy server).
@@ -80,6 +80,86 @@ load direction.
    deliberately (verification is its point) but its cost becomes
    explicit and parallelizable rather than incidental.
 
+## Slice 3 — bind-first boot: defer the self-heal checkpoint, add a warm tier
+
+**Re-measured October 2026** on the grown dev corpus (609 works, 72
+clubs, 431 MB, release binary): lazy boot to health is **2.0s** — and
+the phase spans from the boot log show the remaining cost is not
+loading at all:
+
+| Phase (lazy boot, 609-work corpus) | Span | Time |
+|---|---|---|
+| Root chunk read + parse (609 works, 72 clubs) | restore start → restored | 68 ms |
+| Metadata restore (identity, blobs, tickets, policy, annotations, attributions) | → drift checkpoint begins | 62 ms |
+| **Schema-drift self-heal checkpoint** (drifted-chunk rewrite, 5× legacy `manifest_v*.json` re-parse, chunk GC over 7,486 refs) | → checkpoint done | **1,650 ms** |
+| Bind + serve | → listening | 36 ms |
+
+Loading the corpus is 130 ms. **92% of boot is write work done before
+the port opens** — `checkpoint_after_restore` (server.rs:15171,
+called at bin/xudanu-server.rs:1169, synchronous, pre-bind), whose
+purpose is cosmetic: persist new default fields so the SCHEMA DRIFT
+warning doesn't reappear next boot.
+
+### Part A — defer the self-heal checkpoint post-bind
+
+1. Boot sequence becomes: restore (metadata-only under the flag) →
+   **bind** → background: self-heal checkpoint → background chunk
+   verification. In the shipped shape the verifier spawns during
+   restore (it uses an independent read-only store handle + a
+   manifest snapshot; GC's 50-gen archive grace keeps its reads
+   valid), so the heal runs concurrently with it post-bind — the
+   v1.17.1 tmp-chunk guards cover the overlap.
+2. `/health` reports `self_heal: true` until a checkpoint commit
+   lands (any commit clears it — the deferred heal, an autosave, or
+   the SIGTERM final checkpoint).
+3. The heal task waits ~2s after bind before its first write burst:
+   std's rwlock is write-preferring, and without the delay first
+   readers queued behind the checkpoint slices (measured: /health
+   answered in 1.5s instead of 0.3s). Readers-first, then heal.
+4. Failure posture unchanged: warn, don't crash (the pre-bind call
+   was already non-fatal).
+5. Crash between bind and heal: the drift warning simply survives to
+   the next boot; healing is idempotent and the 5s autosave would
+   also absorb it. No durability loss — restore never depended on the
+   self-heal having run.
+
+Measured result (October 2026, 609-work corpus, release): restore
+115 ms, **listening ~160 ms after process start, /health at 0.31 s
+warm** (was 2.0 s lazy / 9.9 s eager); `self_heal` and
+`background_verification` both true at readiness, both cleared within
+5 s.
+
+Follow-up (optional, inside Part A): the self-heal path re-parses the
+legacy `manifest_v*.json` history to compute GC reachability
+(~1.4 s of the 1.65 s). Drift healing only needs the CURRENT
+manifest — skip legacy-history verification there and boot drops the
+background cost too.
+
+### Part B — warm tier (design point 4, now earned)
+
+Persist per-work recency and pre-thaw the likely working set after
+bind, lowest priority:
+
+1. **Recency sidecar:** top-N (say 50) most-recently-touched works,
+   updated on the same paths that drive eviction LRU bookkeeping
+   (`EvictionManager.last_access` — eviction.rs:40, in-memory only
+   today). Persist as a JSON sidecar (ticket_nonces.json pattern) or
+   a SocialSection field (starred_works pattern) — advisory data, so
+   the sidecar is fine.
+2. **Post-bind warmer:** thaw `starred ∪ MRU(top-N)` after the
+   self-heal checkpoint completes, K works per tick, yielding to
+   request dispatch. Bounded by the FR-43 LRU as usual — warming
+   cannot exceed the RAM budget.
+3. `/health` reports warm progress (`warm_tier: "12/50"`).
+
+What it buys: closes the fail-soft window on cross-work indices
+(backfollow/canopy answers complete for the active set seconds after
+boot) and absorbs burst opens (library scroll, previews) without a
+thaw stampede. Cost: ~12 ms/work measured, so 50 works ≈ 600 ms of
+post-bind background work. A single deliberate doc open gains nothing
+— on-demand thaw already covers it — which is why this stays a
+nicety, not a dependency.
+
 ## Measurements to beat
 
 Current dev data (499 works, 72 clubs, 10,271 tickets, seq 3412):
@@ -122,9 +202,26 @@ rides the same listing path; lazy works answer metadata from the map).
       background_verification (flips false on completion)
 - [x] Eager mode byte-identical behavior (3,689 green, flag off)
 - [ ] Flip the default (on) after a soak period — flag stays opt-in
-      for v1.15.0
+      for v1.15.0 (dev restart.sh opts in as of October 2026 — the
+      soak is running). BLOCKER found in the October soak: 7
+      integration tests fail under XUDANU_LAZY_RESTORE=1
+      (chunk_store_persistence_*, chunk_store_multiple_checkpoints,
+      dirty_checkpoint_all_work_mutation_paths) — pre-existing on
+      main, not slice-3; the suite must be lazy-green again before
+      the flip.
 - [ ] Phase timing spans in the boot log (self-reporting boots)
-- [ ] Defer the boot-time schema-drift self-heal checkpoint post-bind
+
+Slice 3 (specced above):
+
+- [x] Defer the boot-time schema-drift self-heal checkpoint post-bind
+      (Part A) — measured: listening ~160 ms, /health 0.31 s warm on
+      the 609-work corpus (was 2.0 s); /health `self_heal` field;
+      readers-first 2s delay before the heal's write bursts;
+      suite green in default mode (lib 3,777 + integration 328)
+- [ ] Self-heal skips legacy manifest-history re-parse (drift healing
+      needs only the current manifest)
+- [ ] Warm tier (Part B): recency sidecar + post-bind warmer for
+      starred ∪ MRU(top-N); /health warm progress
 - [ ] Lazy annotation init (per-work, first access) — boot touches
       zero editions
 - [ ] Clubs lazy (72 hydrate eagerly today)

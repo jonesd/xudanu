@@ -3,8 +3,11 @@ import {
   extractStyleMarks,
   buildStyledText,
   getCursorOffset,
+  setCaretModel,
   setCursorOffset,
   findMarkInRange,
+  modelOffsetFromPoint,
+  planBlockToggle,
   type StyleMark,
 } from "../styled-text";
 
@@ -68,6 +71,128 @@ describe("findMarkInRange", () => {
 
   it("returns null for empty marks list", () => {
     expect(findMarkInRange([], "bold", 0, 5)).toBeNull();
+  });
+});
+
+// The coordinate-space contract: model offsets must exclude visible
+// bullet decorations and ZWSPs while including hidden marker syntax.
+// Range.toString() includes the bullets — the class of bug that put
+// link underlines mid-word and drifted the caret one char per list
+// line (October 2026 session).
+function buildListEditor(lines: string[]): HTMLElement {
+  const el = document.createElement("div");
+  document.body.appendChild(el);
+  const blocks: string[] = [];
+  let modelText = "";
+  for (const line of lines) {
+    if (line.startsWith("- ")) {
+      const content = line.slice(2);
+      blocks.push(
+        `<span style="display:none" contenteditable="false">- </span>` +
+        `<span style="display:inline-block;width:18px;user-select:none;margin-right:4px;" contenteditable="false">&bull;</span>` +
+        `<span>${content}</span>`,
+      );
+      modelText += line + "\n";
+    } else {
+      blocks.push(`<span>${line}</span>`);
+      modelText += line + "\n";
+    }
+  }
+  el.innerHTML = blocks.join("\n") + "\u200B";
+  (el as HTMLElement & { modelText?: string }).modelText = modelText;
+  return el;
+}
+
+describe("model coordinate space (bullets, hidden markers, ZWSP)", () => {
+  it("selection after N bullet lines reports the exact model offset — no +1 drift per bullet", () => {
+    const el = buildListEditor(["- alpha", "- beta", "- gamma"]);
+    // Content start of "gamma" includes its OWN hidden "- " marker:
+    // model offset len("- alpha\n- beta\n- ") = 17. The pre-fix
+    // toString() capture overcounted one per bullet ABOVE it.
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let gammaNode: Text | null = null;
+    let n: Node | null;
+    while ((n = walker.nextNode())) {
+      if (n.textContent === "gamma") { gammaNode = n as Text; break; }
+    }
+    expect(gammaNode).not.toBeNull();
+    const off = modelOffsetFromPoint(el, gammaNode!, 0);
+    expect(off).toBe("- alpha\n- beta\n- ".length);
+    setCaretModel(el, off);
+    expect(getCursorOffset(el)).toBe(off);
+    document.body.removeChild(el);
+  });
+
+  it("caret round-trips across bullet lines and mid-word offsets", () => {
+    const el = buildListEditor(["- one", "- two words here", "- three"]);
+    // model: "- one\n- two words here\n- three\n"
+    // content starts: 2, 9, 25; newlines at 5 and 22.
+    for (const off of [2, 4, 5, 9, 22, 25, 27]) {
+      setCaretModel(el, off);
+      expect(getCursorOffset(el)).toBe(off);
+    }
+    // Offsets inside a hidden "- " marker are unrepresentable as a
+    // caret — they escape FORWARD past the marker to content start.
+    setCaretModel(el, 24);
+    expect(getCursorOffset(el)).toBe(25);
+    // Offset 0 escapes line 1's marker the same way.
+    setCaretModel(el, 0);
+    expect(getCursorOffset(el)).toBe(2);
+    document.body.removeChild(el);
+  });
+});
+
+// The block-format round trip the toolbar performs: plan an
+// annotation for the line, "commit" it, then render. Proves the
+// annotation path (no text marker) renders code_block/heading —
+// the "codeblock ignored" bug class was the capture drift landing
+// the span on the wrong line, not the renderer.
+describe("block annotation round trip (planBlockToggle → extractStyleMarks → buildStyledText)", () => {
+  const mkAnn = (id: number, kind: string, payload: string, s: number, e: number) => ({
+    annotation_id: id, kind, payload, char_start: s, char_end: e, created_by: null, created_by_name: null,
+  });
+
+  it("code_block on a plain line renders monospace and strips nothing", () => {
+    const text = "intro line\nplain code line\noutro";
+    const lineStart = "intro line\n".length;
+    const lineEnd = lineStart + "plain code line".length;
+    const plan = planBlockToggle(lineStart, lineEnd, "code_block", "", []);
+    expect(plan.create).toBeDefined();
+    const anns = [mkAnn(1, "code_block", "", plan.create!.char_start, plan.create!.char_end)];
+    const html = buildStyledText(text, extractStyleMarks(anns));
+    expect(html).toContain("monospace");
+    expect(html).toContain("plain code line");
+  });
+
+  it("code_block on a line INSIDE a bulleted doc: toolbar converts the marker (legacy path), and marker wins over stray annotations", () => {
+    // The toolbar never creates a block annotation on a marker line —
+    // it rewrites the prefix. "- code me" + Code → "```code me".
+    const text = "- one\n- two\n```code me\n- four";
+    const html = buildStyledText(text, extractStyleMarks([]));
+    expect(html).toContain("monospace");
+    expect(html).toContain("code me");
+    expect((html.match(/&bull;/g) ?? []).length).toBe(3);
+    // If an annotation DOES land on a marker line (span migration,
+    // hand-edited text), the marker keeps precedence — the annotation
+    // is ignored rather than double-formatting.
+    const stray = buildStyledText(
+      "- bullet line",
+      extractStyleMarks([mkAnn(1, "code_block", "", 0, "- bullet line".length)]),
+    );
+    expect(stray).toContain("&bull;");
+    expect(stray).not.toContain("monospace");
+  });
+
+  it("heading round trip renders size and toggling off deletes", () => {
+    const text = "make me a heading";
+    const plan = planBlockToggle(0, text.length, "heading", '{"level":2}', []);
+    expect(plan.create).toBeDefined();
+    const anns = [mkAnn(1, "heading", '{"level":2}', plan.create!.char_start, plan.create!.char_end)];
+    const html = buildStyledText(text, extractStyleMarks(anns));
+    expect(html).toContain("font-size:1.5em");
+    const off = planBlockToggle(0, text.length, "heading", '{"level":2}', anns);
+    expect(off.deleteAnnotationId).toBe(1);
+    expect(off.create).toBeUndefined();
   });
 });
 
@@ -164,9 +289,9 @@ describe("buildStyledText", () => {
 });
 
 describe("getCursorOffset", () => {
-  it("returns 0 for empty element", () => {
+  it("returns null when no selection exists (must not coerce to 0 — callers would relocate the caret)", () => {
     const el = document.createElement("div");
-    expect(getCursorOffset(el)).toBe(0);
+    expect(getCursorOffset(el)).toBeNull();
   });
 
   it("returns 0 when cursor is at start", () => {

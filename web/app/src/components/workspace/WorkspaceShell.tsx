@@ -315,6 +315,13 @@ export function WorkspaceShell() {
     return { sourceUrl, fetchedAt, hash8: "" };
   }, [works, workBeId]);
   const [toast, setToast] = useState<string | null>(null);
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    if (msg.toLowerCase().includes("fail") || msg.toLowerCase().includes("error")) {
+      console.error("[TOAST ERROR]", msg);
+    }
+    setTimeout(() => setToast(null), 5000);
+  }, []);
   // FR-40 L3: the in-editor gather picker (span-level "add to this
   // end" from the selection actions bar).
   const [gatherOpen, setGatherOpen] = useState(false);
@@ -416,28 +423,34 @@ export function WorkspaceShell() {
       // accept inserts. In that case, start a fresh composition.
       const shouldCreateNew = workBeId === null || !canEdit;
       if (shouldCreateNew && createWork) {
-        createWork().then((id) => {
-          if (typeof id === "number") {
-            selectWork(id);
-            if (clientRef.current) {
-              clientRef.current
-                .sendRequest("work_set_title", {
-                  work_id: id,
-                  title: "Untitled composition",
-                })
-                .then(() => {
-                  setWorks((prev) =>
-                    prev.map((w) =>
-                      w.work_id === id
-                        ? { ...w, title: "Untitled composition" }
-                        : w,
-                    ),
-                  );
-                })
-                .catch(() => {});
+        createWork()
+          .then((id) => {
+            if (typeof id === "number") {
+              selectWork(id);
+              if (clientRef.current) {
+                clientRef.current
+                  .sendRequest("work_set_title", {
+                    work_id: id,
+                    title: "Untitled composition",
+                  })
+                  .then(() => {
+                    setWorks((prev) =>
+                      prev.map((w) =>
+                        w.work_id === id
+                          ? { ...w, title: "Untitled composition" }
+                          : w,
+                      ),
+                    );
+                  })
+                  .catch(() => {});
+              }
             }
-          }
-        });
+          })
+          .catch((e: unknown) => {
+            showToast(
+              `Couldn't create the composition: ${e instanceof Error ? e.message : String(e)}`,
+            );
+          });
       }
       setShowCompoundBuilder(true);
     } else {
@@ -528,6 +541,7 @@ export function WorkspaceShell() {
     logout,
     reconnectAttempt,
     switchingWork,
+    switchError,
     publicClubId,
   } = crdt;
   const [suggestBusy, setSuggestBusy] = useState(false);
@@ -662,6 +676,15 @@ export function WorkspaceShell() {
   }, [connected, authenticated, workBeId, switchingWork]);
 
   const transclusion = useTransclusion();
+
+  // Clear link/markers/backlinks the moment the work changes — stale
+  // markers from the previous work rendered against the new document
+  // (clamped to its bottom when shorter) until the debounced reload
+  // landed. Mirrors the per-work clears in useCrdtSync.
+  const clearLinksOnSwitch = transclusion.clearOnWorkSwitch;
+  useEffect(() => {
+    clearLinksOnSwitch();
+  }, [workBeId, clearLinksOnSwitch]);
 
   const blobEntries = useMemo(() => imageEntries.filter(e => e.charPos != null && !e.loading).map(e => ({
     charPos: e.charPos!,
@@ -871,10 +894,17 @@ export function WorkspaceShell() {
   }, [selectWork]);
 
   const createAndSelectWork = useCallback(async (): Promise<number | null> => {
-    const id = await createWork();
-    if (typeof id === "number") selectWork(id);
-    return id ?? null;
-  }, [createWork, selectWork]);
+    try {
+      const id = await createWork();
+      selectWork(id);
+      return id;
+    } catch (e) {
+      showToast(
+        `Couldn't create the document: ${e instanceof Error ? e.message : String(e)}`,
+      );
+      return null;
+    }
+  }, [createWork, selectWork, showToast]);
 
   /** FR-71: complete an open-ended link by creating its target —
    *  the reserved connection resolves to the new document and we
@@ -882,8 +912,15 @@ export function WorkspaceShell() {
   const completeOpenLink = useCallback(async (linkId: number): Promise<void> => {
     const client = clientRef.current;
     if (!client) return;
-    const id = await createWork();
-    if (typeof id !== "number") return;
+    let id: number;
+    try {
+      id = await createWork();
+    } catch (e) {
+      showToast(
+        `Couldn't create the linked document: ${e instanceof Error ? e.message : String(e)}`,
+      );
+      return;
+    }
     try {
       await client.linkAddEnd(linkId, "RightEnd", { workContext: id, excerpt: "" });
     } catch {
@@ -1066,19 +1103,29 @@ export function WorkspaceShell() {
 
   const handleCreateWork = useCallback(async () => {
     if (!createWork) return;
-    const newId = await createWork();
-    if (typeof newId === "number") {
-      selectWork(newId);
-    } else if (!identity) {
-      // Creation was denied and we have no identity — the silent no-op
-      // on the welcome screen was a reported bug. Open the identity
-      // dialog instead so the click always goes somewhere.
-      setShowIdentity(true);
+    let newId: number;
+    try {
+      newId = await createWork();
+    } catch (e) {
+      // Creation failed loudly at the transport level. The click must
+      // always go somewhere: no identity yet → open the identity
+      // dialog; otherwise say what happened. Never a silent no-op —
+      // the editor must not keep the previous work under the
+      // impression a new document was created.
+      if (!identity) {
+        setShowIdentity(true);
+      } else {
+        showToast(
+          `Couldn't create the document: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+      return;
     }
+    selectWork(newId);
     if (fetchWorkList) {
       try {
         const entries = await fetchWorkList();
-        if (typeof newId === "number" && !entries.some((w) => w.work_id === newId)) {
+        if (!entries.some((w) => w.work_id === newId)) {
           entries.unshift({
             work_id: newId, title: "", is_starred: false, is_source: false,
             revision_count: 0, updated_at: Math.floor(Date.now() / 1000),
@@ -1087,22 +1134,20 @@ export function WorkspaceShell() {
         }
         setWorks(entries);
       } catch {
-        if (typeof newId === "number") {
-          setWorks((prev) => prev.some((w) => w.work_id === newId) ? prev : [{
-            work_id: newId, title: "", is_starred: false, is_source: false,
-            revision_count: 0, updated_at: Math.floor(Date.now() / 1000),
-            owner: 0, is_grabbed: false, read_club: 0,
-          } as WorkListEntry, ...prev]);
-        }
+        setWorks((prev) => prev.some((w) => w.work_id === newId) ? prev : [{
+          work_id: newId, title: "", is_starred: false, is_source: false,
+          revision_count: 0, updated_at: Math.floor(Date.now() / 1000),
+          owner: 0, is_grabbed: false, read_club: 0,
+        } as WorkListEntry, ...prev]);
       }
-    } else if (typeof newId === "number") {
+    } else {
       setWorks((prev) => prev.some((w) => w.work_id === newId) ? prev : [{
         work_id: newId, title: "", is_starred: false, is_source: false,
         revision_count: 0, updated_at: Math.floor(Date.now() / 1000),
         owner: 0, is_grabbed: false, read_club: 0,
       } as WorkListEntry, ...prev]);
     }
-  }, [createWork, selectWork, fetchWorkList]);
+  }, [createWork, selectWork, fetchWorkList, identity, showToast]);
 
   const handleTranscludeSelection = useCallback(() => {
     if (!selectionRange || workBeId === null) return;
@@ -1157,13 +1202,14 @@ export function WorkspaceShell() {
     [selectionRange, workBeId, text, clientRef, transclusion, linkDescription],
   );
 
-  const showToast = useCallback((msg: string) => {
-    setToast(msg);
-    if (msg.toLowerCase().includes("fail") || msg.toLowerCase().includes("error")) {
-      console.error("[TOAST ERROR]", msg);
+  // A failed work switch must never be silent — the editor would
+  // keep showing the previous document under the new one's identity.
+  useEffect(() => {
+    if (switchError) {
+      showToast(`Couldn't open the document: ${switchError}`);
     }
-    setTimeout(() => setToast(null), 5000);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [switchError]);
 
   // FR-79: re-fetch the shadow's source URL and append a revision if the
   // live page changed. Toast tells the honest outcome either way.
@@ -1446,7 +1492,7 @@ export function WorkspaceShell() {
       if (editorEl) {
         const sel = window.getSelection();
         if (sel && sel.rangeCount > 0 && editorEl.contains(sel.anchorNode)) {
-          pos = getCursorOffset(editorEl);
+          pos = getCursorOffset(editorEl) ?? 0;
           haveLiveCaret = true;
         }
       }
@@ -1476,7 +1522,9 @@ export function WorkspaceShell() {
         if (plan.create) {
           await createAnnotation(plan.create.kind, plan.create.payload, plan.create.char_start, plan.create.char_end, false);
         }
-        refreshAnnotations();
+        // createAnnotation/deleteAnnotation each refresh annotations
+        // on commit (useCrdtSync) — a second fire here raced the first
+        // with a stale list and flickered the style away and back.
         bumpStructuralVersion();
         return;
       }
@@ -2098,10 +2146,12 @@ export function WorkspaceShell() {
         await clientRef.current.workUnstar(workBeId);
         setFollowState({ following: false, busy: false, error: null });
         useWorkStore.getState().applyWorkUpdate(workBeId, { is_starred: false });
+        setWorks((prev) => prev.map((w) => (w.work_id === workBeId ? { ...w, is_starred: false } : w)));
       } else {
         await clientRef.current.workStar(workBeId);
         setFollowState({ following: true, busy: false, error: null });
         useWorkStore.getState().applyWorkUpdate(workBeId, { is_starred: true });
+        setWorks((prev) => prev.map((w) => (w.work_id === workBeId ? { ...w, is_starred: true } : w)));
       }
     } catch (e) {
       setFollowState({
@@ -2730,7 +2780,12 @@ export function WorkspaceShell() {
                       const citation = `\n\n> ${excerpt.split("\n").join("\n> ")}\n> — From "${remoteView.title}" via ${remoteView.originServerName} (${remoteView.tumbler})\n`;
                       const newText = text + citation;
                       if (clientRef.current && workBeId !== null) {
-                        void clientRef.current.workSetText(workBeId, newText);
+                        // CRDT text path, not work_set_text: an
+                        // out-of-band replace diverges the live editor
+                        // session (next keystroke merges against the
+                        // old state) and bypasses span migration for
+                        // the client's view of annotations.
+                        setText(newText);
                       }
                       setRemoteView(null);
                     }}

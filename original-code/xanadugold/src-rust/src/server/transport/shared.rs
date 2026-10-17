@@ -360,6 +360,7 @@ impl ServerHandle {
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))??;
 
         self.with_server(|srv| srv.checkpoint_commit_no_wal_truncate(result))?;
+        self.with_server(|srv| srv.clear_self_heal_pending());
         self.ots_anchor_round().await;
         Ok(())
     }

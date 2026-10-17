@@ -162,6 +162,22 @@ async fn connect_with_handshake(srv: &TestServer, format: &str) -> (SplitSender,
     (s, r)
 }
 
+/// Connect with the public-login bootstrap the frontend uses —
+/// identity-creating ops (club_create_personal) require the session
+/// to be at least publicly logged in.
+async fn connect_public_with_handshake(srv: &TestServer) -> (SplitSender, SplitReceiver) {
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}&login=public",
+        srv.addr, PROTOCOL_VERSION
+    );
+    let (stream, mut r) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (s, r) = stream.split();
+    let mut r = r;
+    let hs = recv_handshake(&mut r).await;
+    assert_eq!(hs["type"], "handshake", "expected handshake, got: {:?}", hs);
+    (s, r)
+}
+
 async fn connect_binary_with_handshake(srv: &TestServer) -> (SplitSender, SplitReceiver) {
     let (s, mut r) = connect(srv, "binary").await;
     let msg = r.next().await.unwrap().unwrap();
@@ -13787,6 +13803,218 @@ async fn annotation_list() {
     assert_eq!(resp["type"], "response");
     let list = resp["value"]["value"].as_array().unwrap();
     assert_eq!(list.len(), 2);
+}
+
+/// Private annotations are only visible to their creator (enforced
+/// server-side in annotation_list, server.rs:20283). Two identities:
+/// Alice's private note must never appear in Bob's list, while her
+/// public note appears for both. `created_by` is derived from the
+/// session server-side — the client never sends it.
+#[tokio::test]
+async fn annotation_private_visibility() {
+    let srv = TestServer::start().await;
+
+    // Alice: personal identity with password, logged in and
+    // authenticated (the same flow the frontend's createIdentity
+    // performs — club_create_personal + login + authenticate).
+    let (mut sa, mut ra) = connect_public_with_handshake(&srv).await;
+    send_recv_json(&mut sa, &mut ra, json_req(1, "session_connect", None)).await;
+    let resp_ac = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            2,
+            "club_create_personal",
+            Some(serde_json::json!({
+                "display_name": "alice",
+                "password": b"alicepass1234".iter().map(|&b| serde_json::Value::from(b)).collect::<Vec<_>>()
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(resp_ac["type"], "response", "club_create_personal failed: {}", resp_ac);
+    send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            3,
+            "session_login_by_name",
+            Some(serde_json::json!({"club_name": "alice"})),
+        ),
+    )
+    .await;
+    send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            4,
+            "session_authenticate",
+            Some(serde_json::json!({"credential": password_credential(b"alicepass1234")})),
+        ),
+    )
+    .await;
+
+    let resp_wc = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            3,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "shared doc"}})),
+        ),
+    )
+    .await;
+    assert_eq!(resp_wc["type"], "response", "work_create failed: {}", resp_wc);
+    let work_id = resp_wc["value"]["value"].as_u64().unwrap();
+    send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(4, "work_grab", Some(serde_json::json!({"work_id": work_id}))),
+    )
+    .await;
+
+    send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            10,
+            "annotation_create",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "annotation_id": 1,
+                "kind": "note",
+                "payload": "public note",
+                "is_private": false
+            })),
+        ),
+    )
+    .await;
+    send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            11,
+            "annotation_create",
+            Some(serde_json::json!({
+                "work_id": work_id,
+                "annotation_id": 2,
+                "kind": "note",
+                "payload": "alice secret",
+                "is_private": true
+            })),
+        ),
+    )
+    .await;
+    send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            12,
+            "work_release",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
+
+    // Make the work world-readable so a second identity can list it.
+    let public_club = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            13,
+            "club_id_by_name",
+            Some(serde_json::json!({"name": "public"})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            14,
+            "work_set_read_club",
+            Some(serde_json::json!({"work_id": work_id, "club_id": public_club})),
+        ),
+    )
+    .await;
+
+    // Bob: personal identity, same flow.
+    let (mut sb, mut rb) = connect_public_with_handshake(&srv).await;
+    send_recv_json(&mut sb, &mut rb, json_req(1, "session_connect", None)).await;
+    let resp_bc = send_recv_json(
+        &mut sb,
+        &mut rb,
+        json_req(
+            2,
+            "club_create_personal",
+            Some(serde_json::json!({
+                "display_name": "bob",
+                "password": b"bobpass1234567".iter().map(|&b| serde_json::Value::from(b)).collect::<Vec<_>>()
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(resp_bc["type"], "response", "bob club_create_personal failed: {}", resp_bc);
+    send_recv_json(
+        &mut sb,
+        &mut rb,
+        json_req(
+            3,
+            "session_login_by_name",
+            Some(serde_json::json!({"club_name": "bob"})),
+        ),
+    )
+    .await;
+    send_recv_json(
+        &mut sb,
+        &mut rb,
+        json_req(
+            4,
+            "session_authenticate",
+            Some(serde_json::json!({"credential": password_credential(b"bobpass1234567")})),
+        ),
+    )
+    .await;
+
+    // Bob sees ONLY the public note.
+    let resp_b = send_recv_json(
+        &mut sb,
+        &mut rb,
+        json_req(
+            20,
+            "annotation_list",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
+    assert_eq!(resp_b["type"], "response", "bob must be able to list: {}", resp_b);
+    let list_b = resp_b["value"]["value"].as_array().unwrap();
+    assert_eq!(list_b.len(), 1, "bob must see exactly the public note, got: {list_b:?}");
+    assert_eq!(list_b[0]["payload"], "public note");
+    assert_eq!(list_b[0]["is_private"], false);
+
+    // Alice sees both — her private note comes back to her and only her.
+    let resp_a = send_recv_json(
+        &mut sa,
+        &mut ra,
+        json_req(
+            20,
+            "annotation_list",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
+    )
+    .await;
+    assert_eq!(resp_a["type"], "response");
+    let list_a = resp_a["value"]["value"].as_array().unwrap();
+    assert_eq!(list_a.len(), 2, "alice must see her private note too, got: {list_a:?}");
+    let payloads: Vec<&str> = list_a
+        .iter()
+        .filter_map(|a| a["payload"].as_str())
+        .collect();
+    assert!(payloads.contains(&"alice secret"));
+    assert!(payloads.contains(&"public note"));
 }
 
 #[tokio::test]

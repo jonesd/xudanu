@@ -1165,10 +1165,10 @@ async fn main() {
                         );
                         std::process::exit(1);
                     }
-                    // Schema-drift self-heal: persist with current fields
-                    if let Err(e) = s.checkpoint_after_restore() {
-                        tracing::warn!("[restore] schema self-heal checkpoint failed: {}", e);
-                    }
+                    // FR-83 slice 3: the schema-drift self-heal
+                    // checkpoint is deferred to post-bind (see the
+                    // self-heal task below) — restore must not block
+                    // the port on write work.
                     let elapsed = start.elapsed();
                     tracing::info!(
                         "Restored in {:.2}ms: {}",
@@ -1594,6 +1594,27 @@ async fn main() {
             });
 
             {
+                // FR-83 slice 3: run the deferred schema-drift self-heal
+                // checkpoint post-bind. checkpoint_async slices the write
+                // lock, so serving interleaves instead of stalling; the
+                // pending flag (and /health `self_heal`) clears on commit.
+                // The short delay lets first clients connect and read
+                // before the write bursts begin (readers would otherwise
+                // queue behind the write-preferring rwlock).
+                let heal_state = state.clone();
+                tokio::spawn(async move {
+                    if !heal_state
+                        .server
+                        .with_server_ref(|srv| srv.self_heal_pending())
+                    {
+                        return;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+                    tracing::info!("[self-heal] schema-drift checkpoint running post-bind");
+                    if let Err(e) = heal_state.server.checkpoint_async().await {
+                        tracing::warn!("[self-heal] schema-drift checkpoint failed: {}", e);
+                    }
+                });
                 let ots_state = state.clone();
                 tokio::spawn(async move {
                     let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
