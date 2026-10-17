@@ -2339,6 +2339,22 @@ export function WorkspaceShell() {
     return () => clearTimeout(linkTimer);
   }, [connected, workBeId, switchingWork, clientRef, works, loadLinks, loadBacklinks, refreshAttribution, refreshAnnotations]);
 
+  // Markers track text: the server migrates every link span on each
+  // edit, but the client's marker data was computed once at load —
+  // after enough typing, excerpt re-anchoring degraded (duplicates
+  // grabbed the first occurrence, edited-away excerpts dropped their
+  // markers) and bars drifted off their lines. Re-resolve from the
+  // server's authoritative spans once typing settles.
+  useEffect(() => {
+    if (!connected || workBeId === null || switchingWork || !text) return;
+    const t = setTimeout(() => {
+      if (clientRef.current) {
+        void loadLinks(clientRef.current, workBeId, works);
+      }
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [text, connected, workBeId, switchingWork, clientRef, works, loadLinks]);
+
   // FR-38 S3: tumbler-stable permalink span (?span=2.4.1) — resolve
   // to current offsets and highlight, regardless of later edits.
   useEffect(() => {
