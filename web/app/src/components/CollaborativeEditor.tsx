@@ -142,6 +142,9 @@ interface MarkerHitZone {
   stackMarkers?: TransclusionMarker[];
   hoverOnly?: boolean;
   band?: boolean;
+  /** For band zones: the y where the TEXT BODY ends — everything
+   * below is the underline strip/lanes, free of caret meaning. */
+  textBottom?: number;
 }
 
 interface AuthorBarZone {
@@ -1118,6 +1121,7 @@ function drawOverlay(
       stackMarkers: band.markers,
       hoverOnly: !bandsClickable,
       band: true,
+      textBottom: band.bottom - 2,
     });
   }
 
@@ -2052,13 +2056,30 @@ export function CollaborativeEditor({
     const hit = smallest(matches);
     if (!hit) {
       if (!modFollow) {
-        // Authoring-mode plain click on a link's band region: not a
-        // navigation (the caret may need placing), but never silent —
-        // pin the connection tooltip so the click always answers.
-        const bandHit = smallest(hitZonesRef.current.filter((hz) => hz.band && hz.hoverOnly && contains(hz)));
+        // Authoring-mode plain click on a link's band region. The
+        // UNDERLINE STRIP below the text body has no caret meaning —
+        // clicks there follow the link (the reader's instinct).
+        // Clicks on the text itself pin the tooltip: the caret may
+        // need placing, but the click is never silent.
+        const bandMatches = hitZonesRef.current.filter((hz) => hz.band && hz.hoverOnly && contains(hz));
+        const bandHit = smallest(bandMatches);
         if (bandHit) {
           const sel = window.getSelection();
           if (sel && !sel.isCollapsed) return;
+          if (
+            bandHit.textBottom != null &&
+            y > bandHit.textBottom &&
+            !((bandHit.stackMarkers?.length ?? 0) > 1)
+          ) {
+            const m = bandHit.marker;
+            const t = m.target;
+            if (onNavigateToSource && t && t.workId != null && t.span) {
+              onNavigateToSource(t.workId, t.span.start, t.span.end);
+            } else if (onNavigateToWork) {
+              onNavigateToWork(m.otherWorkId);
+            }
+            return;
+          }
           setPinnedMarker(true);
           setHoveredMarker(bandHit.marker);
           setTooltipPos({ x: e.clientX, y: e.clientY });
