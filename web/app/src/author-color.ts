@@ -1,3 +1,5 @@
+import { storageGet, storageSet } from "./safe-storage";
+
 const HUE_PALETTE_SIZE = 360;
 
 export interface ColorPair {
@@ -55,6 +57,36 @@ export function authorColor(name: string): string {
 
 export function authorColorSecondary(name: string): string {
   return authorColorPair(name).secondary;
+}
+
+/**
+ * Ordered two-hue identity code: [hueA, hueB], always distinct, both
+ * stable per identity. Rendered together (angled split or stripe) the
+ * palette of 25 hues distinguishes 25×24 = 600 authors — the paired
+ * colour scheme. Derived from independent hash bits so the pair is
+ * not merely a rotation of one hue.
+ */
+export function authorOrderedPair(name: string): [string, string] {
+  const hash = fnv1aHash(name);
+  const mixed = (hash ^ (hash >>> 16)) >>> 0;
+  const a = mixed % PALETTE.length;
+  const b = (a + 1 + ((mixed >>> 8) % (PALETTE.length - 1))) % PALETTE.length;
+  return [PALETTE[a].primary, PALETTE[b].primary];
+}
+
+const PAIRED_MODE_KEY = "xudanu_paired_author_colors";
+
+export function pairedAuthorColors(): boolean {
+  return storageGet(PAIRED_MODE_KEY) === "1";
+}
+
+export function setPairedAuthorColors(on: boolean): void {
+  try {
+    if (on) storageSet(PAIRED_MODE_KEY, "1");
+    else storageSet(PAIRED_MODE_KEY, "");
+  } catch {
+    /* storage unavailable — session-only fallback */
+  }
 }
 
 export function gradientCss(pair: ColorPair, angle: number = 180): string {

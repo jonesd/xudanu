@@ -11,6 +11,9 @@ interface LibrarySlideOutProps {
   connected: boolean;
   identity: { display_name: string; club_id: number } | null;
   onToggleStar?: (workId: number, current: boolean) => void;
+  /** Xanadu permanence: archived works stay reachable. */
+  archivedWorks?: WorkListEntry[];
+  onRestoreArchived?: (workId: number) => void;
 }
 
 export function LibrarySlideOut({
@@ -23,8 +26,11 @@ export function LibrarySlideOut({
   connected,
   identity,
   onToggleStar,
+  archivedWorks,
+  onRestoreArchived,
 }: LibrarySlideOutProps) {
   const [query, setQuery] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return works;
@@ -139,6 +145,69 @@ export function LibrarySlideOut({
           <div style={{ padding: "20px 10px", fontSize: 13, color: "var(--text-dim)", textAlign: "center" }}>
             {connected ? "No works yet. Create one to get started." : "Not connected."}
           </div>
+        )}
+        {archivedWorks && archivedWorks.length > 0 && (
+          <>
+            <button
+              onClick={() => setShowArchived((s) => !s)}
+              style={{
+                width: "calc(100% - 20px)",
+                margin: "10px 10px 4px",
+                padding: "5px 10px",
+                borderRadius: 6,
+                border: "1px solid var(--border)",
+                background: "transparent",
+                color: "var(--text-dim)",
+                fontSize: 11,
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              {showArchived ? "▾" : "▸"} Archived ({archivedWorks.length}) — nothing is deleted
+            </button>
+            {showArchived &&
+              archivedWorks.map((w) => (
+                <div
+                  key={w.work_id}
+                  className="library-item"
+                  style={{ opacity: 0.75 }}
+                  onClick={() => onSelect(w.work_id)}
+                  title="Archived — content and history are intact"
+                >
+                  <div className="library-item-row">
+                    <span className="library-item-title" style={{ fontStyle: "italic" }}>
+                      {w.title || "Untitled"}
+                    </span>
+                    <span className="library-item-id">{w.work_id.toString(16).padStart(4, "0")}</span>
+                  </div>
+                  <div className="library-detail">
+                    <span>Archived</span>
+                    {onRestoreArchived && (
+                      <>
+                        <span className="library-detail-sep">{"\u00B7"}</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onRestoreArchived(w.work_id);
+                          }}
+                          style={{
+                            background: "none",
+                            border: "1px solid var(--border)",
+                            borderRadius: 4,
+                            color: "var(--text)",
+                            fontSize: 10,
+                            padding: "1px 8px",
+                            cursor: "pointer",
+                          }}
+                        >
+                          Restore
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+          </>
         )}
       </div>
     </div>

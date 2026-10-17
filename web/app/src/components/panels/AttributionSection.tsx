@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { AttributionSpan, AttributionLogStatus } from "../../api/crdt_sync";
-import { authorColor } from "../../author-color";
+import { authorColor, authorOrderedPair } from "../../author-color";
 
 interface AttributionSectionProps {
   attributionSpans: AttributionSpan[];
@@ -11,6 +11,9 @@ interface AttributionSectionProps {
   onOpenWork?: (workId: number) => void;
   currentWorkId?: number | null;
   documentLength: number;
+  /** Paired-colour mode state + setter (two ordered hues per author). */
+  pairedColors?: boolean;
+  onTogglePairedColors?: () => void;
 }
 
 interface ContributingDoc {
@@ -71,7 +74,7 @@ function contributingDocuments(spans: AttributionSpan[]): { docs: ContributingDo
   return { docs, ownChars };
 }
 
-export function AttributionSection({ attributionSpans, attributionLogStatus, onOpenFullView, onExportReport, onExportProvJson, onOpenWork, currentWorkId, documentLength }: AttributionSectionProps) {
+export function AttributionSection({ attributionSpans, attributionLogStatus, onOpenFullView, onExportReport, onExportProvJson, onOpenWork, currentWorkId, documentLength, pairedColors = false, onTogglePairedColors }: AttributionSectionProps) {
   const [expanded, setExpanded] = useState(false);
 
   const effectiveLength = attributionSpans.length > 0
@@ -104,6 +107,28 @@ export function AttributionSection({ attributionSpans, attributionLogStatus, onO
       >
         <div className="ctx-title">Attribution</div>
         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+          {onTogglePairedColors && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onTogglePairedColors();
+              }}
+              title="Paired colours: two ordered hues per author (distinguishes hundreds of authors; single hue saturates at 25)"
+              style={{
+                fontSize: 9,
+                padding: "1px 6px",
+                borderRadius: 8,
+                border: `1px solid ${pairedColors ? "var(--accent, #58a6ff)" : "var(--border, #333)"}`,
+                background: pairedColors
+                  ? "linear-gradient(110deg, rgba(210,153,34,0.35) 0 50%, rgba(86,180,233,0.35) 50%)"
+                  : "transparent",
+                color: "var(--text-dim, #999)",
+                cursor: "pointer",
+              }}
+            >
+              pair
+            </button>
+          )}
           <span className={`ctx-badge ${hasIssues ? "risk" : allOk ? "ok" : "amber"}`}>
             {statusLabel}
           </span>
@@ -262,15 +287,24 @@ export function AttributionSection({ attributionSpans, attributionLogStatus, onO
             )}
             {attributionSpans.slice(0, 10).map((span, i) => {
               const name = span.author_display_name || "unknown";
+              const isSpecial = span.author_type === "historical" || span.author_type === "llm";
               const color = span.author_type === "historical"
                 ? "#c4a35a"
                 : span.author_type === "llm"
                 ? "#7c4dff"
                 : authorColor(name);
+              const [hueA, hueB] = isSpecial ? [color, color] : (pairedColors ? authorOrderedPair(name) : [color, color]);
               return (
                 <div key={i} className="attr-row">
                   <span className="attr-range">[{span.start}..{span.end}]</span>
-                  <div className="attr-author-dot" style={{ background: color }} />
+                  <div
+                    className="attr-author-dot"
+                    style={
+                      pairedColors && !isSpecial
+                        ? { background: `linear-gradient(110deg, ${hueA} 0 50%, ${hueB} 50%)` }
+                        : { background: color }
+                    }
+                  />
                   <span style={{ fontWeight: 500, fontSize: 12 }}>{name}</span>
                   {span.source_work_id != null && (
                     <span

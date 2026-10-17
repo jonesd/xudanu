@@ -20,6 +20,8 @@ interface ContextPanelProps {
   onExportProvJson?: () => void;
   focusMode: boolean;
   onToggleFocus: () => void;
+  pairedColors?: boolean;
+  onTogglePairedColors?: () => void;
   onDeleteLink?: (linkId: number) => void;
   onRetypeLink?: (linkId: number, typeId: number) => void;
   onCommentOnLink?: (linkId: number) => void;
@@ -57,7 +59,7 @@ export function ContextPanel(props: ContextPanelProps) {
         crossServerBacklinks={props.crossServerBacklinks}
         onOpenCourse={props.onOpenCourse}
       />
-      <AttributionSection attributionSpans={props.attributionSpans} attributionLogStatus={props.attributionLogStatus} onOpenFullView={props.onOpenProvenance} onExportReport={props.onExportReport} onExportProvJson={props.onExportProvJson} onOpenWork={props.onNavigateToWork} currentWorkId={props.currentWorkId} documentLength={props.documentLength} />
+      <AttributionSection attributionSpans={props.attributionSpans} attributionLogStatus={props.attributionLogStatus} onOpenFullView={props.onOpenProvenance} onExportReport={props.onExportReport} onExportProvJson={props.onExportProvJson} onOpenWork={props.onNavigateToWork} currentWorkId={props.currentWorkId} documentLength={props.documentLength} pairedColors={props.pairedColors} onTogglePairedColors={props.onTogglePairedColors} />
     </div>
   );
 }

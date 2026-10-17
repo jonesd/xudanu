@@ -2,9 +2,9 @@ import { useRef, useEffect, useCallback, useMemo, useState } from "react";
 import { storageGet, storageSet } from "../safe-storage";
 import type { AttributionSpan, TransclusionMarker, AnnotationEntry, SpanRangePayload, AwarenessState, ChangeHighlight, AgainHop } from "../api/crdt_sync";
 import type { PendingTransclusion } from "../hooks/useTransclusion";
-import { authorColor } from "../author-color";
 import { TextBuffer } from "../api/text_buffer";
 import { extractStyleMarks, buildStyledText, getCursorOffset, setCaretModel, findUrls, modelOffsetFromPoint } from "../styled-text";
+import { authorColor, authorOrderedPair, pairedAuthorColors } from "../author-color";
 
 import {
   getTextContent,
@@ -41,6 +41,7 @@ function bytesToHex(bytes: number[]): string {
 
 interface AuthorStyle {
   color: string;
+  colorB: string;
   name: string;
   authorType: string | null;
   historicalAuthorId: number | null;
@@ -53,6 +54,8 @@ interface CollaborativeEditorProps {
    *  DOM rebuild from the model text — the contenteditable's
    *  intermediate state is never trusted after structural changes. */
   structuralVersion?: number;
+  /** Paired-colour attribution mode (two ordered hues per author). */
+  attributionPaired?: boolean;
   workId?: number;
   onTextChange?: (text: string) => void;
   onCursorChange: (index: number | null) => void;
@@ -430,6 +433,20 @@ function drawOverlay(
         ctx.moveTo(x, underlineY);
         ctx.lineTo(x + r.width, underlineY);
         ctx.stroke();
+        // Paired-colour mode: the second hue rides the strip as
+        // diagonal ticks — two ordered hues per author distinguish
+        // hundreds of authors where one hue saturates at 25.
+        if (style.colorB !== style.color && !isHistorical) {
+          ctx.setLineDash([]);
+          ctx.strokeStyle = style.colorB + "cc";
+          ctx.lineWidth = 2;
+          for (let tx = x + 3; tx + 4 <= x + r.width; tx += 8) {
+            ctx.beginPath();
+            ctx.moveTo(tx, underlineY + 1);
+            ctx.lineTo(tx + 4, underlineY - 1);
+            ctx.stroke();
+          }
+        }
         ctx.restore();
         visibleRects.push(r);
       }
@@ -630,8 +647,13 @@ function drawOverlay(
       // FR-74 deterministic markers: compare against the MODEL text
       // (displayText), not the DOM textContent (which has ZWSP and
       // hidden-span artifacts). Same model text → same marker position.
+      // textContent also counts visible bullet glyphs — on bulleted
+      // docs its offsets run long by one per list line, the excerpt
+      // search then returned a DOM-space offset past the model text,
+      // and end-of-document links were silently dropped (the
+      // "no link at the bottom" bug, October 2026).
       const want = rawExcerpt.slice(0, 40);
-      const flat = (editor.textContent || "").replace(/\u200B/g, "");
+      const flat = getTextContent(editor);
       const at = flat.slice(drawStart, drawStart + want.length);
       if (at !== want) {
         const found = flat.indexOf(want);
@@ -1271,6 +1293,7 @@ export function CollaborativeEditor({
   onSelectionEnd,
   connected,
   attributionSpans,
+  attributionPaired = false,
   editable,
   externalLinksEnabled = false,
   readingMode = false,
@@ -1450,6 +1473,7 @@ export function CollaborativeEditor({
 
   const authorColorMap = useMemo(() => {
     const map = new Map<string, AuthorStyle>();
+    const paired = attributionPaired && pairedAuthorColors();
     for (const span of attributionSpans) {
       const key = bytesToHex(span.author_public_key);
       if (!map.has(key)) {
@@ -1457,8 +1481,13 @@ export function CollaborativeEditor({
         const isHistorical = span.author_type === "historical";
         const name = span.author_display_name || "unknown";
         const color = isLlm ? "#d4a017" : isHistorical ? "#c4a35a" : authorColor(name);
+        const colorB =
+          paired && !isLlm && !isHistorical
+            ? authorOrderedPair(name)[1]
+            : color;
         map.set(key, {
           color,
+          colorB,
           name,
           authorType: span.author_type,
           historicalAuthorId: span.historical_author_id,
@@ -1466,7 +1495,7 @@ export function CollaborativeEditor({
       }
     }
     return map;
-  }, [attributionSpans]);
+  }, [attributionSpans, attributionPaired]);
 
   const hasInlineTransclusions = !!inlineResolvedText && compoundSpanRanges.length > 0;
   const hasInlineBlobs = blobEntries.length > 0;
@@ -1999,16 +2028,42 @@ export function CollaborativeEditor({
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
+    // ⌘/Ctrl-click FOLLOWS the connection — the universal web
+    // convention for editable text. Without the modifier, authoring
+    // mode keeps text clicks for the caret; reading mode follows on
+    // plain clicks (no caret to place).
+    const modFollow = e.metaKey || e.ctrlKey;
+    const contains = (hz: MarkerHitZone) =>
+      x >= hz.x && x <= hz.x + hz.width && y >= hz.y && y <= hz.y + hz.height;
     // Nested spans produce nested band zones; the smallest enclosing
     // zone is the precise target (clicking an inner phrase must not
     // fall through to the whole-sentence link around it).
     const matches = hitZonesRef.current.filter((hz) =>
-      !hz.hoverOnly &&
-      x >= hz.x && x <= hz.x + hz.width && y >= hz.y && y <= hz.y + hz.height
+      (modFollow || !hz.hoverOnly) && contains(hz)
     );
-    const hit = matches.reduce<MarkerHitZone | null>((best, hz) =>
-      !best || hz.width * hz.height < best.width * best.height ? hz : best, null);
-    if (!hit) return;
+    const smallest = (list: MarkerHitZone[]) =>
+      list.reduce<MarkerHitZone | null>((best, hz) =>
+        !best || hz.width * hz.height < best.width * best.height ? hz : best, null);
+    const hit = smallest(matches);
+    if (!hit) {
+      if (!modFollow) {
+        // Authoring-mode plain click on a link's band region: not a
+        // navigation (the caret may need placing), but never silent —
+        // pin the connection tooltip so the click always answers.
+        const bandHit = smallest(hitZonesRef.current.filter((hz) => hz.band && hz.hoverOnly && contains(hz)));
+        if (bandHit) {
+          const sel = window.getSelection();
+          if (sel && !sel.isCollapsed) return;
+          setPinnedMarker(true);
+          setHoveredMarker(bandHit.marker);
+          setTooltipPos({ x: e.clientX, y: e.clientY });
+          if ((bandHit.stackMarkers?.length ?? 0) > 1) {
+            setHoveredStack({ markers: bandHit.stackMarkers ?? [], x: e.clientX, y: e.clientY });
+          }
+        }
+      }
+      return;
+    }
     if (hit.band) {
       // Reading-mode underline click. A drag-selection (copy gesture)
       // must not navigate — only a plain click follows the link.
@@ -2034,6 +2089,15 @@ export function CollaborativeEditor({
         width: hit.width,
         text: entry?.text ?? "",
       });
+      return;
+    }
+    if ((hit.stackMarkers?.length ?? 0) > 1) {
+      // Stacked connections on one span: jumping would pick an
+      // arbitrary member — pin the stack tooltip instead so the
+      // reader chooses.
+      setPinnedMarker(true);
+      setHoveredStack({ markers: hit.stackMarkers ?? [], x: e.clientX, y: e.clientY });
+      setHoveredMarker(null);
       return;
     }
     if (hit.marker.linkTypeId === 6) {
@@ -2534,7 +2598,10 @@ export function CollaborativeEditor({
     const pre = document.createRange();
     pre.selectNodeContents(el);
     pre.setEnd(range.startContainer, range.startOffset);
-    const fullPos = pre.toString().replace(/\u200B/g, "").length;
+    // Model-space position (skips visible bullet glyphs and ZWSPs —
+    // Range.toString() counts both and drifted placements on
+    // bulleted documents).
+    const fullPos = modelOffsetFromPoint(el, range.startContainer, range.startOffset);
 
     let readonlyChars = 0;
     el.querySelectorAll(".inline-transclusion").forEach((span) => {

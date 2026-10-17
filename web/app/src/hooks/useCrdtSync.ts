@@ -232,7 +232,16 @@ export function useCrdtSync(
 
   // Switch works — text loads first, everything else waits
   useEffect(() => {
-    if (!connected || workBeId === null) return;
+    if (workBeId === null) return;
+    if (!connected) {
+      // A navigation that lands while disconnected must not vanish
+      // silently (the URL changes but the editor never switches).
+      // Show the pending switch; when the connection returns this
+      // effect re-runs and completes the navigation.
+      setSwitchingWork(true);
+      setSwitchError("Connection lost — the document will open when it returns.");
+      return;
+    }
     setAccessDeniedWorkId(null);
     setSwitchError(null);
     setSwitchingWork(true);

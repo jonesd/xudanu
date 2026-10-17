@@ -59,7 +59,7 @@ import {
 import { linkEnds, isMultiEnded, multiEndWorkIds, notifyStatus, gatherableEnds } from "../../link-ends";
 import { MultiEndCompare } from "../MultiEndCompare";
 import { useCompoundEdition } from "../../hooks/useCompoundEdition";
-import { authorColorPair } from "../../author-color";
+import { authorColorPair, authorOrderedPair, pairedAuthorColors, setPairedAuthorColors } from "../../author-color";
 import { CollaborativeEditor } from "../CollaborativeEditor";
 import { EasyMDEEditor } from "../EasyMDEEditor";
 import { TransclusionBadge } from "../TransclusionBadge";
@@ -247,6 +247,15 @@ export function WorkspaceShell() {
   const [highlightRange, setHighlightRange] = useState<{ start: number; end: number } | null>(null);
   const [pendingImage, setPendingImage] = useState<{ hash: string; mime: string; byte_size: number; width?: number; height?: number } | null>(null);
   const useMDE = new URLSearchParams(window.location.search).has("mde");
+  const [pairedAuthorColorsOn, setPairedAuthorColorsOn] = useState(() => pairedAuthorColors());
+  const [archivedWorks, setArchivedWorks] = useState<WorkListEntry[]>([]);
+  const [showArchivedWorks, setShowArchivedWorks] = useState(false);
+  const togglePairedAuthorColors = useCallback(() => {
+    setPairedAuthorColorsOn((prev) => {
+      setPairedAuthorColors(!prev);
+      return !prev;
+    });
+  }, []);
   const [followState, setFollowState] = useState<{ following: boolean; busy: boolean; error: string | null }>({
     following: false,
     busy: false,
@@ -544,6 +553,20 @@ export function WorkspaceShell() {
     switchError,
     publicClubId,
   } = crdt;
+  useEffect(() => {
+    if (!connected || !clientRef.current) return;
+    let cancelled = false;
+    clientRef.current
+      .listArchivedWorks()
+      .then((list) => {
+        if (!cancelled) setArchivedWorks(list);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected, works]);
   const [suggestBusy, setSuggestBusy] = useState(false);
   const [suggestionsEnabled, setSuggestionsEnabled] = useState(false);
   const reuse = useReuseSuggestions(
@@ -3115,23 +3138,50 @@ export function WorkspaceShell() {
               <div className="ws-provenance-full">
                 {/* Compact summary */}
                 <div className="ws-provenance-summary">
-                  <h4>Authorship</h4>
+                  <h4 style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    Authorship
+                    <button
+                      onClick={togglePairedAuthorColors}
+                      title="Paired colours: two ordered hues per author (distinguishes hundreds of authors; a single hue saturates at 25)"
+                      style={{
+                        fontSize: 9,
+                        padding: "1px 8px",
+                        borderRadius: 8,
+                        border: `1px solid ${pairedAuthorColorsOn ? "var(--accent, #58a6ff)" : "var(--border, #333)"}`,
+                        background: pairedAuthorColorsOn
+                          ? "linear-gradient(110deg, rgba(210,153,34,0.35) 0 50%, rgba(86,180,233,0.35) 50%)"
+                          : "transparent",
+                        color: "var(--text-dim, #999)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      pair
+                    </button>
+                  </h4>
                   {authorStats.length === 0 ? (
                     <div className="ws-placeholder-sublabel">No attribution data</div>
                   ) : (
                     <ul className="ws-author-list">
-                      {authorStats.map((a) => (
-                        <li key={a.name} className="ws-author-row">
-                          <span className="ws-author-name">{a.name}</span>
-                          <span className="ws-author-bar">
-                            <span
-                              className="ws-author-bar-fill"
-                              style={{ width: `${Math.max(2, a.pct)}%`, background: authorColorPair(a.name).primary }}
-                            />
-                          </span>
-                          <span className="ws-author-pct">{a.pct.toFixed(0)}%</span>
-                        </li>
-                      ))}
+                      {authorStats.map((a) => {
+                        const [hueA, hueB] = authorOrderedPair(a.name);
+                        return (
+                          <li key={a.name} className="ws-author-row">
+                            <span className="ws-author-name">{a.name}</span>
+                            <span className="ws-author-bar">
+                              <span
+                                className="ws-author-bar-fill"
+                                style={{
+                                  width: `${Math.max(2, a.pct)}%`,
+                                  background: pairedAuthorColorsOn
+                                    ? `linear-gradient(110deg, ${hueA} 0 50%, ${hueB} 50%)`
+                                    : authorColorPair(a.name).primary,
+                                }}
+                              />
+                            </span>
+                            <span className="ws-author-pct">{a.pct.toFixed(0)}%</span>
+                          </li>
+                        );
+                      })}
                     </ul>
                   )}
                 </div>
@@ -4773,6 +4823,78 @@ export function WorkspaceShell() {
                   </ul>
                 );
               })()}
+              {archivedWorks.length > 0 && (
+                <div style={{ marginTop: 10 }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowArchivedWorks((s) => !s)}
+                    style={{
+                      fontSize: 10,
+                      padding: "2px 8px",
+                      borderRadius: 4,
+                      border: "1px solid #30363d",
+                      background: "transparent",
+                      color: "#8b949e",
+                      cursor: "pointer",
+                      width: "100%",
+                      textAlign: "left",
+                    }}
+                    title="Xanadu permanence: archived works keep their content, history, and links — nothing is deleted"
+                  >
+                    {showArchivedWorks ? "▾" : "▸"} Archived ({archivedWorks.length}) — nothing is deleted
+                  </button>
+                  {showArchivedWorks && (
+                    <ul className="ws-concepts-list" style={{ marginTop: 4 }}>
+                      {archivedWorks.map((w) => (
+                        <li
+                          key={w.work_id}
+                          className="ws-concept-item"
+                          style={{ opacity: 0.75 }}
+                          onClick={() => selectWork(w.work_id)}
+                          title="Archived — content and history intact"
+                        >
+                          <span style={{ color: "#6e7681", fontSize: "calc(var(--ws-font, 14px) - 1px)", flexShrink: 0 }}>🗄</span>
+                          <span className="ws-concept-name" style={{ fontStyle: "italic" }} title={w.title || "Untitled"}>
+                            {(w.title || "Untitled").length > 22 ? (w.title || "Untitled").slice(0, 20) + "…" : (w.title || "Untitled")}
+                          </span>
+                          <span style={{ color: "#6e7681", fontSize: 10, marginLeft: "auto", fontFamily: "monospace", flexShrink: 0 }}>
+                            0x{w.work_id.toString(16)}
+                          </span>
+                          <button
+                            type="button"
+                            title="Restore from archive"
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              if (!clientRef.current) return;
+                              try {
+                                await clientRef.current.workUnarchive(w.work_id);
+                                const refreshed = await clientRef.current.listArchivedWorks();
+                                setArchivedWorks(refreshed);
+                                showToast(`Restored "${w.title || "Untitled"}"`);
+                              } catch (err) {
+                                showToast(`Restore failed: ${err instanceof Error ? err.message : String(err)}`);
+                              }
+                            }}
+                            style={{
+                              fontSize: 10,
+                              padding: "0 6px",
+                              marginLeft: 4,
+                              borderRadius: 4,
+                              border: "1px solid #30363d",
+                              background: "transparent",
+                              color: "#8b949e",
+                              cursor: "pointer",
+                              flexShrink: 0,
+                            }}
+                          >
+                            ↩
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
               </div>
             )}
           </div>
@@ -5373,7 +5495,7 @@ export function WorkspaceShell() {
                     <button
                       className={`ws-action-btn ${editorMode === "reading" ? "active" : ""}`}
                       onClick={() => setEditorMode(editorMode === "authoring" ? "reading" : "authoring")}
-                      title={editorMode === "authoring" ? "Switch to reading mode (hides markers)" : "Switch to authoring mode (shows markers)"}
+                      title={editorMode === "authoring" ? "Switch to READING mode — clean text, click an underline to follow its link" : "Switch to AUTHORING mode — full markers (⌘-click a link to follow it)"}
                     >
                       {editorMode === "authoring" ? "📖" : "✏️"}
                     </button>
@@ -6100,6 +6222,7 @@ export function WorkspaceShell() {
                 ) : (
                   <CollaborativeEditor
                   structuralVersion={structuralVersion}
+                  attributionPaired={pairedAuthorColorsOn}
                   text={text}
                   workId={workBeId ?? undefined}
                   onTextChange={canEdit ? setText : undefined}
