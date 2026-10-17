@@ -692,6 +692,7 @@ export class CrdtSyncClient {
   private pending = new Map<number, ResponseHandler>();
   private text = "";
   private textListeners = new Set<(text: string) => void>();
+  private editCommitListeners = new Set<(info: { inserted: number; deleted: number; net: number; total: number }) => void>();
   private accessDeniedListeners = new Set<(workId: number) => void>();
   private awarenessListeners = new Set<(states: AwarenessState[]) => void>();
   private connectionListeners = new Set<(connected: boolean) => void>();
@@ -861,6 +862,13 @@ export class CrdtSyncClient {
   onTextChange(cb: (text: string) => void): () => void {
     this.textListeners.add(cb);
     return () => { this.textListeners.delete(cb); };
+  }
+
+  /** Fired when a text edit is ACKNOWLEDGED by the server — the
+   * authoritative "this change is now real" moment. */
+  onEditCommit(cb: (info: { inserted: number; deleted: number; net: number; total: number }) => void): () => void {
+    this.editCommitListeners.add(cb);
+    return () => { this.editCommitListeners.delete(cb); };
   }
 
   onAccessDenied(cb: (workId: number) => void): () => void {
@@ -2975,6 +2983,7 @@ export class CrdtSyncClient {
     const suffix = commonSuffix(oldRemaining, newRemaining);
     const deleteLen = oldText.length - prefix - suffix;
     const insertText = newText.slice(prefix, newText.length - suffix);
+    const insertLen = insertText.length;
 
     const ops: Array<{ type: string; count?: number; text?: string }> = [];
     if (prefix > 0) {
@@ -3002,6 +3011,11 @@ export class CrdtSyncClient {
       this.lastAckedAt = Date.now();
       this.hasUnsyncedLocalEdits = false;
       this.setSaveState("saved");
+      // The system speaks: every committed edit announces its size so
+      // a cut, an undo restore, or a stray deletion is visible the
+      // moment it lands instead of being discovered as missing text.
+      const info = { inserted: insertLen, deleted: deleteLen, net: insertLen - deleteLen, total: newText.length };
+      this.editCommitListeners.forEach((cb) => cb(info));
       this.saveStateTimer = setTimeout(() => this.setSaveState("idle"), 2000);
       if (this.pendingServerText !== null) {
         const serverText = this.pendingServerText;

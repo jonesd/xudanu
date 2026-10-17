@@ -5,6 +5,7 @@ import type { PendingTransclusion } from "../hooks/useTransclusion";
 import { TextBuffer } from "../api/text_buffer";
 import { extractStyleMarks, buildStyledText, getCursorOffset, setCaretModel, findUrls, modelOffsetFromPoint } from "../styled-text";
 import { authorColor, authorOrderedPair, pairedAuthorColors } from "../author-color";
+import { setLastCopiedSpan } from "../clipboard-span";
 
 import {
   getTextContent,
@@ -2481,6 +2482,32 @@ export function CollaborativeEditor({
     return () => document.removeEventListener("keydown", onKey);
   }, [editable, performUndo, performRedo]);
 
+  // Toast-requested undo (the large-delete acknowledgment's Undo
+  // button dispatches this event).
+  useEffect(() => {
+    if (!editable) return;
+    const onReq = () => performUndo();
+    document.addEventListener("xudanu:request-undo", onReq);
+    return () => document.removeEventListener("xudanu:request-undo", onReq);
+  }, [editable, performUndo]);
+
+  // Record the copied span for paste-as-transclusion: the copy knows
+  // its source work and model-space bounds, so a later paste can be
+  // offered as a live reference instead of a frozen copy.
+  useEffect(() => {
+    const el = editorRef.current;
+    if (!el || workId == null) return;
+    const onCopy = () => {
+      const sel = window.getSelection();
+      const text = sel?.toString() ?? "";
+      if (text.length < 3 || !sel || sel.rangeCount === 0 || !el.contains(sel.anchorNode)) return;
+      const { start, end } = getSelectionInEditor();
+      if (end > start) setLastCopiedSpan({ workId, start, end, text, at: Date.now() });
+    };
+    el.addEventListener("copy", onCopy);
+    return () => el.removeEventListener("copy", onCopy);
+  }, [workId, getSelectionInEditor]);
+
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     if (!editable) { e.preventDefault(); return; }
     e.preventDefault();
@@ -2504,7 +2531,7 @@ export function CollaborativeEditor({
     sel.removeAllRanges();
     sel.addRange(range);
     handleInput();
-    if (onPasteText && pasteText.length > 50) onPasteText(pasteText, pasteStart);
+    if (onPasteText && pasteText.length >= 3) onPasteText(pasteText, pasteStart);
   }, [handleInput, editable, onPasteText]);
 
   const handleSelectionChange = useCallback(() => {

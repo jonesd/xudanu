@@ -60,6 +60,7 @@ import { linkEnds, isMultiEnded, multiEndWorkIds, notifyStatus, gatherableEnds }
 import { MultiEndCompare } from "../MultiEndCompare";
 import { useCompoundEdition } from "../../hooks/useCompoundEdition";
 import { authorColorPair, authorOrderedPair, pairedAuthorColors, setPairedAuthorColors } from "../../author-color";
+import { getLastCopiedSpan, clearCopiedSpan } from "../../clipboard-span";
 import { CollaborativeEditor } from "../CollaborativeEditor";
 import { EasyMDEEditor } from "../EasyMDEEditor";
 import { TransclusionBadge } from "../TransclusionBadge";
@@ -323,13 +324,14 @@ export function WorkspaceShell() {
       : "recently";
     return { sourceUrl, fetchedAt, hash8: "" };
   }, [works, workBeId]);
-  const [toast, setToast] = useState<string | null>(null);
-  const showToast = useCallback((msg: string) => {
-    setToast(msg);
-    if (msg.toLowerCase().includes("fail") || msg.toLowerCase().includes("error")) {
-      console.error("[TOAST ERROR]", msg);
+  const [toast, setToast] = useState<{ msg: string; action?: { label: string; run: () => void } } | null>(null);
+  const showToast = useCallback((msgOrToast: string | { msg: string; action?: { label: string; run: () => void } }) => {
+    const t = typeof msgOrToast === "string" ? { msg: msgOrToast } : msgOrToast;
+    setToast(t);
+    if (t.msg.toLowerCase().includes("fail") || t.msg.toLowerCase().includes("error")) {
+      console.error("[TOAST ERROR]", t.msg);
     }
-    setTimeout(() => setToast(null), 5000);
+    setTimeout(() => setToast(null), t.action ? 8000 : 5000);
   }, []);
   // FR-40 L3: the in-editor gather picker (span-level "add to this
   // end" from the selection actions bar).
@@ -553,6 +555,36 @@ export function WorkspaceShell() {
     switchError,
     publicClubId,
   } = crdt;
+
+  // The edit ticker: every server-acknowledged edit announces its
+  // size in the document meta bar. Cuts, undo restores, and stray
+  // deletions become visible the moment they commit.
+  const [editTicker, setEditTicker] = useState<{ inserted: number; deleted: number; net: number; total: number; at: number } | null>(null);
+  useEffect(() => {
+    const client = clientRef.current;
+    if (!client) return;
+    let clearTimer: ReturnType<typeof setTimeout> | null = null;
+    const off = client.onEditCommit((info) => {
+      setEditTicker({ ...info, at: Date.now() });
+      if (clearTimer) clearTimeout(clearTimer);
+      clearTimer = setTimeout(() => setEditTicker(null), 4000);
+      // Large destructive edits get an explicit, undoable callout —
+      // a miskeyed cut must never read as mysterious loss.
+      if (info.deleted >= 20 && info.deleted > info.inserted * 2) {
+        showToast({
+          msg: `Removed ${info.deleted} characters`,
+          action: {
+            label: "Undo",
+            run: () => document.dispatchEvent(new CustomEvent("xudanu:request-undo")),
+          },
+        });
+      }
+    });
+    return () => {
+      off();
+      if (clearTimer) clearTimeout(clearTimer);
+    };
+  }, [clientRef, connected, showToast]);
   useEffect(() => {
     if (!connected || !clientRef.current) return;
     let cancelled = false;
@@ -5582,6 +5614,17 @@ export function WorkspaceShell() {
                     }}
                     title={saveState === "error" ? "Save error — changes may not be saved. Check your connection." : saveState === "saving" ? "Saving..." : "All changes saved"}
                   />
+                  {editTicker && (
+                    <span
+                      title={`committed edit: +${editTicker.inserted} −${editTicker.deleted} chars (${editTicker.total} total)`}
+                      style={{ fontVariantNumeric: "tabular-nums", fontSize: 11 }}
+                    >
+                      · {editTicker.net >= 0 ? "+" : "−"}{Math.abs(editTicker.net)}{" "}
+                      <span style={{ opacity: 0.7, color: editTicker.net >= 0 ? "#3fb950" : "#f85149" }}>
+                        {editTicker.net >= 0 ? "chars" : "chars removed"}
+                      </span>
+                    </span>
+                  )}
                   {workMeta?.author && <span>{workMeta.author}</span>}
                   {workMeta?.collection && <span>· {workMeta.collection}</span>}
                   {workMeta?.publishedAt && <span>· {workMeta.publishedAt}</span>}
@@ -6011,10 +6054,10 @@ export function WorkspaceShell() {
                                   end: selectionRange.end,
                                 });
                                 setGatherOpen(false);
-                                setToast(`Gathered into ${end.localName} — now ${end.memberCount + 1} passages`);
+                                setToast({ msg: `Gathered into ${end.localName} — now ${end.memberCount + 1} passages` });
                                 void loadLinks(clientRef.current, workBeId, works);
                               } catch (e) {
-                                setToast(e instanceof Error ? e.message : "Gather failed");
+                                setToast({ msg: e instanceof Error ? e.message : "Gather failed" });
                               } finally {
                                 setGatherBusy(false);
                               }
@@ -6239,6 +6282,46 @@ export function WorkspaceShell() {
                   <CollaborativeEditor
                   structuralVersion={structuralVersion}
                   attributionPaired={pairedAuthorColorsOn}
+                  onPasteText={(pastedText, pasteStart) => {
+                    // Paste-as-transclusion offer: a paste that matches
+                    // a span copied from ANOTHER document can become a
+                    // live reference instead of a frozen copy.
+                    const cp = getLastCopiedSpan();
+                    if (!cp || workBeId === null || cp.workId === workBeId) return;
+                    if (Date.now() - cp.at > 5 * 60_000) return;
+                    if (cp.text.trim() !== pastedText.trim()) return;
+                    showToast({
+                      msg: `Pasted from another document — keep as a copy, or make it a live transclusion?`,
+                      action: {
+                        label: "Transclude",
+                        run: () => {
+                          const client = clientRef.current;
+                          if (!client || workBeId === null) return;
+                          (async () => {
+                            try {
+                              // remove the frozen copy, place the live reference at the same spot
+                              const removed = text.slice(0, pasteStart) + text.slice(pasteStart + pastedText.length);
+                              setText(removed);
+                              await new Promise((r) => setTimeout(r, 150));
+                              const linkId = await client.linkCreate(
+                                cp.workId,
+                                workBeId,
+                                { excerpt: cp.text, start: cp.start, end: cp.end },
+                                { excerpt: "", start: pasteStart, end: pasteStart },
+                              );
+                              try { await client.applyTransclusionAttribution(linkId); } catch { /* attribution optional */ }
+                              bumpStructuralVersion();
+                              clearCopiedSpan();
+                              void loadLinks(client, workBeId, works);
+                              showToast("Live transclusion placed — edits to the source will flow");
+                            } catch (e) {
+                              showToast(`Transclusion failed: ${e instanceof Error ? e.message : String(e)}`);
+                            }
+                          })();
+                        },
+                      },
+                    });
+                  }}
                   text={text}
                   workId={workBeId ?? undefined}
                   onTextChange={canEdit ? setText : undefined}
@@ -7223,7 +7306,29 @@ export function WorkspaceShell() {
 
       {toast && (
         <div className="ws-toast" onClick={() => setToast(null)}>
-          {toast}
+          {toast.msg}
+          {toast.action && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                toast.action!.run();
+                setToast(null);
+              }}
+              style={{
+                marginLeft: 10,
+                padding: "1px 10px",
+                borderRadius: 6,
+                border: "1px solid var(--border)",
+                background: "var(--bg-elevated)",
+                color: "var(--text)",
+                fontSize: 11,
+                cursor: "pointer",
+              }}
+            >
+              {toast.action.label}
+            </button>
+          )}
           <span className="ws-toast-close">×</span>
         </div>
       )}
