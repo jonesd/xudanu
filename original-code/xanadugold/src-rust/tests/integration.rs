@@ -13832,7 +13832,11 @@ async fn annotation_private_visibility() {
         ),
     )
     .await;
-    assert_eq!(resp_ac["type"], "response", "club_create_personal failed: {}", resp_ac);
+    assert_eq!(
+        resp_ac["type"], "response",
+        "club_create_personal failed: {}",
+        resp_ac
+    );
     send_recv_json(
         &mut sa,
         &mut ra,
@@ -13864,12 +13868,20 @@ async fn annotation_private_visibility() {
         ),
     )
     .await;
-    assert_eq!(resp_wc["type"], "response", "work_create failed: {}", resp_wc);
+    assert_eq!(
+        resp_wc["type"], "response",
+        "work_create failed: {}",
+        resp_wc
+    );
     let work_id = resp_wc["value"]["value"].as_u64().unwrap();
     send_recv_json(
         &mut sa,
         &mut ra,
-        json_req(4, "work_grab", Some(serde_json::json!({"work_id": work_id}))),
+        json_req(
+            4,
+            "work_grab",
+            Some(serde_json::json!({"work_id": work_id})),
+        ),
     )
     .await;
 
@@ -13956,7 +13968,11 @@ async fn annotation_private_visibility() {
         ),
     )
     .await;
-    assert_eq!(resp_bc["type"], "response", "bob club_create_personal failed: {}", resp_bc);
+    assert_eq!(
+        resp_bc["type"], "response",
+        "bob club_create_personal failed: {}",
+        resp_bc
+    );
     send_recv_json(
         &mut sb,
         &mut rb,
@@ -13989,9 +14005,17 @@ async fn annotation_private_visibility() {
         ),
     )
     .await;
-    assert_eq!(resp_b["type"], "response", "bob must be able to list: {}", resp_b);
+    assert_eq!(
+        resp_b["type"], "response",
+        "bob must be able to list: {}",
+        resp_b
+    );
     let list_b = resp_b["value"]["value"].as_array().unwrap();
-    assert_eq!(list_b.len(), 1, "bob must see exactly the public note, got: {list_b:?}");
+    assert_eq!(
+        list_b.len(),
+        1,
+        "bob must see exactly the public note, got: {list_b:?}"
+    );
     assert_eq!(list_b[0]["payload"], "public note");
     assert_eq!(list_b[0]["is_private"], false);
 
@@ -14008,7 +14032,11 @@ async fn annotation_private_visibility() {
     .await;
     assert_eq!(resp_a["type"], "response");
     let list_a = resp_a["value"]["value"].as_array().unwrap();
-    assert_eq!(list_a.len(), 2, "alice must see her private note too, got: {list_a:?}");
+    assert_eq!(
+        list_a.len(),
+        2,
+        "alice must see her private note too, got: {list_a:?}"
+    );
     let payloads: Vec<&str> = list_a
         .iter()
         .filter_map(|a| a["payload"].as_str())

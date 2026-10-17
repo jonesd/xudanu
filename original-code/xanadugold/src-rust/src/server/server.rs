@@ -23160,9 +23160,12 @@ impl Server {
             })
             .collect();
         for (annotation_id, char_start, char_end) in updates {
-            let _ = self
-                .otree_crdt
-                .annotation_update_range(work_id, annotation_id, char_start, char_end);
+            let _ = self.otree_crdt.annotation_update_range(
+                work_id,
+                annotation_id,
+                char_start,
+                char_end,
+            );
         }
     }
 
@@ -49659,7 +49662,16 @@ mod tests {
             .create_work(sid, Edition::from_text("0123456789ABCDEFGHIJKLMNOPQRST"))
             .unwrap();
         server
-            .annotation_create(sid, work, 9001, "highlight".into(), String::new(), 10, 20, false)
+            .annotation_create(
+                sid,
+                work,
+                9001,
+                "highlight".into(),
+                String::new(),
+                10,
+                20,
+                false,
+            )
             .unwrap();
 
         // 5-char prefix insert shifts the span right by 5
