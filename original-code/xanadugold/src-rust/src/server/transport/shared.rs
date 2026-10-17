@@ -150,6 +150,7 @@ pub struct ServerHandle {
     operation_counter: Arc<std::sync::atomic::AtomicU64>,
     /// H9 FIX: prevents overlapping async checkpoints
     pub checkpoint_guard: Arc<std::sync::atomic::AtomicBool>,
+    gc_in_flight: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl ServerHandle {
@@ -159,6 +160,7 @@ impl ServerHandle {
             inner: Arc::new(RwLock::new(server)),
             operation_counter: Arc::new(std::sync::atomic::AtomicU64::new(ops)),
             checkpoint_guard: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            gc_in_flight: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
@@ -361,6 +363,38 @@ impl ServerHandle {
 
         self.with_server(|srv| srv.checkpoint_commit_no_wal_truncate(result))?;
         self.with_server(|srv| srv.clear_self_heal_pending());
+        // B6: sweep orphans OFF the lock — the walk is seconds-scale
+        // chunk I/O and must never stall dispatch. One sweep at a
+        // time; a skipped sweep just runs on the next checkpoint.
+        if self
+            .gc_in_flight
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+            )
+            .is_ok()
+        {
+            if let Some(inputs) = self.with_server_ref(|srv| srv.gc_snapshot()) {
+                let guard = std::sync::Arc::clone(&self.gc_in_flight);
+                tokio::task::spawn_blocking(move || {
+                    let started = std::time::Instant::now();
+                    match crate::server::server::Server::gc_sweep(inputs) {
+                        Ok(reaped) => tracing::debug!(
+                            "[gc] background sweep reaped {} in {:.1}s",
+                            reaped,
+                            started.elapsed().as_secs_f32()
+                        ),
+                        Err(e) => tracing::warn!("[gc] background sweep failed: {}", e),
+                    }
+                    guard.store(false, std::sync::atomic::Ordering::SeqCst);
+                });
+            } else {
+                self.gc_in_flight
+                    .store(false, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
         self.ots_anchor_round().await;
         Ok(())
     }

@@ -1088,6 +1088,22 @@ pub struct Server {
 }
 
 #[derive(Debug, Clone)]
+/// Immutable inputs for the lock-free chunk GC sweep (B6: the sweep
+/// walks every chunk file — ~1.4s on the dev corpus — and must not
+/// hold the server write lock inside checkpoint commits).
+pub(crate) struct GcInputs {
+    chunk_store: std::sync::Arc<crate::persist::chunk_store::ChunkStore>,
+    data_dir: Option<std::path::PathBuf>,
+    manifest_path: Option<std::path::PathBuf>,
+    manifest_sequence: u64,
+    work_refs: Vec<crate::persist::edition_chunks::WorkChunkRef>,
+    quarantined_work_refs: Vec<crate::persist::edition_chunks::WorkChunkRef>,
+    quarantined_edition_refs: Vec<crate::persist::edition_chunks::EditionChunkRef>,
+    club_work_roots: Vec<crate::persist::edition_chunks::WorkChunkRef>,
+    standalone_edition_refs: Vec<crate::persist::edition_chunks::EditionChunkRef>,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct TrailStop {
     work_id: BeId,
     char_start: Option<u64>,
@@ -29190,9 +29206,11 @@ pub(crate) mod persist_snapshot {
                 );
             }
 
-            if let Err(e) = self.gc_orphaned_chunks() {
-                tracing::warn!("Chunk GC failed: {}", e);
-            }
+            // B6: chunk GC does NOT run inside the locked commit —
+            // the sweep walks every chunk file (~1.4s on the dev
+            // corpus) and stalled all dispatch every autosave cycle.
+            // The async path sweeps on a background thread after
+            // commit; the sync path (checkpoint_to_store) GCs inline.
 
             tracing::info!(
                 "Checkpoint #{} committed (dirty: {}/{}/{} works/clubs/editions)",
@@ -29921,27 +29939,84 @@ pub(crate) mod persist_snapshot {
         }
 
         pub fn gc_orphaned_chunks(&self) -> std::io::Result<u64> {
-            let chunk_store = match self.chunk_store.as_ref() {
-                Some(cs) => cs,
-                None => return Ok(0),
-            };
+            match self.gc_snapshot() {
+                Some(inputs) => Self::gc_sweep(inputs),
+                None => Ok(0),
+            }
+        }
+
+        /// Snapshot of everything the sweep needs — taken under a
+        /// brief lock so the expensive chunk-walk can run WITHOUT the
+        /// server lock (checkpoint_async's background sweep).
+        pub(crate) fn gc_snapshot(&self) -> Option<GcInputs> {
+            let chunk_store = self.chunk_store.clone()?;
+            let work_refs = self
+                .works
+                .values()
+                .filter_map(|ws| ws.chunk_ref.clone())
+                .collect::<Vec<_>>();
+            let quarantined_work_refs = self
+                .quarantined_works
+                .iter()
+                .map(|qw| qw.work_ref.clone())
+                .collect::<Vec<_>>();
+            let quarantined_edition_refs = self
+                .quarantined_editions
+                .iter()
+                .map(|qe| qe.edition_ref.clone())
+                .collect::<Vec<_>>();
+            let club_work_roots = self
+                .club_refs
+                .values()
+                .map(|cr| cr.work_root.clone())
+                .collect::<Vec<_>>();
+            let standalone_edition_refs = self
+                .standalone_edition_refs
+                .values()
+                .cloned()
+                .collect::<Vec<_>>();
+            Some(GcInputs {
+                chunk_store,
+                data_dir: self.data_dir.clone(),
+                manifest_path: self.checkpoint_path.clone(),
+                manifest_sequence: self.manifest_sequence,
+                work_refs,
+                quarantined_work_refs,
+                quarantined_edition_refs,
+                club_work_roots,
+                standalone_edition_refs,
+            })
+        }
+
+        /// The lock-free sweep: walks chunk files to build the
+        /// referenced set, archives and reaps the rest. All inputs are
+        /// immutable snapshots — no server state is touched.
+        pub(crate) fn gc_sweep(inputs: GcInputs) -> std::io::Result<u64> {
+            let GcInputs {
+                chunk_store,
+                data_dir,
+                manifest_path,
+                manifest_sequence,
+                work_refs,
+                quarantined_work_refs,
+                quarantined_edition_refs,
+                club_work_roots,
+                standalone_edition_refs,
+            } = inputs;
+            let chunk_store = &chunk_store;
 
             let mut referenced: std::collections::HashSet<[u8; 32]> =
                 std::collections::HashSet::new();
-            for ws in self.works.values() {
-                if let Some(ref work_ref) = ws.chunk_ref {
-                    match crate::persist::edition_chunks::collect_work_hashes(work_ref, chunk_store)
-                    {
-                        Ok(hashes) => referenced.extend(hashes),
-                        Err(e) => {
-                            tracing::warn!(
-                                "GC: failed to collect work {} hashes ({}), \
-                                 skipping GC to avoid deleting valid chunks",
-                                ws.work.be_id(),
-                                e
-                            );
-                            return Ok(0);
-                        }
+            for work_ref in &work_refs {
+                match crate::persist::edition_chunks::collect_work_hashes(work_ref, chunk_store) {
+                    Ok(hashes) => referenced.extend(hashes),
+                    Err(e) => {
+                        tracing::warn!(
+                            "GC: failed to collect work hashes ({}), \
+                             skipping GC to avoid deleting valid chunks",
+                            e
+                        );
+                        return Ok(0);
                     }
                 }
             }
@@ -29949,32 +30024,26 @@ pub(crate) mod persist_snapshot {
             // only copy of that content. A walk failure here (likely the
             // same corruption that quarantined the work) aborts GC — the
             // safe direction is no reclamation at all.
-            for qw in &self.quarantined_works {
-                match crate::persist::edition_chunks::collect_work_hashes(&qw.work_ref, chunk_store)
-                {
+            for work_ref in &quarantined_work_refs {
+                match crate::persist::edition_chunks::collect_work_hashes(work_ref, chunk_store) {
                     Ok(hashes) => referenced.extend(hashes),
                     Err(e) => {
                         tracing::warn!(
-                            "GC: failed to collect quarantined work {} hashes ({}), \
+                            "GC: failed to collect quarantined work hashes ({}), \
                              skipping GC to avoid deleting valid chunks",
-                            qw.be_id,
                             e
                         );
                         return Ok(0);
                     }
                 }
             }
-            for qe in &self.quarantined_editions {
-                match crate::persist::edition_chunks::collect_edition_hashes(
-                    &qe.edition_ref,
-                    chunk_store,
-                ) {
+            for ed_ref in &quarantined_edition_refs {
+                match crate::persist::edition_chunks::collect_edition_hashes(ed_ref, chunk_store) {
                     Ok(hashes) => referenced.extend(hashes),
                     Err(e) => {
                         tracing::warn!(
-                            "GC: failed to collect quarantined edition {} hashes ({}), \
+                            "GC: failed to collect quarantined edition hashes ({}), \
                              skipping GC to avoid deleting valid chunks",
-                            qe.be_id,
                             e
                         );
                         return Ok(0);
@@ -29985,7 +30054,7 @@ pub(crate) mod persist_snapshot {
             // FR-36: protect the root chunk trees named by root_manifest.json
             // (current + previous). This is the primary protection set since
             // v1.5.0; failure to walk them must abort GC.
-            if let Some(ref data_dir) = self.data_dir {
+            if let Some(ref data_dir) = data_dir {
                 match crate::persist::root_chunk::collect_root_manifest_tree_hashes(
                     data_dir,
                     chunk_store,
@@ -30007,7 +30076,7 @@ pub(crate) mod persist_snapshot {
             // files are normal now — only a present-but-unreadable primary
             // manifest aborts GC.
             {
-                let manifest_path = match self.checkpoint_path.as_ref() {
+                let manifest_path = match manifest_path.as_ref() {
                     Some(p) => p,
                     None => return Ok(0),
                 };
@@ -30077,9 +30146,9 @@ pub(crate) mod persist_snapshot {
                     }
                 }
             }
-            for club_ref in self.club_refs.values() {
+            for club_work_root in &club_work_roots {
                 match crate::persist::edition_chunks::collect_work_hashes(
-                    &club_ref.work_root,
+                    club_work_root,
                     chunk_store,
                 ) {
                     Ok(hashes) => referenced.extend(hashes),
@@ -30093,7 +30162,7 @@ pub(crate) mod persist_snapshot {
                     }
                 }
             }
-            for ed_ref in self.standalone_edition_refs.values() {
+            for ed_ref in &standalone_edition_refs {
                 match crate::persist::edition_chunks::collect_edition_hashes(ed_ref, chunk_store) {
                     Ok(hashes) => referenced.extend(hashes),
                     Err(e) => {
@@ -30111,7 +30180,7 @@ pub(crate) mod persist_snapshot {
                 .all_chunk_hashes()
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
-            if let Some(ref data_dir) = self.data_dir {
+            if let Some(ref data_dir) = data_dir {
                 let mut backup_manifests: Vec<std::path::PathBuf> = Vec::new();
                 if let Ok(entries) = std::fs::read_dir(data_dir) {
                     for entry in entries.flatten() {
@@ -30198,7 +30267,7 @@ pub(crate) mod persist_snapshot {
                         removed += 1;
                     }
                 } else if matches!(
-                    chunk_store.move_chunk_to_archive(hash, self.manifest_sequence),
+                    chunk_store.move_chunk_to_archive(hash, manifest_sequence),
                     Ok(true)
                 ) {
                     archived += 1;
@@ -30207,7 +30276,7 @@ pub(crate) mod persist_snapshot {
 
             // Reap archive entries past the grace horizon.
             const GC_GRACE_GENERATIONS: u64 = 50;
-            let current_gen = self.manifest_sequence;
+            let current_gen = manifest_sequence;
             let reaped = chunk_store
                 .reap_expired_archive(current_gen, GC_GRACE_GENERATIONS)
                 .unwrap_or(0);
