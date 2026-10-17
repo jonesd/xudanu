@@ -15,7 +15,7 @@ function formatWorkId(id: number): string {
 // Reconstruct the ancestry DAG from hop destinations and return each
 // leaf→target path. Without dest_work_id (old server) it falls back to a
 // single flat path so a multi-source doc isn't misread as a linear chain.
-function buildChainPaths(chain: ProvenanceHop[]): ProvenanceHop[][] {
+export function buildChainPaths(chain: ProvenanceHop[]): ProvenanceHop[][] {
   if (!chain.length) return [];
   const haveDest = chain.every((h) => h.dest_work_id != null && h.dest_work_id !== 0);
   if (!haveDest) return [chain];

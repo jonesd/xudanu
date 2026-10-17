@@ -73,6 +73,7 @@ import { RevisionTimeline } from "../RevisionTimeline";
 import { LinkCreator } from "../LinkCreator";
 import { ImportWizard } from "../ImportWizard";
 import { AttributionPanel } from "../AttributionPanel";
+import { ErrorBoundary } from "../ErrorBoundary";
 import { ServerDirectoryPanel } from "../ServerDirectoryPanel";
 import { loadThemeState, saveThemeState, activePalette } from "../../theme";
 import type { ThemeMode } from "../../theme";
@@ -3235,13 +3236,15 @@ export function WorkspaceShell() {
                 </div>
 
                 {/* Full detailed attribution — security-critical view */}
-                <AttributionPanel
-                  spans={resolvedAttributionSpans}
-                  logStatus={attributionLogStatus}
-                  documentLength={text.length}
-                  visible={true}
-                  workId={workBeId ?? undefined}
-                />
+                <ErrorBoundary label="attribution panel">
+                  <AttributionPanel
+                    spans={resolvedAttributionSpans}
+                    logStatus={attributionLogStatus}
+                    documentLength={text.length}
+                    visible={true}
+                    workId={workBeId ?? undefined}
+                  />
+                </ErrorBoundary>
 
                 <div className="ws-provenance-details">
                   <h4>Details</h4>
@@ -6279,6 +6282,7 @@ export function WorkspaceShell() {
                   editable={canEdit && editorMode === "authoring"}
                   />
                 ) : (
+                  <ErrorBoundary label="editor">
                   <CollaborativeEditor
                   structuralVersion={structuralVersion}
                   attributionPaired={pairedAuthorColorsOn}
@@ -6453,9 +6457,9 @@ export function WorkspaceShell() {
                     onResolveLinkDescription={handleResolveLinkDescription}
                     onEditLinkDescription={handleEditLinkDescription}
                   />
+                  </ErrorBoundary>
                 )}
-                  </>
-                 )}
+                  </>                 )}
 
                 {/* Layout mode: inline images at their char positions */}
                 {docMode === "layout" && imageEntries.length > 0 ? (

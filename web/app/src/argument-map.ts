@@ -269,16 +269,21 @@ export function buildArgumentMap(
   return { root, unclassified };
 }
 
-/** Argdown numbering: root "1", child i of "1.2" is "1.2.i". */
+/** Argdown numbering: root "1", child i of "1.2" is "1.2.i".
+ * Cycle-guarded: link cycles must never overflow the walk, and a
+ * node reachable twice keeps its first number. */
 function numberTree(root: MapNode): void {
   root.number = "1";
-  const walk = (node: MapNode) => {
+  const MAX_DEPTH = 64;
+  const walk = (node: MapNode, depth: number, seen: Set<MapNode>) => {
+    if (depth > MAX_DEPTH || seen.has(node)) return;
+    seen.add(node);
     node.children.forEach((child, i) => {
       child.number = `${node.number}.${i + 1}`;
-      walk(child);
+      walk(child, depth + 1, seen);
     });
   };
-  walk(root);
+  walk(root, 0, new Set());
 }
 
 // ── Layout ─────────────────────────────────────────────────────────
