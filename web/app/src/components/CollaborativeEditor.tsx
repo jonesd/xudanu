@@ -660,7 +660,22 @@ function drawOverlay(
       const flat = getTextContent(editor);
       const at = flat.slice(drawStart, drawStart + want.length);
       if (at !== want) {
-        const found = flat.indexOf(want);
+        // The recorded span no longer matches (historical drift).
+        // Re-anchor to the occurrence NEAREST the recorded position —
+        // a global first-match hijacks the marker whenever the
+        // excerpt appears earlier in the document (the title
+        // "Transclusion" stole a link anchored 750 chars deeper).
+        let found = -1;
+        let idx = flat.indexOf(want, Math.max(0, drawStart - 400));
+        while (idx !== -1) {
+          if (Math.abs(idx - drawStart) <= 400) {
+            found = idx;
+            break;
+          }
+          if (idx > drawStart + 400) break;
+          idx = flat.indexOf(want, idx + 1);
+        }
+        if (found === -1) found = flat.indexOf(want);
         if (found >= 0) {
           drawStart = found;
           drawEnd = Math.min(found + (marker.end - marker.start), textLen);
