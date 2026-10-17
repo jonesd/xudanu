@@ -2011,7 +2011,11 @@ export function CollaborativeEditor({
     };
   }, [pinnedMarker]);
 
-  const handleOverlayMouseDown = useCallback(() => {
+  const handleOverlayMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    // A press INSIDE the tooltip (its buttons) must not tear it down
+    // before the click lands — the unmount-on-mousedown killed every
+    // tooltip action ("Go to", Origin, Resolve, ×) dead-on-press.
+    if ((e.target as HTMLElement).closest?.(".marker-tooltip")) return;
     isSelectingRef.current = true;
     clearHoverTimer();
     setHoveredMarker(null);
