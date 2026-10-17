@@ -90,6 +90,7 @@ export function useCrdtSync(
   const [accessDeniedWorkId, setAccessDeniedWorkId] = useState<number | null>(null);
   const [switchingWork, setSwitchingWork] = useState(false);
   const [switchError, setSwitchError] = useState<string | null>(null);
+  const connectedOnceRef = useRef(false);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [awareness, setAwareness] = useState<AwarenessState[]>([]);
@@ -237,11 +238,16 @@ export function useCrdtSync(
       // A navigation that lands while disconnected must not vanish
       // silently (the URL changes but the editor never switches).
       // Show the pending switch; when the connection returns this
-      // effect re-runs and completes the navigation.
-      setSwitchingWork(true);
-      setSwitchError("Connection lost — the document will open when it returns.");
+      // effect re-runs and completes the navigation. NOT on initial
+      // page load (URL work before first connect) — that is the
+      // normal boot sequence, not a lost connection.
+      if (connectedOnceRef.current) {
+        setSwitchingWork(true);
+        setSwitchError("Connection lost — the document will open when it returns.");
+      }
       return;
     }
+    connectedOnceRef.current = true;
     setAccessDeniedWorkId(null);
     setSwitchError(null);
     setSwitchingWork(true);
