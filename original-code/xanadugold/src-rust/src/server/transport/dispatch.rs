@@ -213,6 +213,17 @@ fn pre_thaw_targets(request: &WireRequest) -> Vec<crate::edition::backend::BeId>
         WireRequest::RenderTransclusions { work_id } => vec![*work_id],
         WireRequest::AttributionQuery { work_id, .. } => vec![*work_id],
         WireRequest::AttributionQueryResolved { work_id } => vec![*work_id],
+        // The editor's work-switch reads ride the CRDT channel — an
+        // ungated cold work answered with the sentinel-empty edition
+        // rendered as a blank document (0x669, October 2026). The
+        // gated attribution refresh thawed it moments later, but the
+        // client had already rendered empty and never re-requested.
+        WireRequest::CrdtSyncOpen { work_id }
+        | WireRequest::CrdtSyncDiff { work_id, .. }
+        | WireRequest::CrdtSyncFullState { work_id }
+        | WireRequest::CrdtSyncText { work_id } => vec![*work_id],
+        WireRequest::WorkTextRange { work_id, .. } => vec![*work_id],
+        WireRequest::WorkOutline { work_id } => vec![*work_id],
         _ => Vec::<BeId>::new(),
     }
 }
