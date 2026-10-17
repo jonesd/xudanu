@@ -24,7 +24,7 @@ norm() { # norm <input> <output> — scale/pad to canvas, uniform fps/pixfmt
 }
 
 BEATS=(
-  "V0-cold-open.webm|COLD: A quotation, live"
+  "V0-cold-open.mp4|COLD: A quotation, live"
   "V3-1-typing.webm|Xudanu — a document"
   "V1-first-link.webm|Connect anything"
   "V3-2-link-wizard.webm|Typed connections"
