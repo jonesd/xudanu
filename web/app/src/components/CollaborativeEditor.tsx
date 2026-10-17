@@ -647,7 +647,7 @@ function drawOverlay(
     let drawStart = Math.max(marker.start, 0);
     let drawEnd = Math.min(marker.end, textLen);
     const rawExcerpt = (marker.excerpt || "").trim();
-    if (rawExcerpt.length >= 4) {
+    if (marker.end > marker.start && rawExcerpt.length >= 4) {
       // FR-74 deterministic markers: compare against the MODEL text
       // (displayText), not the DOM textContent (which has ZWSP and
       // hidden-span artifacts). Same model text → same marker position.
