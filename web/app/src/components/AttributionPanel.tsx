@@ -30,15 +30,24 @@ function buildChainPaths(chain: ProvenanceHop[]): ProvenanceHop[][] {
   const targetId = chain.find((h) => !sources.has(h.dest_work_id!))?.dest_work_id;
   if (targetId == null) return [chain];
   const paths: ProvenanceHop[][] = [];
-  const walk = (workId: number, acc: ProvenanceHop[]) => {
+  // Provenance CAN contain cycles — a self-transclusion (work
+  // quoting itself) or a mutual-quote pair is legitimate xanalogical
+  // data. The walker must terminate on them (the unguarded version
+  // overflowed the stack and took the whole page down).
+  const MAX_PATHS = 64;
+  const walk = (workId: number, acc: ProvenanceHop[], seen: Set<number>) => {
+    if (paths.length >= MAX_PATHS) return;
     const incoming = byDest.get(workId) ?? [];
     if (incoming.length === 0) {
       paths.push([...acc].reverse());
       return;
     }
-    for (const h of incoming) walk(h.source_work_id, [...acc, h]);
+    for (const h of incoming) {
+      if (seen.has(h.source_work_id)) continue;
+      walk(h.source_work_id, [...acc, h], new Set(seen).add(h.source_work_id));
+    }
   };
-  walk(targetId, []);
+  walk(targetId, [], new Set([targetId]));
   return paths.length ? paths : [chain];
 }
 
