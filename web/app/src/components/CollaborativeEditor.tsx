@@ -3497,7 +3497,7 @@ export function CollaborativeEditor({
           <div
             ref={editorRef}
             className={`editor-content${!editable ? " editor-readonly" : ""}${readingMode ? " reading-mode" : ""}`}
-            contentEditable={editable && isEditing && !pendingTransclusion && !pendingImagePlacement}
+            contentEditable={editable && !pendingTransclusion && !pendingImagePlacement}
             suppressContentEditableWarning
             onPointerDown={() => {
               if (editable) {

@@ -327,6 +327,7 @@ export function useCrdtSync(
         setIdentity(id);
         try { storageSet("xudanu_identity_cache", JSON.stringify(id)); } catch { /* no-op */ }
       } else {
+        console.warn("[focus] checkWhoAmI returned null -> authenticated=false");
         setAuthenticated(false);
       }
       setIsAdmin(client.getIsAdmin());
@@ -372,7 +373,12 @@ export function useCrdtSync(
     const client = clientRef.current;
     if (!client) return;
     let cancelled = false;
-    client.canEdit(workBeId).then((ok) => { if (!cancelled) setCanEdit(ok); }).catch(() => {});
+    client.canEdit(workBeId).then((ok) => {
+      if (!cancelled) {
+        if (!ok) console.warn("[focus] canEdit probe -> FALSE (work_can_revise denied)");
+        setCanEdit(ok);
+      }
+    }).catch(() => {});
     return () => { cancelled = true; };
     // identityEpoch: re-check when the session's identity changes (sign
     // in/out) — permissions are per-identity.
