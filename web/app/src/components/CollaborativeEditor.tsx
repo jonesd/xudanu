@@ -2421,13 +2421,17 @@ export function CollaborativeEditor({
         if (markerMatch) {
           const marker = markerMatch[0];
           if (lineText.trim() === marker.trim()) {
-            // Empty list item — exit the list (and remove the marker).
+            // Empty list item — exit the list: delete the marker
+            // itself, then fall through to the plain newline insert.
             const el = editorRef.current;
             if (el) {
-              document.execCommand("delete");
-              document.execCommand("insertText", false, "\n");
-              handleInput();
-              return;
+              try {
+                const del = document.createRange();
+                del.setStart(range.startContainer, range.startOffset - marker.length);
+                del.setEnd(range.startContainer, range.startOffset);
+                del.deleteContents();
+              } catch { /* anchor math varies by node layout */ }
+              insertText = "\n\u200B";
             }
           } else {
             insertText = "\n" + marker + "\u200B";
@@ -2435,13 +2439,16 @@ export function CollaborativeEditor({
         }
       }
 
-      // Pure-native insertion: execCommand keeps the caret alive with
-      // zero save/restore on our side. The subsequent rebuild effects
-      // are what killed typing before (innerHTML rebuild racing the
-      // caret restore); handleInput's state round-trip is still
-      // needed for the model, and the marksKey guard skips the
-      // innerHTML rebuild when nothing but plain text changed.
-      document.execCommand("insertText", false, insertText);
+      // execCommand("insertText") STRIPS newlines in Chromium (each
+      // Enter inserted only the ZWSP — no line break at all). Insert
+      // the text node explicitly and place the caret after it.
+      const node = document.createTextNode(insertText);
+      range.insertNode(node);
+      const after = document.createRange();
+      after.setStartAfter(node);
+      after.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(after);
       handleInput();
       if (insertText !== "\n\u200B") {
         // List continuation: re-render markers after React commits so
