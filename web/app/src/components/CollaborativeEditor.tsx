@@ -1605,12 +1605,19 @@ export function CollaborativeEditor({
           if (undoStack.current.length > MAX_UNDO) undoStack.current.shift();
         }
         redoStack.current = [];
-      }
-      try {
-        buildTransclusionDom(el, inlineResolvedText, compoundSpanRanges, compoundSourceTitles);
-      } catch (e) {
-        console.error("[editor] buildTransclusionDom threw, falling back:", e);
-        el.textContent = inlineResolvedText;
+        // Same caret/focus contract as the plain-text rebuild: this
+        // branch ran on EVERY post-typing refresh and destroyed the
+        // caret ("flashing insert position disappears after a pause").
+        const hadFocus = el.contains(document.activeElement) || document.activeElement === el;
+        const savedCursor = getCursorOffset(el);
+        try {
+          buildTransclusionDom(el, inlineResolvedText, compoundSpanRanges, compoundSourceTitles);
+        } catch (e) {
+          console.error("[editor] buildTransclusionDom threw, falling back:", e);
+          el.textContent = inlineResolvedText;
+        }
+        if (hadFocus) el.focus();
+        setCaretModel(el, savedCursor);
       }
       if (hasInlineBlobs) insertInlineImages(el, blobEntries);
       lastText.current = getEditableText(el);
