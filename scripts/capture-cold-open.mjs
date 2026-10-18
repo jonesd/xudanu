@@ -87,10 +87,16 @@ async function main() {
   const video = pageA.video();
   if (video) {
     const raw = await video.path();
-    // trim the load flash (first 3.5s) and re-encode
+    // trim the load flash (first 3.5s) and re-encode — argv array, no
+    // shell interpolation (CodeQL #526)
     fs.renameSync(raw, path.join(OUT, ".v0-raw.webm"));
-    const { execSync } = await import("node:child_process");
-    execSync(`ffmpeg -y -loglevel error -ss 3.5 -i ${OUT}/.v0-raw.webm -c:v libx264 -pix_fmt yuv420p ${OUT}/V0-cold-open.mp4`);
+    const { execFileSync } = await import("node:child_process");
+    execFileSync("ffmpeg", [
+      "-y", "-loglevel", "error", "-ss", "3.5",
+      "-i", path.join(OUT, ".v0-raw.webm"),
+      "-c:v", "libx264", "-pix_fmt", "yuv420p",
+      path.join(OUT, "V0-cold-open.mp4"),
+    ]);
     fs.unlinkSync(path.join(OUT, ".v0-raw.webm"));
   }
   await browser.close();

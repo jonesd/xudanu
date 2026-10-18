@@ -550,8 +550,7 @@ function farFromPaneB(): void {
     }
   }
   if (!farPane || !s) return;
-  const farP = farPane;
-  draft = {
+  const farP = farPane;  draft = {
     stage: "far",
     from: draft.from,
     start: draft.start,
@@ -559,7 +558,7 @@ function farFromPaneB(): void {
     excerpt: draft.excerpt,
     farWork: farP.workId,
     farTitle: farP.title,
-    farRef: s ? { start: s.start, end: s.end, excerpt: farP.text.slice(s.start, s.end) } : undefined,
+    farRef: { start: s.start, end: s.end, excerpt: farP.text.slice(s.start, s.end) },
   };
   render();
   setStatus("choose the kind of connection");

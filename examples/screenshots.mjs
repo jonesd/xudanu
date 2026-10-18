@@ -28,10 +28,10 @@ console.log("◆ opening", url);
 await page.goto(url, { waitUntil: "networkidle", timeout: 60_000 });
 
 // Dismiss any first-run overlays (identity modal, welcome hints).
-for (const escape of [1, 2]) {
-  await page.keyboard.press("Escape").catch(() => {});
-  await page.waitForTimeout(300);
-}
+await page.keyboard.press("Escape").catch(() => {});
+await page.waitForTimeout(300);
+await page.keyboard.press("Escape").catch(() => {});
+await page.waitForTimeout(300);
 
 // Wait for the document text and the canvas overlay (markers).
 await page.waitForSelector(".ws-doc-title-text", { timeout: 30_000 });
