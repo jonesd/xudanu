@@ -78,7 +78,9 @@ tr:hover{background:rgba(110,118,129,0.04)}
 <li><a href="#literature">Example 4: Literary Anthology</a></li>
 <li><a href="#structure">Understanding the Structure</a></li>
 <li><a href="#provenance">Provenance and Attribution</a></li>
-<li><a href="#edl">EDL Export</a></li>
+<li><a href="#export">Export &amp; Print (HTML / PDF)</a></li>
+<li><a href="#edl">EDL Export (machine-readable)</a></li>
+<li><a href="#tryit">Try It Live</a></li>
 <li><a href="#gold">Connection to Udanax-Gold</a></li>
 </ul>
 </div>
@@ -287,22 +289,31 @@ Span migration keeps positions valid through edits. Provenance chains trace each
 
 <div class="example">
 <h4>Building a Legal Argument from Statutes and Precedents</h4>
-<p>A legal brief is inherently a compound document &mdash; it assembles statutes, case law, and commentary into a coherent argument.</p>
+<p>A legal brief is inherently a compound document &mdash; it assembles statutes, case law, and client facts into a coherent argument. This example is no longer hypothetical: a complete working corpus ships with the system (see <a href="#tryit">Try It Live</a>).</p>
 
-<p><strong>Structure:</strong></p>
+<p><strong>The seeded corpus</strong> &mdash; <em>Memorandum: Data Retention Obligations</em> &mdash; assembles one brief from three sources:</p>
 <ul class="struct-list">
-<li class="struct-item orig"><span class="struct-num">1.</span><span class="badge badge-orig">Original</span><span class="struct-text">"The defendant moves to dismiss on the grounds..."</span></li>
-<li class="struct-item trans"><span class="struct-num">2.</span><span class="badge badge-trans">From: Penal Code</span><span class="struct-text">"&sect; 487. Grand theft is theft committed when..."</span></li>
-<li class="struct-item orig"><span class="struct-num">3.</span><span class="badge badge-orig">Original</span><span class="struct-text">"The statute requires that the value exceed..."</span></li>
-<li class="struct-item trans"><span class="struct-num">4.</span><span class="badge badge-trans">From: Brown v. State</span><span class="struct-text">"We hold that the value must be assessed at..."</span></li>
-<li class="struct-item orig"><span class="struct-num">5.</span><span class="badge badge-orig">Original</span><span class="struct-text">"Applying this standard to the present case..."</span></li>
-<li class="struct-item trans"><span class="struct-num">6.</span><span class="badge badge-trans">From: Smith v. Jones</span><span class="struct-text">"The court may consider fair market value..."</span></li>
-<li class="struct-item trans"><span class="struct-num">7.</span><span class="badge badge-trans">From: Legal Commentary</span><span class="struct-text">"Professor Wright argues that the Brown rule..."</span></li>
-<li class="struct-item orig"><span class="struct-num">8.</span><span class="badge badge-orig">Original</span><span class="struct-text">"This commentary supports our position because..."</span></li>
-<li class="struct-item orig"><span class="struct-num">9.</span><span class="badge badge-orig">Original</span><span class="struct-text">"For these reasons, the motion should be denied."</span></li>
+<li class="struct-item orig"><span class="struct-num">1.</span><span class="badge badge-orig">Original</span><span class="struct-text">"I. The deletion duty — The Act's operative command is unqualified:"</span></li>
+<li class="struct-item trans"><span class="struct-num">2.</span><span class="badge badge-trans">From: State Privacy Act &sect;9</span><span class="struct-text">"a controller shall erase all personal data&hellip; within thirty days"</span></li>
+<li class="struct-item orig"><span class="struct-num">3.</span><span class="badge badge-orig">Original</span><span class="struct-text">"Here, Meridian retained records for four years&hellip;"</span></li>
+<li class="struct-item trans"><span class="struct-num">4.</span><span class="badge badge-trans">From: State Privacy Act &sect;4</span><span class="struct-text">"shall notify the Attorney General within seventy-two hours"</span></li>
+<li class="struct-item trans"><span class="struct-num">5.</span><span class="badge badge-trans">From: Kendall v. Whiteside</span><span class="struct-text">"begins at the moment a single employee&hellip; acquires knowledge"</span></li>
+<li class="struct-item orig"><span class="struct-num">6.</span><span class="badge badge-orig">Original</span><span class="struct-text">"III. Exposure — The penalty structure compounds the concern:"</span></li>
+<li class="struct-item trans"><span class="struct-num">7.</span><span class="badge badge-trans">From: Kendall v. Whiteside</span><span class="struct-text">"The penalty provision applies per-breach, not per-recipient"</span></li>
+<li class="struct-item trans"><span class="struct-num">8.</span><span class="badge badge-trans">From: Client Intake Memo</span><span class="struct-text">"No consent beyond the original intake form exists"</span></li>
+<li class="struct-item orig"><span class="struct-num">9.</span><span class="badge badge-orig">Original</span><span class="struct-text">"IV. Weak point — I recommend pulling the executed forms&hellip;"</span></li>
 </ul>
 
-<p>Three source types: statute, case law, commentary. The lawyer's original analysis weaves them together. Every citation is verifiable &mdash; no misquotation possible.</p>
+<p>Five live quotations from three sources: statute, precedent, and client facts. The lawyer's analysis weaves them; every quotation is verifiable and follows back to its exact origin. Edit the statute and the brief flags the drift &mdash; visible, honest, never silently incorrect.</p>
+
+<figure style="margin:24px 0 8px">
+<img src="img/compound2-01-brief-top.png" alt="The Memorandum open in Xudanu: title, sections, and live quotations from the statute and precedent" style="width:100%;border:1px solid #30363d;border-radius:8px;display:block">
+<figcaption style="font-size:12px;color:#484f58;margin-top:8px;text-align:center;font-style:italic">The memorandum as assembled &mdash; every quotation a live transclusion</figcaption>
+</figure>
+<figure style="margin:24px 0 8px">
+<img src="img/compound2-02-brief-quotations.png" alt="The memorandum scrolled to its interleaved quotations with source styling" style="width:100%;border:1px solid #30363d;border-radius:8px;display:block">
+<figcaption style="font-size:12px;color:#484f58;margin-top:8px;text-align:center;font-style:italic">Quotations interleaved with the lawyer's own analysis</figcaption>
+</figure>
 </div>
 
 <h2 id="literature">Example 4: Literary Anthology</h2>
@@ -374,7 +385,19 @@ Span migration keeps positions valid through edits. Provenance chains trace each
 
 <p>To view the provenance chain for a transcluded passage, click the passage and select <strong>"Trace provenance"</strong>. The chain shows each hop with the work title, author, and whether the content is original or derived.</p>
 
-<h2 id="edl">EDL Export</h2>
+<h2 id="export">Export &amp; Print (HTML / PDF)</h2>
+
+<p>A compound document must travel &mdash; to a client, a colleague, a court. The export renders the assembled document as a standalone, professionally styled HTML file in which <strong>every transclusion becomes a cited quotation</strong>: the passage set off with a rule, and beneath it the source title and its permanent <code>xan://</code> address. The provenance that lives in the system travels into the artifact.</p>
+
+<p><strong>Where to find it:</strong></p>
+<ul>
+<li><strong>Document settings (&#9881;)</strong> &mdash; <code>&#8613; Export document (HTML)</code> downloads the file; <code>&#8963; Print / Save as PDF</code> opens the print dialog (every major browser saves as PDF natively &mdash; no PDF library, works offline).</li>
+<li><strong>Compound Builder</strong> &mdash; <code>&#8963; Print / PDF</code> in the structure footer, for printing the document you are actively assembling.</li>
+</ul>
+
+<p>The footer of every export states its own composition: <em>"5 transcluded passages from 3 source documents &mdash; every quotation above carries its origin address."</em> A lawyer can file it; an auditor can follow it.</p>
+
+<h2 id="edl">EDL Export (machine-readable)</h2>
 
 <p>A compound document is fundamentally an EDL &mdash; a list of content references. The structure can be exported as JSON:</p>
 
@@ -397,6 +420,32 @@ Span migration keeps positions valid through edits. Provenance chains trace each
 }</code></pre>
 
 <p>This format is compatible with the Xanadu EDL concept and could be imported by other systems that understand content-addressed transclusion.</p>
+
+<h2 id="tryit">Try It Live</h2>
+
+<p>Everything in this guide runs on a fresh server:</p>
+
+<pre><code># the self-referential essay demo (two sources, one compound)
+xudanu-server run 127.0.0.1:8080 ./data --seed-compound-demo
+
+# the lawyer scenario (statute + precedent + memo + assembled brief),
+# against an already-running server:
+node scripts/seed-lawyer-demo.mjs
+node scripts/seed-walkthrough.mjs   # "Building Documents from Sources"</pre>
+
+<p>The walkthrough document &mdash; <strong>"Building Documents from Sources"</strong> &mdash; teaches compound assembly <em>by performing it</em>: each step quotes live material from the corpus, and Step 4 quotes the finished memorandum itself. It is the fastest on-ramp: open it, click any quotation to visit its origin, edit a source and watch the drift flag appear.</p>
+
+<figure style="margin:24px 0 8px">
+<img src="img/compound2-04-walkthrough-steps.png" alt="The walkthrough document showing its steps with live quotations" style="width:100%;border:1px solid #30363d;border-radius:8px;display:block">
+<figcaption style="font-size:12px;color:#484f58;margin-top:8px;text-align:center;font-style:italic">The walkthrough: a document that teaches assembly by doing it</figcaption>
+</figure>
+
+<figure style="margin:24px 0 8px">
+<img src="img/compound2-03-source-statute.png" alt="The statute source document with its numbered sections" style="width:100%;border:1px solid #30363d;border-radius:8px;display:block">
+<figcaption style="font-size:12px;color:#484f58;margin-top:8px;text-align:center;font-style:italic">A source document &mdash; edit it and every quotation of it flags the change</figcaption>
+</figure>
+
+<div class="note"><strong>The ritual:</strong> open the brief, edit a quoted passage in its source, return &mdash; the quotation carries a drift flag; it never silently disagrees with its origin. Click any quotation to follow it back to the exact span.</div>
 
 <h2 id="gold">Connection to Udanax-Gold</h2>
 
