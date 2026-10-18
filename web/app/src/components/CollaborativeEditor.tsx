@@ -1681,9 +1681,30 @@ export function CollaborativeEditor({
     }
   }, [displayText, inlineResolvedText, hasInlineTransclusions, hasInlineBlobs, compoundSpanRanges, compoundSourceTitles, blobEntries]);
 
-  // Returning to the tab/page restores editor focus — but ONLY if the
-  // editor held it when the user left. Without this the user must
-  // click into the page before every keystroke registers.
+  // Focus forensics: log the moment focus leaves the editor so
+  // pause-triggered focus loss (the "typing, paused to think, caret
+  // dead" bug) is attributable from the console.
+  useEffect(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    const onBlur = (e: FocusEvent) => {
+      console.warn(
+        "[focus] editor BLURRED · relatedTarget=",
+        e.relatedTarget && (e.relatedTarget as HTMLElement).tagName,
+        "· new active=",
+        document.activeElement && document.activeElement.tagName,
+        "· had selection:",
+        el.contains(window.getSelection()?.anchorNode ?? null),
+      );
+    };
+    const onFocus = () => console.info("[focus] editor focused");
+    el.addEventListener("blur", onBlur);
+    el.addEventListener("focus", onFocus);
+    return () => {
+      el.removeEventListener("blur", onBlur);
+      el.removeEventListener("focus", onFocus);
+    };
+  }, []);
   useEffect(() => {
     const el = editorRef.current;
     if (!el) return;
