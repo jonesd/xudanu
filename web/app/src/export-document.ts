@@ -22,7 +22,8 @@ export function buildExportHtml(
   const { text, spanRanges, sourceTitles } = resolved;
   const spans = [...spanRanges].sort((a, b) => a.flat_start - b.flat_start);
 
-  const bodyParts: string[] = [];
+  type Part = { type: "text"; content: string } | { type: "quote"; html: string };
+  const parts: Part[] = [];
   let pos = 0;
   const cite = (span: SpanRangePayload) => {
     const title = sourceTitles[span.source_work_id] || `Work 0x${span.source_work_id.toString(16)}`;
@@ -31,19 +32,30 @@ export function buildExportHtml(
   };
 
   for (const span of spans) {
-    if (span.flat_start > pos) bodyParts.push(escapeHtml(text.slice(pos, span.flat_start)));
+    if (span.flat_start > pos) parts.push({ type: "text", content: text.slice(pos, span.flat_start) });
     const quoted = span.resolved_content || text.slice(span.flat_start, span.flat_end);
-    bodyParts.push(
-      `<blockquote class="x-transclusion"><p>${escapeHtml(quoted.trim())}</p><cite>${cite(span)}</cite></blockquote>`,
-    );
+    parts.push({
+      type: "quote",
+      html: `<blockquote class="x-transclusion"><p>${escapeHtml(quoted.trim())}</p><cite>${cite(span)}</cite></blockquote>`,
+    });
     pos = Math.max(pos, span.flat_end);
   }
-  if (pos < text.length) bodyParts.push(escapeHtml(text.slice(pos)));
+  if (pos < text.length) parts.push({ type: "text", content: text.slice(pos) });
 
-  const body = bodyParts
-    .join("\n")
-    .split(/\n{2,}/)
-    .map((p) => (p.trim().startsWith("<blockquote") ? p : `<p>${p.replace(/\n/g, "<br/>")}</p>`))
+  // Paragraphs: each blank-line-separated run of plain text becomes
+  // its own <p>; quotations are structural block elements and never
+  // nest inside a paragraph.
+  const body = parts
+    .map((p) =>
+      p.type === "quote"
+        ? p.html
+        : p.content
+            .split(/\n{2,}/)
+            .filter((s) => s.trim().length > 0)
+            .map((para) => `<p>${escapeHtml(para.trim()).replace(/\n/g, "<br/>")}</p>`)
+            .join("\n"),
+    )
+    .filter((s) => s.length > 0)
     .join("\n");
 
   const date = (meta.exportedAt ?? new Date()).toISOString().slice(0, 10);
