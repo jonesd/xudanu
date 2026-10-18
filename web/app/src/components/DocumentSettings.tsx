@@ -43,6 +43,7 @@ interface DocumentSettingsProps {
   workId?: number | null;
   /** FR-67: duplicate this document (content + links) into your own copy. */
   onDuplicate?: () => void;
+  onExportHtml?: () => void;
   onPrefsChange: (prefs: DocPreferences) => void;
   networkEnabled: boolean;
   externalLinksEnabled: boolean;
@@ -53,7 +54,7 @@ interface DocumentSettingsProps {
   onSetSuggestionsEnabled: (enabled: boolean) => Promise<void>;
 }
 
-export function DocumentSettings({ visible, onClose, prefs, workId, onDuplicate, onPrefsChange, networkEnabled, externalLinksEnabled, suggestionsEnabled, isAdmin, onSetNetworkEnabled, onSetExternalLinksEnabled, onSetSuggestionsEnabled }: DocumentSettingsProps) {
+export function DocumentSettings({ visible, onClose, prefs, workId, onDuplicate, onExportHtml, onPrefsChange, networkEnabled, externalLinksEnabled, suggestionsEnabled, isAdmin, onSetNetworkEnabled, onSetExternalLinksEnabled, onSetSuggestionsEnabled }: DocumentSettingsProps) {
   const [local, setLocal] = useState(prefs);
   const [netBusy, setNetBusy] = useState(false);
   const [cacheLimit, setCacheLimit] = useState(getCacheLimitMb());
@@ -123,6 +124,21 @@ export function DocumentSettings({ visible, onClose, prefs, workId, onDuplicate,
             }}
           >
             {"\u29c9 Make this page yours — duplicate with links"}
+          </button>
+        )}
+        {onExportHtml && workId != null && (
+          <button
+            type="button"
+            onClick={onExportHtml}
+            title="Download a professionally formatted HTML copy — transclusions render as cited quotations"
+            style={{
+              width: "100%", padding: "8px 10px", margin: "0 0 8px",
+              background: "var(--bg-elevated, #21262d)", color: "var(--text, #e6edf3)",
+              border: "1px solid var(--border, #30363d)", borderRadius: 6, cursor: "pointer",
+              fontSize: 13, fontWeight: 600,
+            }}
+          >
+            {"\u2913 Export document (HTML)"          }
           </button>
         )}
         {xanAddress && (

@@ -101,6 +101,7 @@ import { CompoundBuilder } from "../CompoundBuilder";
 import { MergePanel } from "../MergePanel";
 import { AdminDashboard } from "../AdminDashboard";
 import { DocumentSettings, loadDocPreferences } from "../DocumentSettings";
+import { buildExportHtml, downloadHtml } from "../../export-document";
 import type { DocPreferences } from "../DocumentSettings";
 import type { CrossServerBacklinkPayload } from "../../api/crdt_sync";
 import { getCursorOffset, setCaretModel, detectLineBlock, planBlockToggle } from "../../styled-text";
@@ -7602,6 +7603,32 @@ export function WorkspaceShell() {
               : undefined
           }
           onPrefsChange={setDocPrefs}
+          onExportHtml={
+            workBeId != null && clientRef.current
+              ? () => {
+                  const client = clientRef.current!;
+                  client
+                    .resolveInlineTransclusions(workBeId)
+                    .then((resolved) => {
+                      const html = buildExportHtml(
+                        {
+                          title: workMeta?.title || `Work 0x${workBeId.toString(16)}`,
+                          serverDomain,
+                          workId: workBeId,
+                        },
+                        resolved,
+                      );
+                      const safe = (workMeta?.title || `work-${workBeId.toString(16)}`)
+                        .replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-").slice(0, 60) || "document";
+                      downloadHtml(html, `${safe}.html`);
+                      showToast("Exported — quotations carry their source citations");
+                    })
+                    .catch((e) =>
+                      showToast(`Export failed: ${e instanceof Error ? e.message : String(e)}`),
+                    );
+                }
+              : undefined
+          }
           onClose={() => setShowSettings(false)}
            networkEnabled={networkEnabled}
            externalLinksEnabled={externalLinksEnabled}
