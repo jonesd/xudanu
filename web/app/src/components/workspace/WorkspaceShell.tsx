@@ -101,7 +101,7 @@ import { CompoundBuilder } from "../CompoundBuilder";
 import { MergePanel } from "../MergePanel";
 import { AdminDashboard } from "../AdminDashboard";
 import { DocumentSettings, loadDocPreferences } from "../DocumentSettings";
-import { buildExportHtml, downloadHtml } from "../../export-document";
+import { buildExportHtml, downloadHtml, printHtml } from "../../export-document";
 import type { DocPreferences } from "../DocumentSettings";
 import type { CrossServerBacklinkPayload } from "../../api/crdt_sync";
 import { getCursorOffset, setCaretModel, detectLineBlock, planBlockToggle } from "../../styled-text";
@@ -7629,6 +7629,29 @@ export function WorkspaceShell() {
                 }
               : undefined
           }
+          onPrint={
+            workBeId != null && clientRef.current
+              ? () => {
+                  const client = clientRef.current!;
+                  client
+                    .resolveInlineTransclusions(workBeId)
+                    .then((resolved) => {
+                      const html = buildExportHtml(
+                        {
+                          title: workMeta?.title || `Work 0x${workBeId.toString(16)}`,
+                          serverDomain,
+                          workId: workBeId,
+                        },
+                        resolved,
+                      );
+                      printHtml(html);
+                    })
+                    .catch((e) =>
+                      showToast(`Print failed: ${e instanceof Error ? e.message : String(e)}`),
+                    );
+                }
+              : undefined
+          }
           onClose={() => setShowSettings(false)}
            networkEnabled={networkEnabled}
            externalLinksEnabled={externalLinksEnabled}
@@ -7719,6 +7742,21 @@ export function WorkspaceShell() {
           }}
           onReloadCompound={() => compound.reload()}
           onRemoveSpan={compound.removeTransclusion}
+          onPrint={
+            workBeId != null && clientRef.current
+              ? () => {
+                  clientRef
+                    .current!.resolveInlineTransclusions(workBeId)
+                    .then((resolved) => {
+                      printHtml(buildExportHtml(
+                        { title: workMeta?.title || `Work 0x${workBeId.toString(16)}`, serverDomain, workId: workBeId },
+                        resolved,
+                      ));
+                    })
+                    .catch((e) => showToast(`Print failed: ${e instanceof Error ? e.message : String(e)}`));
+                }
+              : undefined
+          }
         />
       )}
       {showMerge && workBeId !== null && (

@@ -26,6 +26,7 @@ interface CompoundBuilderProps {
   onReloadCompound: () => void;
   onFetchSourceText?: (workId: number) => Promise<string | null>;
   onRemoveSpan?: (sourceWorkId: number, charStart: number, charEnd: number) => Promise<boolean>;
+  onPrint?: () => void;
 }
 
 interface SourceDoc {
@@ -64,6 +65,7 @@ export function CompoundBuilder({
   onReloadCompound,
   onRemoveSpan,
   onFetchSourceText,
+  onPrint,
 }: CompoundBuilderProps) {
   void onFetchSourceText;
   const [sources, setSources] = useState<SourceDoc[]>([]);
@@ -618,6 +620,20 @@ export function CompoundBuilder({
           <div className="cb-structure-footer">
             {stats.totalWords} words ({stats.percent}% transcluded) &middot;
             {" "}from {stats.sourceCount} source{stats.sourceCount !== 1 ? "s" : ""}
+            {onPrint && (
+              <button
+                type="button"
+                onClick={onPrint}
+                title="Print / Save as PDF — the assembled document with every quotation cited"
+                style={{
+                  marginLeft: 10, padding: "1px 10px", fontSize: 11,
+                  background: "transparent", color: "inherit",
+                  border: "1px solid rgba(255,255,255,0.25)", borderRadius: 6, cursor: "pointer",
+                }}
+              >
+                {"\u2399"} Print / PDF
+              </button>
+            )}
           </div>
         </div>
       </div>

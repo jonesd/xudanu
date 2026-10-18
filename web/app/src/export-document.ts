@@ -100,3 +100,34 @@ export function downloadHtml(html: string, filename: string): void {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+/**
+ * Zero-dependency PDF: render the export into a hidden iframe and open
+ * the browser print dialog — "Save as PDF" is native in every major
+ * browser, so the citation-bearing document becomes a PDF with no
+ * PDF library and nothing that misses the release tarball.
+ */
+export function printHtml(html: string): void {
+  const existing = document.getElementById("xudanu-print-frame");
+  existing?.remove();
+  const frame = document.createElement("iframe");
+  frame.id = "xudanu-print-frame";
+  frame.style.position = "fixed";
+  frame.style.right = "0";
+  frame.style.bottom = "0";
+  frame.style.width = "0";
+  frame.style.height = "0";
+  frame.style.border = "0";
+  frame.srcdoc = html;
+  frame.onload = () => {
+    try {
+      frame.contentWindow?.focus();
+      frame.contentWindow?.print();
+    } catch {
+      /* some browsers require user gesture — fall back to a tab */
+      const w = window.open("", "_blank");
+      if (w) { w.document.write(html); w.document.close(); }
+    }
+  };
+  document.body.appendChild(frame);
+}
