@@ -16259,7 +16259,7 @@ impl Server {
                     link: hyperlink,
                     origin: link.origin,
                     destination: link.destination,
-                    cross_server_notify: None,
+                    cross_server_notify: link.cross_server_notify.clone(),
                     home_document: link.home_document,
                     author_club: link.author_club,
                     endorsements: Vec::new(),
@@ -32346,6 +32346,45 @@ mod tests {
                 last_id
             );
         }
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn cross_server_notify_outcome_survives_restore() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "xudanu_notify_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ));
+        let link_id;
+        {
+            let mut s = Server::new();
+            s.init_data_dir(&data_dir, None).unwrap();
+            let sid = s.connect();
+            s.login_public(sid).unwrap();
+            let a = s
+                .create_work(sid, crate::edition::Edition::from_text("origin"))
+                .unwrap();
+            let b = s
+                .create_work(sid, crate::edition::Edition::from_text("dest"))
+                .unwrap();
+            link_id = s.create_link(sid, a, b, None, None).unwrap();
+            s.set_link_cross_server_notify(link_id, true, None);
+            s.set_link_cross_server_notify(link_id, false, Some("test refusal".to_string()));
+            s.checkpoint_to_store().unwrap();
+        }
+        let mut r = Server::new();
+        r.restore_from_data_dir(&data_dir, None).unwrap();
+        let outcome = r
+            .link_cross_server_notify(link_id)
+            .expect("notify outcome must survive checkpoint/restore (FR-40 sender feedback)");
+        assert!(!outcome.accepted);
+        assert_eq!(outcome.error.as_deref(), Some("test refusal"));
+
+        let _ = std::fs::remove_dir_all(&data_dir);
     }
 
     #[test]
@@ -51490,6 +51529,16 @@ fn http_post_json_hop(
         .and_then(|status_line| status_line.split_whitespace().nth(1))
         .and_then(|code| code.parse::<u16>().ok())
         .unwrap_or(0);
+    // No parseable status line = no HTTP response at all (connection
+    // accepted but the peer never replied — frozen/blackholed server,
+    // or truncated reply). Surface as a transport error so callers
+    // report reachability, not a meaningless "HTTP 0".
+    if status == 0 {
+        return Err(format!(
+            "no HTTP response from {} within {}s (connection accepted but no reply)",
+            host_port, timeout_secs
+        ));
+    }
     let (head, body) = match response.find("\r\n\r\n") {
         Some(split) => (&response[..split], response[split + 4..].to_string()),
         None => (response.as_ref(), String::new()),

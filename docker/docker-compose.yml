@@ -52,6 +52,7 @@ services:
       - "127.0.0.1:8081:8080"
     volumes:
       - node1-data:/data
+      - ./pinned-members.json:/data/pinned-members.json:ro
     command:
       - "run"
       - "0.0.0.0:8080"
@@ -73,6 +74,16 @@ services:
       - "node3:8080"
       - "--peer"
       - "node4:8080"
+      # Genesis trust seeds: the other nodes' Ed25519 verifying keys
+      # (stable while the named volumes persist — regenerate with
+      # `docker logs docker-nodeN-1 | grep "verifying key"` after a
+      # volume wipe). Seeding breaks the endorsement bootstrap's
+      # empty-pool chicken-and-egg: with zero members, nobody can
+      # endorse the first joiner. CLI seeds register at every boot,
+      # so seeded trust survives restarts; membership learned via
+      # endorsement afterwards persists in the federation snapshot.
+      - "--pin-members"
+      - "/data/pinned-members.json"
     networks:
       xudanu-net:
         aliases:
@@ -84,6 +95,7 @@ services:
       - "127.0.0.1:8082:8080"
     volumes:
       - node2-data:/data
+      - ./pinned-members.json:/data/pinned-members.json:ro
     command:
       - "run"
       - "0.0.0.0:8080"
@@ -105,6 +117,8 @@ services:
       - "node3:8080"
       - "--peer"
       - "node4:8080"
+      - "--pin-members"
+      - "/data/pinned-members.json"
     networks:
       xudanu-net:
         aliases:
@@ -116,6 +130,7 @@ services:
       - "127.0.0.1:8083:8080"
     volumes:
       - node3-data:/data
+      - ./pinned-members.json:/data/pinned-members.json:ro
     command:
       - "run"
       - "0.0.0.0:8080"
@@ -137,6 +152,8 @@ services:
       - "node2:8080"
       - "--peer"
       - "node4:8080"
+      - "--pin-members"
+      - "/data/pinned-members.json"
     networks:
       xudanu-net:
         aliases:
@@ -148,6 +165,7 @@ services:
       - "127.0.0.1:8084:8080"
     volumes:
       - node4-data:/data
+      - ./pinned-members.json:/data/pinned-members.json:ro
     command:
       - "run"
       - "0.0.0.0:8080"
@@ -169,6 +187,8 @@ services:
       - "node2:8080"
       - "--peer"
       - "node3:8080"
+      - "--pin-members"
+      - "/data/pinned-members.json"
     networks:
       xudanu-net:
         aliases:

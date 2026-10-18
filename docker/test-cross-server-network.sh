@@ -66,10 +66,12 @@ probe() { # label expected_accepted error_substring
   local out
   out=$($PROBE "$NODE1_WS" "$NODE2_ADDR" "$WORK_HEX" "$label" 2>&1)
   echo "  $out"
-  local accepted error ms
+  local accepted error ms lid
   accepted=$(echo "$out" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).accepted)}catch{console.log("parse-error")}})')
   error=$(echo "$out" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).error||"")}catch{console.log("")}})')
   ms=$(echo "$out" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).create_ms)}catch{console.log("-1")}})')
+  lid=$(echo "$out" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).link_id)}catch{console.log("")}})')
+  if [ "$label" = "recovered" ]; then RECOVERED_LID="$lid"; fi
   if [ "$accepted" = "$expect" ]; then
     pass "$label (accepted=$accepted, ${ms}ms)"
   else
@@ -148,6 +150,9 @@ for i in $(seq 1 30); do
   curl -sf "http://localhost:8081/health" > /dev/null && break
   sleep 1
 done
+if [ -z "${RECOVERED_LID:-}" ]; then
+  fail "no recovered link id captured from probe — cannot check persistence"
+else
 PERSIST_OUT=$(node -e '
 const WebSocket = require("ws");
 const ws = new WebSocket("ws://localhost:8081/xudanu?format=json&version=2");
@@ -166,21 +171,14 @@ const val = (v) => (v && typeof v === "object" && "value" in v ? v.value : v);
   await new Promise(r => ws.once("open", r));
   await req("session_connect");
   await req("session_login_public");
-  await req("work_create", { edition: { text: "restart persistence check" } });
-  const links = val(await req("link_list_for_work", { work_id: 0, offset: 0, limit: 1000 }));
-  // fall back: scan recent links via link_get on ids 1..8
-  let found = null;
-  for (let lid = 1; lid <= 8 && !found; lid++) {
-    try {
-      const l = val(await req("link_get", { link_id: lid }));
-      if (l && l.cross_server_notify_accepted !== undefined) found = l;
-    } catch {}
-  }
-  if (!found) { console.log(JSON.stringify({ found: false })); process.exit(0); }
-  console.log(JSON.stringify({ found: true, accepted: found.cross_server_notify_accepted, error: found.cross_server_notify_error ?? null }));
+  const l = val(await req("link_get", { link_id: Number(process.argv[1]) }));
+  if (!l || l.cross_server_notify_accepted === undefined)
+    console.log(JSON.stringify({ found: false }));
+  else
+    console.log(JSON.stringify({ found: true, lid: Number(process.argv[1]), accepted: l.cross_server_notify_accepted, error: l.cross_server_notify_error ?? null }));
   process.exit(0);
 })().catch(e => { console.log(JSON.stringify({ found: false, error: e.message })); process.exit(0); });
-')
+' "$RECOVERED_LID")
 echo "  $PERSIST_OUT"
 if echo "$PERSIST_OUT" | grep -q '"found":true'; then
   if echo "$PERSIST_OUT" | grep -q '"accepted":true'; then
@@ -190,6 +188,7 @@ if echo "$PERSIST_OUT" | grep -q '"found":true'; then
   fi
 else
   fail "no cross-server link found after restart — outcome not persisted"
+fi
 fi
 
 echo ""

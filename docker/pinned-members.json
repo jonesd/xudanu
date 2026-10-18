@@ -1,0 +1,22 @@
+[
+  {
+    "server_id": "979378198b0a55f5",
+    "verifying_key_hex": "979378198b0a55f5aa41cab29913053f6b1efce0797fdcc0b14ceb092a4ba3a1",
+    "recovery_key_hex": ""
+  },
+  {
+    "server_id": "626fb016a0348c00",
+    "verifying_key_hex": "626fb016a0348c0029b5730d77cf29dde4d2245cfb543bc99a7730b0738edf1e",
+    "recovery_key_hex": ""
+  },
+  {
+    "server_id": "2f4b7f56e427f8aa",
+    "verifying_key_hex": "2f4b7f56e427f8aa9004fdaee49e300cfc198b8cecf9d7e5ca66476979e6e895",
+    "recovery_key_hex": ""
+  },
+  {
+    "server_id": "ff4ccafe0868fe41",
+    "verifying_key_hex": "ff4ccafe0868fe410eefc8d1dfb8430af89f43ed767b015f18c8bd5da5fdc9e0",
+    "recovery_key_hex": ""
+  }
+]

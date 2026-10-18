@@ -2161,7 +2161,18 @@ async fn handle_socket(
                     let mut sec = state.security.lock().unwrap_or_else(|e| e.into_inner());
                     let threat = sec.on_request(session_id, remote_addr);
                     if threat == ThreatLevel::Critical {
-                        let _ = out_tx.send(vec![]);
+                        // Rate cap tripped. The check runs before decode,
+                        // so the request id is unknown (id 0). Still tell
+                        // the client WHY the connection dies — an empty
+                        // frame is unparseable and violates the
+                        // sender-feedback contract (FR-40).
+                        if let Ok(bytes) = codec.encode_error(
+                            0,
+                            ErrorCode::RateLimited,
+                            "request rate exceeded — connection closed; slow down and reconnect",
+                        ) {
+                            let _ = out_tx.send(bytes);
+                        }
                         break;
                     }
                 }

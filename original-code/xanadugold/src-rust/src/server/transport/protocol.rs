@@ -4898,6 +4898,7 @@ pub enum ErrorCode {
     Unauthorized,
     ServerShuttingDown,
     NotAcceptingConnections,
+    RateLimited,
     IrrevocablyRemoved,
     #[cfg(feature = "serde")]
     ProvJsonExportFailed,
