@@ -2489,7 +2489,11 @@ export function WorkspaceShell() {
     fetch("/.well-known/xudanu-server.json")
       .then((r) => r.json())
       .then((data) => {
-        if (data.public_address) {
+        if (data.tumbler_identity) {
+          // canonical form (ns-… or domain) — the string the tumbler
+          // machinery itself stamps into addresses
+          setServerDomain(data.tumbler_identity);
+        } else if (data.public_address) {
           setServerDomain(data.public_address);
         } else if (data.server_id) {
           // Fall back to globally unique server ID (Ed25519 verifying key hash)

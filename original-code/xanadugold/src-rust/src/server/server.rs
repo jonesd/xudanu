@@ -2468,6 +2468,7 @@ impl Server {
             "server_id": vk_hex,
             "server_namespace_id": self.server_namespace_id(),
             "tumbler_prefix": self.server_tumbler_prefix(),
+            "tumbler_identity": self.tumbler_server_identity(),
             "content_api": "/api/public/work/{id}",
             "hash_algorithm": "blake3",
             "public_content": true,
