@@ -6303,15 +6303,30 @@ export function WorkspaceShell() {
                           if (!client || workBeId === null) return;
                           (async () => {
                             try {
-                              // remove the frozen copy, place the live reference at the same spot
-                              const removed = text.slice(0, pasteStart) + text.slice(pasteStart + pastedText.length);
+                              // CURRENT text from the client — the `text`
+                              // prop in this closure predates the paste.
+                              const cur = client.getText() || text;
+                              const pos = Math.min(pasteStart, cur.length);
+                              const removed =
+                                cur.slice(0, pos) +
+                                cur.slice(pos + pastedText.length);
                               setText(removed);
-                              await new Promise((r) => setTimeout(r, 150));
+                              await new Promise((r) => setTimeout(r, 200));
+                              // THE VISIBLE ELEMENT: without this the pasted
+                              // text was removed and nothing rendered (the
+                              // connection alone draws no quotation).
+                              const at = Math.min(pos, removed.length);
+                              await client.elementInsert(workBeId, at, {
+                                type: "transclusion",
+                                transclusion_source: cp.workId,
+                                transclusion_start: cp.start,
+                                transclusion_end: cp.end,
+                              });
                               const linkId = await client.linkCreate(
                                 cp.workId,
                                 workBeId,
                                 { excerpt: cp.text, start: cp.start, end: cp.end },
-                                { excerpt: "", start: pasteStart, end: pasteStart },
+                                { excerpt: "", start: at, end: at },
                               );
                               try { await client.applyTransclusionAttribution(linkId); } catch { /* attribution optional */ }
                               bumpStructuralVersion();
