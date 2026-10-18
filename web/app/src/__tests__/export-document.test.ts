@@ -35,8 +35,8 @@ describe("buildExportHtml", () => {
       text: "Intro text.\nQUOTE\nConclusion text.",
       spanRanges: [
         span({
-          flat_start: 13,
-          flat_end: 18,
+          flat_start: 12,
+          flat_end: 17,
           source_work_id: 0x6e5,
           char_start: 95,
           char_end: 180,
