@@ -110,7 +110,24 @@ existing actions: create remote link, transclude into current work.
   within the 3s deadline.
 - Regression: no result for private works cross-server.
 
-## 5. Sizing
+## 6. Poisoning defenses + signing (agreed 2026-10-19 — design decisions)
+
+- **Density check**: flag over-saturated filters vs reported
+  `stats.work_count`; action is CONSERVATIVE (keep querying, lose
+  pruning benefit, log + annotate) — never auto-hide on a heuristic.
+- **Audit sampling**: small % of federated searches bypass the bloom
+  for one peer; randomized per-query so a hiding peer can't
+  distinguish audits.
+- **Signed .well-known + signed search responses**: reuse the
+  backlink scheme (X-Xudanu-Origin-Key/Signature). Signed body MUST
+  bind query + timestamp (freshness window) — authentic-but-replayed
+  result sets are otherwise a gap. Verification consults key-history
+  rotation proofs. Legacy unsigned responses accepted transitionally,
+  surfaced in results as "unverified origin" badge.
+- Blast radius already bounded: directory-trust gate, 1h bloom cache,
+  bloom is routing-only (cannot inject results).
+
+## 7. Sizing
 
 Small-to-medium: bloom (≈150 lines), endpoint (≈80), fan-out merge
 (≈150), overlay changes (≈100). The pieces it leans on are all
