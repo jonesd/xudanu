@@ -91,7 +91,27 @@
 - Engine extraction scope creep — FR-88 stays minimal: move code,
   don't redesign it
 
-## 5. Milestone money map
+## 5. Stretch goal — on-device LLM assistance
+
+Apple (Foundation Models / Apple Intelligence) and Google (Gemini Nano
+via ML Kit) both expose ON-DEVICE LLMs to apps — free inference, no
+network, no API keys. This fits the project's hard constraint
+perfectly: the system works fully without an LLM; assistance is
+optional-only.
+
+- Route: one Capacitor plugin per platform behind a single TS
+  interface (`assistant.summarize / suggestLinks / findQuotation`) —
+  native bridge on iOS/Android; absent (returns null) on web/desktop
+- Xanadu-shaped uses: suggest links/transclusion candidates while
+  reading (pairs with the enfilade's structure — the model proposes,
+  the crum/hash machinery verifies), summarize long works, query
+  assist for federated search
+- Honest caveats: device-gated (Apple Intelligence needs recent
+  hardware/OS; Gemini Nano flagship Androids) → every feature must
+  degrade silently to fully-manual; treat as post-launch polish,
+  not a launch feature
+
+## 6. Milestone money map
 
 | Milestone | Invest | Return surface |
 |---|---|---|
