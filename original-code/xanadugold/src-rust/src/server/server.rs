@@ -485,6 +485,42 @@ fn connect_timed(
     Err(last_err)
 }
 
+/// Split "host[:port[:port…]]" into (host, port). Tolerates the
+/// address+port concatenation bug shape ("127.0.0.1:8080:8080") by
+/// stripping repeated trailing :port suffixes (the last one wins,
+/// which is the explicitly-passed port). IPv6 forms ([::1]:8080 and
+/// bare ::1) are left intact.
+fn split_host_port(host_port: &str, default_port: u16) -> (String, u16) {
+    if host_port.starts_with('[') {
+        if let Some((h, p)) = host_port.rsplit_once("]:") {
+            return (
+                h.trim_matches(|c| c == '[' || c == ']').to_string(),
+                p.parse().unwrap_or(default_port),
+            );
+        }
+        return (host_port.to_string(), default_port);
+    }
+    if host_port.contains("::") {
+        // bare IPv6 — no port to strip
+        return (host_port.to_string(), default_port);
+    }
+    let mut current = host_port.to_string();
+    let mut port = default_port;
+    while let Some((h, p)) = current.rsplit_once(':') {
+        if h.is_empty() {
+            break;
+        }
+        match p.parse::<u16>() {
+            Ok(parsed) => {
+                port = parsed;
+                current = h.to_string();
+            }
+            Err(_) => break,
+        }
+    }
+    (current, port)
+}
+
 pub fn resolve_and_verify_host(host: &str, port: u16) -> Result<Vec<std::net::SocketAddr>, String> {
     use std::net::ToSocketAddrs;
 
@@ -2687,6 +2723,23 @@ impl Server {
             }
         }
 
+        // FR-91a ladder 3: self-sign the FINAL document (everything
+        // above, including the bloom and rotation chain) — verifiers
+        // anchor this against their directory pin, making the routing
+        // filter and identity tamper-evident end to end.
+        {
+            let mut body = identity.clone();
+            if let Some(obj) = body.as_object_mut() {
+                obj.remove("doc_signature");
+            }
+            let payload = serde_json::to_string(&body).unwrap_or_default();
+            let (vk, sig) = self.sign_backlink_body(&payload);
+            identity["doc_signature"] = serde_json::json!({
+                "alg": "ed25519",
+                "key": vk,
+                "sig": sig,
+            });
+        }
         identity
     }
 
@@ -2806,11 +2859,12 @@ impl Server {
 
         let entry = crate::server::server_directory::DirectoryEntry {
             server_id,
-            address: identity["public_address"]
-                .as_str()
-                .filter(|s| !s.is_empty())
-                .unwrap_or(address)
-                .to_string(),
+            // The OPERATOR-supplied endpoint is the routing address —
+            // it is how this server was actually reached. The doc's
+            // public_address is a declaration (identity, tumblers);
+            // preferring it here broke lookups and produced
+            // host:port:port URLs when paired with an explicit port.
+            address: address.to_string(),
             port,
             verifying_key: verifying_key.clone(),
             pinned_key: Some(verifying_key.clone()),
@@ -9390,12 +9444,22 @@ impl Server {
         Ok(refresh)
     }
 
-    pub fn snapshot_trusted_peers_for_search(&self) -> Vec<(u64, String, Option<u16>, String)> {
+    pub fn snapshot_trusted_peers_for_search(&self) -> Vec<TrustedPeerForSearch> {
         self.server_directory
             .list()
             .iter()
             .filter(|e| e.trusted && !e.quarantined)
-            .map(|e| (e.server_id, e.address.clone(), e.port, e.name.clone()))
+            .map(|e| TrustedPeerForSearch {
+                server_id: e.server_id,
+                address: e.address.clone(),
+                port: e.port,
+                name: e.name.clone(),
+                pinned_key: e
+                    .pinned_key
+                    .clone()
+                    .or_else(|| Some(e.verifying_key.clone()).filter(|k| !k.is_empty())),
+                supports_https: e.supports_https,
+            })
             .collect()
     }
 
@@ -31059,6 +31123,68 @@ pub struct FederatedFetchCaches {
     pub origin_keys: std::collections::HashMap<String, (String, u64)>,
 }
 
+/// FR-91a trust ladder: a trusted directory peer with its ADD-TIME
+/// PINNED KEY — the anchor for everything fetched later. The pin is
+/// the SSH-host-key ceremony: learned when the operator added the
+/// server, and any later key change is a security event, not a
+/// silent replacement.
+pub struct TrustedPeerForSearch {
+    pub server_id: u64,
+    pub address: String,
+    pub port: Option<u16>,
+    pub name: String,
+    pub pinned_key: Option<String>,
+    pub supports_https: Option<bool>,
+}
+
+/// Derive the u64 namespace identity from a verifying key (must
+/// match server_namespace_id / the directory's derivation).
+pub fn namespace_id_from_verifying_key_hex(key_hex: &str) -> Option<u64> {
+    let vk = hex::decode(key_hex).ok()?;
+    if vk.len() != 32 {
+        return None;
+    }
+    let hash = blake3::hash(&vk);
+    let b = hash.as_bytes();
+    Some(u64::from_be_bytes([
+        b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
+    ]))
+}
+
+/// FR-91a: verify a .well-known document's self-signature
+/// (doc_signature over the serialized document minus the signature
+/// field). `expected_key` is the ANCHOR (directory pin or learned
+/// key) — without an anchor a self-signature is just TOFU.
+pub fn verify_well_known_doc(
+    doc: &serde_json::Value,
+    expected_key: Option<&str>,
+) -> Result<(), String> {
+    let sig_block = doc.get("doc_signature").ok_or("no doc_signature")?;
+    let key = sig_block
+        .get("key")
+        .and_then(|k| k.as_str())
+        .ok_or("doc_signature missing key")?;
+    let sig = sig_block
+        .get("sig")
+        .and_then(|s| s.as_str())
+        .ok_or("doc_signature missing sig")?;
+    if let Some(expected) = expected_key {
+        if expected != key {
+            return Err("document signed by a different key than the anchor".into());
+        }
+    }
+    let mut body = doc.clone();
+    if let Some(obj) = body.as_object_mut() {
+        obj.remove("doc_signature");
+    }
+    let payload = serde_json::to_string(&body).unwrap_or_default();
+    if crate::server::federation::verify_hex_sig(key, &payload, sig) {
+        Ok(())
+    } else {
+        Err("invalid document signature".into())
+    }
+}
+
 /// FR-91a: audit-sampling decision (deterministic per query; peers
 /// cannot distinguish an audit query — the request is identical).
 pub fn search_audit_due(query: &str) -> bool {
@@ -31074,7 +31200,7 @@ pub fn search_audit_due(query: &str) -> bool {
 /// sampling, and signed-response verification (forgery, replay,
 /// cross-query substitution all rejected).
 pub fn federated_fetch_peers(
-    peers: Vec<(u64, String, Option<u16>, String)>,
+    peers: Vec<TrustedPeerForSearch>,
     query: &str,
     caches: &mut FederatedFetchCaches,
 ) -> Vec<serde_json::Value> {
@@ -31093,7 +31219,15 @@ pub fn federated_fetch_peers(
     let mut results = Vec::new();
     let deadline =
         std::time::Instant::now() + std::time::Duration::from_secs(2 + peers.len() as u64);
-    for (server_id, address, port, server_name) in peers {
+    for peer in peers {
+        let TrustedPeerForSearch {
+            server_id,
+            address,
+            port,
+            name: server_name,
+            pinned_key,
+            supports_https,
+        } = peer;
         if std::time::Instant::now() >= deadline {
             results.push(serde_json::json!({
                 "server_name": server_name, "server_id": server_id,
@@ -31101,37 +31235,115 @@ pub fn federated_fetch_peers(
             }));
             continue;
         }
-        let port = port.unwrap_or(8080);
+        // Ladder 4: HTTPS when the directory says the peer supports it.
+        let https = supports_https == Some(true);
+        let scheme = if https { "https" } else { "http" };
+        let port = port.unwrap_or(if https { 443 } else { 8080 });
         let cache_key = format!("{}:{}", address, port);
 
-        // Bloom routing (with fresh .well-known facts on cache miss —
-        // also the source of the peer's published origin key).
-        let mut origin_key: Option<String> =
-            caches.origin_keys.get(&cache_key).map(|(k, _)| k.clone());
+        // ── Trust ladder 1+2: origin key resolution and anchoring ──
+        // The PIN (add-time directory key) is the anchor. Fetched or
+        // cached keys must agree with it — a mismatch is rotation
+        // outside the ceremony (or a MITM) and is REJECTED loudly.
+        // Without a pin, a fetched key must hash to the directory's
+        // recorded server_id.
+        let mut origin_key: Option<String> = pinned_key.clone();
         let mut bloom_fetched: Option<(Option<Vec<u8>>, u64)> = None;
+        let mut doc_trusted = false;
+        let mut peer_is_signing = false;
         if let Some((bits, at)) = caches.blooms.get(&cache_key) {
             if now.saturating_sub(*at) < 3600 {
                 bloom_fetched = Some((Some(bits.clone()), 0));
+                doc_trusted = true; // cache only populated post-anchor-check
             }
         }
-        if bloom_fetched.is_none() {
-            let wk_url = format!("http://{}:{}/.well-known/xudanu-server.json", address, port);
+        if origin_key.is_none() || bloom_fetched.is_none() {
+            let wk_url = format!("{}://{}/.well-known/xudanu-server.json", scheme, cache_key);
             if let Ok(text) = http_get_json(&wk_url, 2) {
-                if let Some(wk) = parse_peer_well_known(&text) {
-                    if let Some(bits) = &wk.bloom {
-                        caches.blooms.insert(cache_key.clone(), (bits.clone(), now));
-                    }
-                    if let Some(k) = &wk.origin_key {
+                // Malformed/oversized guard: a .well-known is a small
+                // identity document; anything huge is hostile or
+                // broken — no routing help, no key learning.
+                if text.len() > 1_048_576 {
+                    tracing::warn!(
+                        peer = %server_name,
+                        "peer .well-known oversized ({}b) — ignored",
+                        text.len()
+                    );
+                } else if let Some(wk) = parse_peer_well_known(&text) {
+                    // Anchor checks BEFORE trusting anything in the doc.
+                    if let Some(fetched_key) = &wk.origin_key {
+                        let pin_ok = match &pinned_key {
+                            Some(pin) => pin == fetched_key,
+                            None => namespace_id_from_verifying_key_hex(fetched_key)
+                                .map(|id| id == server_id)
+                                .unwrap_or(false),
+                        };
+                        if !pin_ok {
+                            tracing::warn!(
+                                target: "xudanu::security",
+                                peer = %server_name,
+                                event = "SECURITY:origin_key_mismatch",
+                                "peer .well-known key does not match the directory anchor — rejecting"
+                            );
+                            results.push(serde_json::json!({
+                                "server_name": server_name, "server_id": server_id,
+                                "unreachable": true,
+                                "reason": "origin key changed vs directory anchor (rotation requires re-pinning or a published rotation proof)",
+                            }));
+                            continue;
+                        }
                         caches
                             .origin_keys
-                            .insert(cache_key.clone(), (k.clone(), now));
-                        origin_key = Some(k.clone());
+                            .insert(cache_key.clone(), (fetched_key.clone(), now));
+                        if origin_key.is_none() {
+                            origin_key = Some(fetched_key.clone());
+                        }
                     }
-                    bloom_fetched = Some((wk.bloom, wk.work_count));
+                    // Ladder 3: signed document — verified against the
+                    // anchor. A VALID signature covers the doc's bloom
+                    // (tamper-proof routing). An INVALID signature
+                    // distrusts the doc: its bloom is ignored (always
+                    // query — conservative), while the anchored key
+                    // still verifies results below.
+                    if let Ok(doc) = serde_json::from_str::<serde_json::Value>(&text) {
+                        if doc.get("doc_signature").is_some() {
+                            match verify_well_known_doc(&doc, origin_key.as_deref()) {
+                                Ok(()) => {
+                                    doc_trusted = true;
+                                    peer_is_signing = true;
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        target: "xudanu::security",
+                                        peer = %server_name,
+                                        event = "SECURITY:wellknown_doc_untrusted",
+                                        "peer .well-known signature failed: {} — bloom ignored",
+                                        e
+                                    );
+                                    doc_trusted = false;
+                                }
+                            }
+                        } else {
+                            // Legacy unsigned doc: bloom usable ONLY
+                            // when an anchor exists (pin or anchored
+                            // key). An unanchored doc — no pin, missing
+                            // or unhashable server_id — grants nothing.
+                            doc_trusted = origin_key.is_some();
+                        }
+                    }
+                    if doc_trusted {
+                        if let Some(bits) = &wk.bloom {
+                            caches.blooms.insert(cache_key.clone(), (bits.clone(), now));
+                        }
+                        bloom_fetched = Some((wk.bloom.clone(), wk.work_count));
+                    } else {
+                        // Untrusted doc: no routing help, nothing cached.
+                        bloom_fetched = None;
+                    }
                 }
             }
         }
-        if !audit {
+        if !audit && doc_trusted {
             if let Some((Some(bloom), work_count)) = &bloom_fetched {
                 // Density sanity: bits set but the peer reports an
                 // empty corpus — the filter is lying; ignore it for
@@ -31150,13 +31362,22 @@ pub fn federated_fetch_peers(
         }
 
         let url = format!(
-            "http://{}:{}/api/public/works?q={}&signed=1",
-            address,
-            port,
+            "{}://{}/api/public/works?q={}&signed=1",
+            scheme,
+            cache_key,
             urlencode(query)
         );
         match http_get_json(&url, PEER_TIMEOUT_SECS) {
             Ok(body) => {
+                // Malformed/oversized guard: search responses are
+                // bounded by construction (20 results, capped fields).
+                if body.len() > 2_097_152 {
+                    results.push(serde_json::json!({
+                        "server_name": server_name, "server_id": server_id,
+                        "unreachable": true, "reason": "oversized response",
+                    }));
+                    continue;
+                }
                 let data = match serde_json::from_str::<serde_json::Value>(&body) {
                     Ok(d) => d,
                     Err(_) => {
@@ -31167,6 +31388,25 @@ pub fn federated_fetch_peers(
                         continue;
                     }
                 };
+                // Fetch-to-query consistency: a peer whose .well-known
+                // is SIGNED (new protocol) must return signed results.
+                // An unsigned response from a signing peer means the
+                // signature was stripped in flight — reject rather
+                // than silently downgrade to unverified.
+                if peer_is_signing && data.get("signed").is_none() {
+                    tracing::warn!(
+                        target: "xudanu::security",
+                        peer = %server_name,
+                        event = "SECURITY:search_signature_stripped",
+                        "signing peer returned unsigned results — rejecting"
+                    );
+                    results.push(serde_json::json!({
+                        "server_name": server_name, "server_id": server_id,
+                        "unreachable": true,
+                        "reason": "signing peer returned unsigned results (signature stripped?)",
+                    }));
+                    continue;
+                }
                 // Signed-response verification (FR-91a).
                 let mut verified = false;
                 if let Some(sig_block) = data.get("signed") {
@@ -52076,11 +52316,7 @@ pub fn http_get_json(url: &str, timeout_secs: u64) -> Result<String, String> {
             .unwrap_or((no_scheme, "/".to_string()));
 
         let default_port = if is_https { 443 } else { 80 };
-        let (host, port) = if let Some((h, p)) = host_port.rsplit_once(':') {
-            (h, p.parse::<u16>().unwrap_or(default_port))
-        } else {
-            (host_port, default_port)
-        };
+        let (host, port) = split_host_port(&host_port, default_port);
 
         let (status, headers, body) = if is_https {
             http_get_json_hop_https(&host, port, &path, timeout_secs)?
@@ -52119,7 +52355,7 @@ fn http_get_json_hop_https(
         .with_root_certificates(root_cert_store)
         .with_no_client_auth();
 
-    let addrs = resolve_and_verify_host(host, port)?;
+    let addrs = resolve_and_verify_host(&host, port)?;
 
     let mut connector = connect_timed(&addrs[..], std::time::Duration::from_secs(timeout_secs))?;
 
@@ -52181,7 +52417,7 @@ fn http_get_json_hop_http(
     use std::io::{Read, Write};
     use std::time::Duration;
 
-    let addrs = resolve_and_verify_host(host, port)?;
+    let addrs = resolve_and_verify_host(&host, port)?;
     let mut stream = connect_timed(&addrs[..], std::time::Duration::from_secs(timeout_secs))?;
 
     let request = format!(
@@ -52263,16 +52499,12 @@ pub fn http_post_json(url: &str, body: &str, timeout_secs: u64) -> Result<String
         .map(|(h, p)| (h, format!("/{}", p)))
         .unwrap_or((no_scheme, "/".to_string()));
     let default_port = if url.starts_with("https://") { 443 } else { 80 };
-    let (host, port) = if let Some((h, p)) = host_port.rsplit_once(':') {
-        (h, p.parse::<u16>().unwrap_or(default_port))
-    } else {
-        (host_port, default_port)
-    };
+    let (host, port) = split_host_port(&host_port, default_port);
 
     use std::io::{Read, Write};
     use std::net::TcpStream;
 
-    let addrs = resolve_and_verify_host(host, port)?;
+    let addrs = resolve_and_verify_host(&host, port)?;
     let mut stream = connect_timed(&addrs[..], std::time::Duration::from_secs(timeout_secs))?;
     stream
         .set_read_timeout(Some(std::time::Duration::from_secs(timeout_secs)))
@@ -52339,16 +52571,12 @@ fn http_post_json_hop_headers(
         .map(|(h, p)| (h, format!("/{}", p)))
         .unwrap_or((no_scheme, "/".to_string()));
     let default_port = if is_https { 443 } else { 80 };
-    let (host, port) = if let Some((h, p)) = host_port.rsplit_once(':') {
-        (h, p.parse::<u16>().unwrap_or(default_port))
-    } else {
-        (host_port, default_port)
-    };
+    let (host, port) = split_host_port(&host_port, default_port);
 
     use std::io::{Read, Write};
     use std::net::TcpStream;
 
-    let addrs = resolve_and_verify_host(host, port)?;
+    let addrs = resolve_and_verify_host(&host, port)?;
     let mut tcp = connect_timed(&addrs[..], std::time::Duration::from_secs(timeout_secs))?;
     tcp.set_read_timeout(Some(std::time::Duration::from_secs(timeout_secs)))
         .ok();

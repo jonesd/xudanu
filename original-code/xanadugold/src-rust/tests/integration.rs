@@ -118,9 +118,15 @@ impl TestServer {
             .unwrap();
         server.disconnect(setup_sid).unwrap();
         let state = AppState::new(server).shared();
-        let app = build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+        let app = build_router(state.clone())
+            .into_make_service_with_connect_info::<std::net::SocketAddr>();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
+        // Cross-server senders must declare an origin identity —
+        // receivers reject unsigned/originless notifications.
+        state
+            .server
+            .with_server(|srv| srv.set_public_address(Some(addr.to_string())));
         tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
         });
@@ -3745,6 +3751,16 @@ async fn link_query_heritage_queries() {
 
 /// A mock HTTP peer serving canned .well-known + works responses.
 fn spawn_mock_peer(well_known: serde_json::Value, works_resp: serde_json::Value) -> u16 {
+    let state: MockPeerState = std::sync::Arc::new(std::sync::Mutex::new((well_known, works_resp)));
+    spawn_mock_peer_mutable(state)
+}
+
+/// Mutable mock: the test can swap the served documents between the
+/// add-time fetch and the search-time fetch (rotation / MITM / tamper
+/// scenarios).
+type MockPeerState = std::sync::Arc<std::sync::Mutex<(serde_json::Value, serde_json::Value)>>;
+
+fn spawn_mock_peer_mutable(state: MockPeerState) -> u16 {
     use std::io::{Read, Write};
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -3755,10 +3771,11 @@ fn spawn_mock_peer(well_known: serde_json::Value, works_resp: serde_json::Value)
             let _ = stream.read(&mut buf);
             let req = String::from_utf8_lossy(&buf).to_string();
             let path = req.split(' ').nth(1).unwrap_or("/");
+            let (well_known, works_resp) = state.lock().unwrap().clone();
             let body = if path.contains(".well-known") {
                 well_known.to_string()
             } else {
-                works_resp.clone().to_string()
+                works_resp.to_string()
             };
             let resp = format!(
                 "HTTP/1.0 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -3769,6 +3786,25 @@ fn spawn_mock_peer(well_known: serde_json::Value, works_resp: serde_json::Value)
         }
     });
     port
+}
+
+/// Sign a .well-known document the way the server does (signature
+/// over the serialized doc minus doc_signature).
+fn sign_well_known_doc(key: &ed25519_dalek::SigningKey, doc: &mut serde_json::Value) {
+    use ed25519_dalek::Signer;
+    let mut body = doc.clone();
+    if let Some(obj) = body.as_object_mut() {
+        obj.remove("doc_signature");
+    }
+    let payload = serde_json::to_string(&body).unwrap();
+    let vk_hex: String = key
+        .verifying_key()
+        .to_bytes()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
+    let sig_hex = hex::encode(key.sign(payload.as_bytes()).to_bytes());
+    doc["doc_signature"] = serde_json::json!({ "alg": "ed25519", "key": vk_hex, "sig": sig_hex });
 }
 
 fn test_sign_works(
@@ -4155,6 +4191,280 @@ async fn federated_search_density_anomaly_ignored_for_routing() {
     assert!(
         results.iter().any(|e| e["local"].as_bool() == Some(false)),
         "density-suspect filter must not grant pruning: {results:?}"
+    );
+}
+
+#[tokio::test]
+async fn pin_anchor_rejects_changed_key() {
+    // Ladder 1: the add-time pin is the anchor. If the peer's
+    // .well-known later presents a DIFFERENT key (MITM substitution
+    // or rotation outside the ceremony), everything from that peer
+    // is rejected — loudly, never silently swapped.
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let key_a = ed25519_dalek::SigningKey::from([11u8; 32]);
+    let key_b = ed25519_dalek::SigningKey::from([12u8; 32]);
+    let key_a_hex = key_hex(&key_a);
+    let key_b_hex = key_hex(&key_b);
+    let marker = "rotatemarker";
+    let mut works_b = marker_works_json(marker);
+    works_b["signed"] = test_sign_works(&key_b, marker, now_secs(), &works_b["works"]);
+    let state: MockPeerState = std::sync::Arc::new(std::sync::Mutex::new((
+        mock_well_known(&key_a_hex, 1, vec![0xff; 64]),
+        works_b,
+    )));
+    let port = spawn_mock_peer_mutable(state.clone());
+    let mut id = 980u16;
+    trust_mock_peer(&mut s, &mut r, &mut id, port).await;
+    // Swap the identity to key B after the pin is established.
+    *state.lock().unwrap() = (
+        mock_well_known(&key_b_hex, 1, vec![0xff; 64]),
+        marker_works_json(marker), // placeholder; works unused post-reject
+    );
+    let results = run_search(&mut s, &mut r, &mut id, marker).await;
+    assert!(results.iter().all(|e| e.get("local").is_none()));
+    assert!(
+        results.iter().any(|e| e["reason"]
+            .as_str()
+            .unwrap_or("")
+            .contains("directory anchor")),
+        "anchor-mismatch rejection expected: {results:?}"
+    );
+}
+
+#[tokio::test]
+async fn doc_signature_tamper_bloom_ignored_results_verified() {
+    // Ladder 3: a signed .well-known whose body was tampered AFTER
+    // signing — signature invalid → the doc's bloom is distrusted
+    // (peer queried, not pruned), while the PIN still anchors result
+    // verification.
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let key = ed25519_dalek::SigningKey::from([13u8; 32]);
+    let key_hex_s = key_hex(&key);
+    let plain_q = pick_query("doctamper", false); // ensure not audit-pruned
+    let mut works = marker_works_json("doctampercontent");
+    works["works"][0]["title"] = serde_json::json!(format!("doctamper {}", plain_q));
+    works["signed"] = test_sign_works(&key, &plain_q, now_secs(), &works["works"]);
+    // Add-time doc: unsigned legacy (pin established).
+    let state: MockPeerState = std::sync::Arc::new(std::sync::Mutex::new((
+        mock_well_known(&key_hex_s, 1, vec![0xff; 64]),
+        works,
+    )));
+    let port = spawn_mock_peer_mutable(state.clone());
+    let mut id = 985u16;
+    trust_mock_peer(&mut s, &mut r, &mut id, port).await;
+    // Search-time doc: signed while the bloom was all-ones, then the
+    // bloom is zeroed WITHOUT re-signing (in-flight tamper).
+    let mut doc = mock_well_known(&key_hex_s, 1, vec![0xff; 64]);
+    sign_well_known_doc(&key, &mut doc);
+    doc["search_bloom"]["b64"] =
+        serde_json::json!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+    {
+        let works = state.lock().unwrap().1.clone();
+        let mut guard = state.lock().unwrap();
+        guard.0 = doc;
+        guard.1 = works;
+    }
+    let results = run_search(&mut s, &mut r, &mut id, &plain_q).await;
+    assert!(
+        results
+            .iter()
+            .any(|e| e["local"].as_bool() == Some(false) && e["verified"].as_bool() == Some(true)),
+        "tampered doc must not prune; pin-anchored results still verified: {results:?}"
+    );
+}
+
+#[tokio::test]
+async fn signing_peer_unsigned_results_rejected() {
+    // Fetch-to-query consistency: a peer presenting a SIGNED
+    // .well-known but returning UNSIGNED search results (signature
+    // stripped in flight) is rejected — no silent downgrade.
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let key = ed25519_dalek::SigningKey::from([14u8; 32]);
+    let key_hex_s = key_hex(&key);
+    let marker = "stripmarker";
+    let state: MockPeerState = std::sync::Arc::new(std::sync::Mutex::new((
+        mock_well_known(&key_hex_s, 1, vec![0xff; 64]),
+        marker_works_json(marker), // no signed block
+    )));
+    let port = spawn_mock_peer_mutable(state.clone());
+    let mut id = 990u16;
+    trust_mock_peer(&mut s, &mut r, &mut id, port).await;
+    // Swap in a properly SIGNED document at search time.
+    let mut doc = mock_well_known(&key_hex_s, 1, vec![0xff; 64]);
+    sign_well_known_doc(&key, &mut doc);
+    let works = state.lock().unwrap().1.clone();
+    *state.lock().unwrap() = (doc, works);
+    let results = run_search(&mut s, &mut r, &mut id, marker).await;
+    assert!(results.iter().all(|e| e.get("local").is_none()));
+    assert!(
+        results.iter().any(|e| e["reason"]
+            .as_str()
+            .unwrap_or("")
+            .contains("unsigned results")),
+        "stripped-signature rejection expected: {results:?}"
+    );
+}
+
+#[tokio::test]
+async fn oversized_well_known_ignored() {
+    // Malformed-document guard: a >1MB .well-known is hostile or
+    // broken — ignored for routing and key learning, peer still
+    // queried, results still pin-verified.
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let key = ed25519_dalek::SigningKey::from([15u8; 32]);
+    let key_hex_s = key_hex(&key);
+    let marker = "bloatmarker";
+    let mut works = marker_works_json(marker);
+    works["signed"] = test_sign_works(&key, marker, now_secs(), &works["works"]);
+    let mut bloat = mock_well_known(&key_hex_s, 1, vec![0xff; 64]);
+    bloat["padding"] = serde_json::json!("x".repeat(1_200_000));
+    let state: MockPeerState = std::sync::Arc::new(std::sync::Mutex::new((
+        mock_well_known(&key_hex_s, 1, vec![0xff; 64]),
+        works,
+    )));
+    let port = spawn_mock_peer_mutable(state.clone());
+    let mut id = 995u16;
+    trust_mock_peer(&mut s, &mut r, &mut id, port).await;
+    {
+        let mut guard = state.lock().unwrap();
+        guard.0 = bloat;
+    }
+    let results = run_search(&mut s, &mut r, &mut id, marker).await;
+    assert!(
+        results
+            .iter()
+            .any(|e| e["local"].as_bool() == Some(false) && e["verified"].as_bool() == Some(true)),
+        "oversized doc ignored, peer queried, results pin-verified: {results:?}"
+    );
+}
+
+fn key_hex(key: &ed25519_dalek::SigningKey) -> String {
+    key.verifying_key()
+        .to_bytes()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect()
+}
+
+/// Raw HTTP POST to a TestServer; returns (status, body-snippet).
+async fn raw_post(
+    addr: std::net::SocketAddr,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: &str,
+) -> (u16, String) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut sock = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let mut req = format!(
+        "POST {} HTTP/1.0\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n",
+        path,
+        addr,
+        body.len()
+    );
+    for (k, v) in headers {
+        req.push_str(&format!("{}: {}\r\n", k, v));
+    }
+    req.push_str("\r\n");
+    req.push_str(body);
+    sock.write_all(req.as_bytes()).await.unwrap();
+    let mut buf = vec![0u8; 8192];
+    let n = sock.read(&mut buf).await.unwrap_or(0);
+    let resp = String::from_utf8_lossy(&buf[..n]).to_string();
+    let status = resp
+        .lines()
+        .next()
+        .and_then(|l| l.split_whitespace().nth(1))
+        .and_then(|c| c.parse::<u16>().ok())
+        .unwrap_or(0);
+    (status, resp)
+}
+
+/// The origin-confusion case: the claimed origin's .well-known is
+/// VALID and properly published — but the notification is signed by
+/// a DIFFERENT key than the one that origin publishes. Signature
+/// cryptographically valid, document valid, identity WRONG → 403.
+/// Positive control: the same notify signed by the published key is
+/// accepted.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn backlink_rejects_valid_doc_but_foreign_key() {
+    xudanu::server::server::set_allow_loopback(true);
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    // Target work on the receiving server.
+    let wid = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            997,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "backlink target"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    let wid_hex = format!("{:04x}", wid);
+
+    let key_a = ed25519_dalek::SigningKey::from([21u8; 32]);
+    let key_b = ed25519_dalek::SigningKey::from([22u8; 32]);
+    // The claimed origin: a mock publishing key A's identity.
+    let port = spawn_mock_peer(
+        mock_well_known(&key_hex(&key_a), 1, vec![0xff; 64]),
+        marker_works_json("unused"),
+    );
+    let origin_addr = format!("127.0.0.1:{}", port);
+
+    let body = serde_json::json!({
+        "target_work_id": wid_hex,
+        "origin_server_address": origin_addr,
+        "origin_server_name": "MockOrigin",
+        "origin_work_id": "01",
+        "origin_work_title": "some origin work",
+        "excerpt": "excerpt text",
+        "link_type": "cross-server",
+    })
+    .to_string();
+
+    // Signed by key B (valid signature) while the origin publishes
+    // key A → 403 identity mismatch.
+    let sig_b = {
+        use ed25519_dalek::Signer;
+        hex::encode(key_b.sign(body.as_bytes()).to_bytes())
+    };
+    let (status, resp) = raw_post(
+        srv.addr,
+        "/api/backlink-notify",
+        &[
+            ("X-Xudanu-Origin-Key", &key_hex(&key_b)),
+            ("X-Xudanu-Signature", &sig_b),
+        ],
+        &body,
+    )
+    .await;
+    assert_eq!(status, 403, "foreign-key notify must 403: {resp:?}");
+
+    // Positive control: signed by the PUBLISHED key → accepted.
+    let sig_a = {
+        use ed25519_dalek::Signer;
+        hex::encode(key_a.sign(body.as_bytes()).to_bytes())
+    };
+    let (status_ok, resp_ok) = raw_post(
+        srv.addr,
+        "/api/backlink-notify",
+        &[
+            ("X-Xudanu-Origin-Key", &key_hex(&key_a)),
+            ("X-Xudanu-Signature", &sig_a),
+        ],
+        &body,
+    )
+    .await;
+    assert_eq!(
+        status_ok, 200,
+        "published-key notify must be accepted: {resp_ok:?}"
     );
 }
 
