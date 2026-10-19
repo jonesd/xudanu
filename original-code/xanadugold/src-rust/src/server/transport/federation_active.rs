@@ -105,13 +105,16 @@ pub async fn dial_and_maintain(peer_addr: String, state: SharedState, pool: Peer
                     peer_addr
                 );
                 backoff_secs = 1;
+                state.server.with_server(|srv| {
+                    srv.set_federation_peer_status(&peer_addr, &peer_server_id, true)
+                });
 
                 run_outbound_connection(
                     ws,
                     state.clone(),
                     pool.clone(),
                     peer_addr.clone(),
-                    peer_server_id,
+                    peer_server_id.clone(),
                     encrypt_cipher,
                     decrypt_cipher,
                 )
@@ -121,6 +124,9 @@ pub async fn dial_and_maintain(peer_addr: String, state: SharedState, pool: Peer
                     "Federation: outbound connection to {} lost, will reconnect",
                     peer_addr
                 );
+                state.server.with_server(|srv| {
+                    srv.set_federation_peer_status(&peer_addr, &peer_server_id, false)
+                });
             }
             Err(e) => {
                 tracing::warn!(

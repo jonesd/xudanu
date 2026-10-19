@@ -1812,6 +1812,35 @@ impl MembershipState {
         result
     }
 
+    /// Suspend a member (equivocation containment): tombstones every
+    /// Active entry for the server and re-adds it as Suspended with a
+    /// fresh tag. The observed-remove semantics make the suspension
+    /// CRDT-safe — replicas that merge later see the tombstones and
+    /// the Suspended entry. Returns true when state changed.
+    pub fn suspend_member(&mut self, server_id: &str) -> bool {
+        let mut suspended_clone: Option<MembershipEntry> = None;
+        let mut changed = false;
+        let mut kept = Vec::new();
+        for entry in self.members.adds.drain(..) {
+            if entry.value.server_id == server_id
+                && entry.value.status != MembershipStatus::Suspended
+            {
+                suspended_clone = Some(entry.value.clone());
+                self.members.tombstones.push(entry);
+                changed = true;
+            } else {
+                kept.push(entry);
+            }
+        }
+        self.members.adds = kept;
+        if let Some(mut entry) = suspended_clone {
+            entry.status = MembershipStatus::Suspended;
+            let tag = self.next_tag(server_id);
+            self.members.add(entry, tag);
+        }
+        changed
+    }
+
     /// List all members (including pending/suspended, with merged endorsements).
     pub fn all_members(&self) -> Vec<MembershipEntry> {
         let mut seen_ids = HashSet::new();
@@ -2419,6 +2448,31 @@ pub struct GovernanceState {
     /// FR-75 §2: retired-key ledger with grace semantics.
     #[serde(default)]
     retired_keys: Vec<RetiredKey>,
+    /// Equivocation evidence (same voter, same view+seq+phase,
+    /// different proposal digest). Byzantine tolerance requires
+    /// DETECTION, not just f-tolerance — a double-signing member is
+    /// recorded here for the server layer to suspend and audit-log.
+    #[serde(default)]
+    seen_vote_digests: HashMap<String, String>,
+    #[serde(default)]
+    new_equivocations: Vec<EquivocationRecord>,
+    /// At-most-once reporting: unique evidence keys already drained
+    /// by take_new_equivocations (the vec is emptied on drain, so
+    /// replayed conflicting votes would re-record without this).
+    #[serde(default)]
+    reported_equivocation_keys: HashSet<String>,
+}
+
+/// A detected equivocation: voter V signed conflicting digests for
+/// the same (view, sequence, phase).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EquivocationRecord {
+    pub voter_id: String,
+    pub view_number: u64,
+    pub sequence_number: u64,
+    pub phase_name: String,
+    pub first_digest: String,
+    pub second_digest: String,
 }
 
 impl GovernanceState {
@@ -2443,6 +2497,9 @@ impl GovernanceState {
             view_change_started: HashMap::new(),
             buffered_prepare_votes: Vec::new(),
             retired_keys: Vec::new(),
+            seen_vote_digests: HashMap::new(),
+            new_equivocations: Vec::new(),
+            reported_equivocation_keys: HashSet::new(),
         }
     }
 
@@ -2646,6 +2703,14 @@ impl GovernanceState {
         if self.cluster_size >= 4 && !vote.is_signed() {
             return RoundPhase::PrePrepare;
         }
+        // Equivocation check: a signed vote conflicting with one
+        // already seen from this voter for the same (view, seq,
+        // phase) is byzantine behavior — record it and refuse the
+        // vote. The server layer drains new_equivocations to suspend
+        // the member and write a security-audit event.
+        if vote.is_signed() && !self.note_vote_digest(&vote) {
+            return RoundPhase::PrePrepare;
+        }
         let quorum = self.quorum_size();
         let round = match &mut self.pending_round {
             Some(r) => r,
@@ -2740,6 +2805,15 @@ impl GovernanceState {
         if self.cluster_size >= 4 && !vote.is_signed() {
             return RoundPhase::PrePrepare;
         }
+        // Same equivocation contract as prepare (see receive_prepare).
+        if vote.is_signed() && !self.note_vote_digest(&vote) {
+            let phase = self
+                .pending_round
+                .as_ref()
+                .map(|r| r.phase)
+                .unwrap_or(RoundPhase::PrePrepare);
+            return phase;
+        }
         let round = match &mut self.pending_round {
             Some(r) => r,
             None => return RoundPhase::PrePrepare,
@@ -2799,6 +2873,52 @@ impl GovernanceState {
         }
 
         RoundPhase::Commit
+    }
+
+    /// Record a signed vote's digest for its (voter, view, seq,
+    /// phase). Returns true when the vote is consistent with prior
+    /// evidence; false when it conflicts (equivocation recorded).
+    fn note_vote_digest(&mut self, vote: &PbftVote) -> bool {
+        let key = format!(
+            "{}|{}|{}|{}",
+            vote.voter_id,
+            vote.view_number,
+            vote.sequence_number,
+            vote.phase_name()
+        );
+        match self.seen_vote_digests.get(&key) {
+            Some(seen) if seen != &vote.digest => {
+                let evidence_key = format!(
+                    "{}|{}|{}|{}|{}",
+                    vote.voter_id,
+                    vote.view_number,
+                    vote.sequence_number,
+                    vote.phase_name(),
+                    vote.digest
+                );
+                if self.reported_equivocation_keys.insert(evidence_key) {
+                    self.new_equivocations.push(EquivocationRecord {
+                        voter_id: vote.voter_id.clone(),
+                        view_number: vote.view_number,
+                        sequence_number: vote.sequence_number,
+                        phase_name: vote.phase_name().to_string(),
+                        first_digest: seen.clone(),
+                        second_digest: vote.digest.clone(),
+                    });
+                }
+                false
+            }
+            _ => {
+                self.seen_vote_digests.insert(key, vote.digest.clone());
+                true
+            }
+        }
+    }
+
+    /// Drain equivocations detected since the last call. The server
+    /// layer suspends the offender and journals a security event.
+    pub fn take_new_equivocations(&mut self) -> Vec<EquivocationRecord> {
+        std::mem::take(&mut self.new_equivocations)
     }
 
     /// Distinct members with SIGNED prepare votes recorded. Sealing
@@ -4932,6 +5052,57 @@ mod tests {
             keys.push(sk);
         }
         (keys, member_keys)
+    }
+
+    #[test]
+    fn equivocation_detected_and_vote_refused() {
+        let mut gov = GovernanceState::new(4);
+        let mut a = uvote("srv-byz", PbftPhase::Prepare, 0, 1);
+        a.digest = "aaaa1111".to_string();
+        a.signature = "s1".to_string();
+        let mut b = uvote("srv-byz", PbftPhase::Prepare, 0, 1);
+        b.digest = "bbbb2222".to_string();
+        b.signature = "s2".to_string();
+        // First vote: buffered (no round yet) but digest recorded.
+        gov.receive_prepare(a.clone());
+        assert!(gov.take_new_equivocations().is_empty());
+        // Conflicting digest for the same (voter, view, seq, phase):
+        // equivocation recorded, vote refused.
+        gov.receive_prepare(b.clone());
+        let eq = gov.take_new_equivocations();
+        assert_eq!(eq.len(), 1);
+        assert_eq!(eq[0].voter_id, "srv-byz");
+        assert_eq!(eq[0].first_digest, "aaaa1111");
+        assert_eq!(eq[0].second_digest, "bbbb2222");
+        // Replaying the same conflicting vote does not re-record
+        // (digest map already has the first).
+        gov.receive_prepare(b);
+        assert!(gov.take_new_equivocations().is_empty());
+        // Same voter, DIFFERENT view is legitimate (view change) —
+        // no equivocation.
+        let mut c = uvote("srv-byz", PbftPhase::Prepare, 1, 1);
+        c.digest = "cccc3333".to_string();
+        c.signature = "s3".to_string();
+        gov.receive_prepare(c);
+        assert!(gov.take_new_equivocations().is_empty());
+    }
+
+    #[test]
+    fn suspend_member_tombstones_active_entries() {
+        let mut ms = MembershipState::new(2);
+        let tag = ms.next_tag("srv-x");
+        ms.add_member(make_membership_entry("srv-x", vec![], 1000), tag);
+        assert!(ms.find_member("srv-x").unwrap().is_active());
+        assert!(ms.suspend_member("srv-x"));
+        assert_eq!(
+            ms.find_member("srv-x").unwrap().status,
+            MembershipStatus::Suspended
+        );
+        assert!(ms.active_members().iter().all(|m| m.server_id != "srv-x"));
+        // Idempotent: already suspended → no change.
+        assert!(!ms.suspend_member("srv-x"));
+        // Unknown member → no crash, false.
+        assert!(!ms.suspend_member("srv-ghost"));
     }
 
     fn tvote(

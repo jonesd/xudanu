@@ -956,6 +956,26 @@ pub struct Server {
     server_keypair: crate::crypto::keys::ServerKeyPair,
     key_history: crate::crypto::keys::KeyHistory,
     federation: crate::server::federation::FederationState,
+    /// Runtime liveness (not persisted — rebuilt by the dialer):
+    /// peer address → last-known connection state. Surfaced in
+    /// /health so a half-down mesh is visible from the outside.
+    federation_peer_status: std::collections::BTreeMap<String, FederationPeerStatus>,
+    /// Cross-server backlink notify counters (FR-40 aggregate
+    /// signal): sent / accepted / failed since boot + last failure.
+    notify_sent: u64,
+    notify_accepted: u64,
+    notify_failed: u64,
+    notify_last_error: Option<String>,
+    /// Verified origin verifying-keys for backlink notifications:
+    /// origin address → (key hex, cached-at unix secs). Prevents a
+    /// .well-known fetch per notify; rebuilt on boot.
+    backlink_origin_keys: std::collections::HashMap<String, (String, u64)>,
+    /// Staged cross-server backlink notify (link_create sets this
+    /// under the dispatch lock; the transport layer executes the
+    /// signed POST AFTER the lock releases — inline network I/O
+    /// under the server lock deadlocks the receiver's verification
+    /// fetch back to this server).
+    pending_cross_server_notify: Option<PendingCrossServerNotify>,
     reconcile_store: crate::server::federation::ReconcileStore,
     reconcile_counter: u64,
     last_checkpoint_time: u64,
@@ -1227,6 +1247,26 @@ pub struct CrossServerNotifyOutcome {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     pub notified_at: u64,
+}
+
+/// A cross-server backlink notify staged during link_create
+/// (executed post-lock by the transport layer).
+#[derive(Debug, Clone)]
+pub struct PendingCrossServerNotify {
+    pub link_id: BeId,
+    pub target_addr: String,
+    pub target_work_hex: String,
+    pub origin: BeId,
+    pub excerpt: String,
+}
+
+/// Last-known connection state of one federation peer (liveness
+/// visibility for /health; maintained by the outbound dialer).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct FederationPeerStatus {
+    pub server_id: String,
+    pub connected: bool,
+    pub last_change: u64,
 }
 
 impl Default for Server {
@@ -1772,6 +1812,13 @@ impl Server {
             server_keypair: server_kp.clone(),
             key_history: crate::crypto::keys::KeyHistory::new(&server_kp),
             federation: crate::server::federation::FederationState::disabled(),
+            federation_peer_status: std::collections::BTreeMap::new(),
+            notify_sent: 0,
+            notify_accepted: 0,
+            notify_failed: 0,
+            notify_last_error: None,
+            backlink_origin_keys: std::collections::HashMap::new(),
+            pending_cross_server_notify: None,
             reconcile_store: crate::server::federation::ReconcileStore::new(),
             reconcile_counter: 0,
             last_checkpoint_time: std::time::SystemTime::now()
@@ -2573,13 +2620,40 @@ impl Server {
     }
 
     pub fn receive_cross_server_backlink(&mut self, entry: CrossServerBacklink) {
+        // Bounded storage: a forged-notify flood must not grow the
+        // corpus (or trigger unbounded checkpoints). Per-work and
+        // total caps evict oldest-first.
+        const MAX_TOTAL: usize = 10_000;
+        const MAX_PER_WORK: usize = 200;
         let exists = self.cross_server_backlinks.iter().any(|b| {
             b.target_work_id == entry.target_work_id
                 && b.origin_server_address == entry.origin_server_address
                 && b.origin_work_id == entry.origin_work_id
         });
         if !exists {
+            let target = entry.target_work_id;
             self.cross_server_backlinks.push(entry);
+            let mut per_work = self
+                .cross_server_backlinks
+                .iter()
+                .filter(|b| b.target_work_id == target)
+                .count();
+            while per_work > MAX_PER_WORK {
+                match self
+                    .cross_server_backlinks
+                    .iter()
+                    .position(|b| b.target_work_id == target)
+                {
+                    Some(idx) => {
+                        self.cross_server_backlinks.remove(idx);
+                        per_work -= 1;
+                    }
+                    None => break,
+                }
+            }
+            while self.cross_server_backlinks.len() > MAX_TOTAL {
+                self.cross_server_backlinks.remove(0);
+            }
             self.auto_checkpoint();
         }
     }
@@ -3976,7 +4050,17 @@ impl Server {
             "excerpt": excerpt,
             "link_type": link_type,
         });
-        match http_post_json_status(&url, &body.to_string(), 5) {
+        let body_str = body.to_string();
+        let (vk_hex, sig_hex) = self.sign_backlink_body(&body_str);
+        match http_post_json_status_headers(
+            &url,
+            &body_str,
+            5,
+            &[
+                ("X-Xudanu-Origin-Key".to_string(), vk_hex),
+                ("X-Xudanu-Signature".to_string(), sig_hex),
+            ],
+        ) {
             Ok((status, resp_body)) if (200..300).contains(&status) => Ok(Some(resp_body)),
             Ok((status, resp_body)) => {
                 let reason = if resp_body.trim().is_empty() {
@@ -4003,6 +4087,13 @@ impl Server {
         accepted: bool,
         error: Option<String>,
     ) {
+        self.notify_sent += 1;
+        if accepted {
+            self.notify_accepted += 1;
+        } else {
+            self.notify_failed += 1;
+            self.notify_last_error = error.clone();
+        }
         let outcome = CrossServerNotifyOutcome {
             accepted,
             error,
@@ -4021,6 +4112,86 @@ impl Server {
         self.links
             .get(&link_id)
             .and_then(|ls| ls.cross_server_notify.clone())
+    }
+
+    /// Sign a cross-server backlink notification body with this
+    /// server's Ed25519 key. Returns (verifying_key_hex, signature_hex)
+    /// for the X-Xudanu-Origin-Key / X-Xudanu-Signature headers.
+    pub fn sign_backlink_body(&self, body: &str) -> (String, String) {
+        let vk: String = self
+            .server_keypair
+            .signing_verifying_key()
+            .to_bytes()
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect();
+        let sig = crate::server::federation::vote_hex_sig(&self.server_keypair.signing_key, body);
+        (vk, sig)
+    }
+
+    /// Cached verifying key for a backlink origin (set after a
+    /// successful .well-known confirmation).
+    pub fn backlink_origin_key_cached(&self, origin_addr: &str) -> Option<String> {
+        self.backlink_origin_keys
+            .get(origin_addr)
+            .map(|(k, _)| k.clone())
+    }
+
+    /// Record a confirmed origin verifying key (after .well-known
+    /// fetch + match — never for unverified claims).
+    pub fn record_backlink_origin_key(&mut self, origin_addr: &str, key_hex: &str) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        self.backlink_origin_keys
+            .insert(origin_addr.to_string(), (key_hex.to_string(), now));
+    }
+
+    /// Runtime peer connection state (updated by the federation
+    /// dialer; surfaced in /health).
+    pub fn set_federation_peer_status(
+        &mut self,
+        peer_addr: &str,
+        server_id: &str,
+        connected: bool,
+    ) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        self.federation_peer_status.insert(
+            peer_addr.to_string(),
+            FederationPeerStatus {
+                server_id: server_id.to_string(),
+                connected,
+                last_change: now,
+            },
+        );
+    }
+
+    /// Stage a cross-server notify for post-lock execution
+    /// (see PendingCrossServerNotify).
+    pub fn stage_cross_server_notify(
+        &mut self,
+        link_id: BeId,
+        target_addr: &str,
+        target_work_hex: &str,
+        origin: BeId,
+        excerpt: &str,
+    ) {
+        self.pending_cross_server_notify = Some(PendingCrossServerNotify {
+            link_id,
+            target_addr: target_addr.to_string(),
+            target_work_hex: target_work_hex.to_string(),
+            origin,
+            excerpt: excerpt.to_string(),
+        });
+    }
+
+    /// Take the staged notify (single-shot).
+    pub fn take_pending_cross_server_notify(&mut self) -> Option<PendingCrossServerNotify> {
+        self.pending_cross_server_notify.take()
     }
 
     pub fn is_server_trusted(&self, server_id: &str) -> bool {
@@ -20718,6 +20889,23 @@ impl Server {
             "external_links_enabled": self.external_links_enabled,
             "edit_policy": self.edit_policy().as_str(),
             "chain_valid": chain_valid,
+            "federation": {
+                "peers": serde_json::to_value(&self.federation_peer_status).unwrap_or(serde_json::Value::Null),
+                "peer_connected_count": self.federation_peer_status.values().filter(|p| p.connected).count(),
+                "governance": {
+                    "current_view": self.federation.governance().current_view(),
+                    "current_sequence": self.federation.governance().current_sequence(),
+                    "pending_round_seq": self.federation.governance().pending_round().map(|r| r.proposal.sequence_number),
+                    "sealed_count": self.federation.governance().log().len(),
+                    "last_sealed_seq": self.federation.governance().log().last().map(|b| b.sequence_number),
+                },
+                "cross_server_notify": {
+                    "sent": self.notify_sent,
+                    "accepted": self.notify_accepted,
+                    "failed": self.notify_failed,
+                    "last_error": &self.notify_last_error,
+                },
+            },
             "restore_errors": if has_restore_errors {
                 serde_json::Value::Array(
                     self.restore_errors.iter().map(|e| serde_json::Value::String(e.clone())).collect()
@@ -26768,7 +26956,9 @@ impl Server {
             .max(1);
         let gov = self.federation.governance_mut();
         gov.set_cluster_size(admitted);
-        gov.receive_prepare(vote)
+        let phase = gov.receive_prepare(vote);
+        self.handle_governance_equivocations();
+        phase
     }
 
     pub fn governance_receive_commit(
@@ -26802,7 +26992,38 @@ impl Server {
             .max(1);
         let gov = self.federation.governance_mut();
         gov.set_cluster_size(admitted);
-        gov.receive_commit(vote)
+        let phase = gov.receive_commit(vote);
+        self.handle_governance_equivocations();
+        phase
+    }
+
+    /// Drain equivocation evidence from the governance state: a
+    /// member that signed conflicting votes for the same
+    /// (view, seq, phase) is suspended and the event is journaled to
+    /// the tamper-evident security log. Byzantine behavior must be
+    /// loud, not just tolerated.
+    fn handle_governance_equivocations(&mut self) {
+        let records = self.federation.governance_mut().take_new_equivocations();
+        for rec in records {
+            tracing::error!(
+                target: "xudanu::security",
+                voter = %rec.voter_id,
+                view = rec.view_number,
+                seq = rec.sequence_number,
+                event = "SECURITY:governance_equivocation",
+                "member signed conflicting {} votes ({} vs {}) — suspending",
+                rec.phase_name,
+                &rec.first_digest[..8.min(rec.first_digest.len())],
+                &rec.second_digest[..8.min(rec.second_digest.len())]
+            );
+            let suspended = self
+                .federation
+                .membership_mut()
+                .suspend_member(&rec.voter_id);
+            if suspended {
+                self.wal_journal_federation();
+            }
+        }
     }
 
     /// Verify a sealed batch's certificates against member keys.
@@ -28412,6 +28633,13 @@ pub(crate) mod persist_snapshot {
                 write_barrier: Arc::new(WriteBarrier::new()),
                 wal: crate::persist::wal::WalLog::disabled(),
                 restore_errors: Vec::new(),
+                federation_peer_status: std::collections::BTreeMap::new(),
+                notify_sent: 0,
+                notify_accepted: 0,
+                notify_failed: 0,
+                notify_last_error: None,
+                backlink_origin_keys: std::collections::HashMap::new(),
+                pending_cross_server_notify: None,
                 quarantined_works: Vec::new(),
                 quarantined_editions: Vec::new(),
                 last_persisted_work_count: 0,
@@ -32385,6 +32613,82 @@ mod tests {
         assert_eq!(outcome.error.as_deref(), Some("test refusal"));
 
         let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn backlink_sign_verify_roundtrip() {
+        let mut server = Server::new();
+        let body = r#"{"target_work_id":"1a","origin_server_address":"node2:8080"}"#;
+        let (vk_hex, sig_hex) = server.sign_backlink_body(body);
+        assert!(
+            crate::server::federation::verify_hex_sig(&vk_hex, body, &sig_hex),
+            "own signature must verify"
+        );
+        let tampered = r#"{"target_work_id":"1b","origin_server_address":"node2:8080"}"#;
+        assert!(
+            !crate::server::federation::verify_hex_sig(&vk_hex, tampered, &sig_hex),
+            "tampered body must fail"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn cross_server_backlinks_bounded() {
+        let mut server = Server::new();
+        let entry = |addr: &str, origin_work: u64| crate::server::CrossServerBacklink {
+            target_work_id: 7,
+            origin_server_address: addr.to_string(),
+            origin_server_name: "n".to_string(),
+            origin_work_id: origin_work.to_string(),
+            origin_work_title: "t".to_string(),
+            excerpt: "e".to_string(),
+            link_type: "cross-server".to_string(),
+            received_at: 1,
+        };
+        for i in 0..250 {
+            server.receive_cross_server_backlink(entry("srv-x", i));
+        }
+        assert!(
+            server.cross_server_backlinks.len() <= 200,
+            "per-work cap must bound growth, got {}",
+            server.cross_server_backlinks.len()
+        );
+        // Distinct works bypass the per-work cap but hit the total cap.
+        for w in 0..300 {
+            for i in 0..50 {
+                server.receive_cross_server_backlink(entry(&format!("srv-{}", w), i));
+            }
+        }
+        assert!(
+            server.cross_server_backlinks.len() <= 10_000,
+            "total cap must bound growth, got {}",
+            server.cross_server_backlinks.len()
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn notify_counters_and_health_federation_section() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let a = server
+            .create_work(sid, crate::edition::Edition::from_text("a"))
+            .unwrap();
+        let b = server
+            .create_work(sid, crate::edition::Edition::from_text("b"))
+            .unwrap();
+        let link_id = server.create_link(sid, a, b, None, None).unwrap();
+        server.set_link_cross_server_notify(link_id, true, None);
+        server.set_link_cross_server_notify(link_id, false, Some("probe".into()));
+        assert_eq!(server.notify_sent, 2);
+        assert_eq!(server.notify_accepted, 1);
+        assert_eq!(server.notify_failed, 1);
+        let health = server.health_json();
+        assert!(health.contains("\"cross_server_notify\""));
+        assert!(health.contains("\"peer_connected_count\""));
+        assert!(health.contains("\"governance\""));
     }
 
     #[test]
@@ -51176,7 +51480,7 @@ fn urlencode(s: &str) -> String {
 /// up to 3 hops of 301/302/307/308, same-host-or-subdomain only.
 /// Real-world cause: servers announcing plain addresses behind a
 /// TLS terminator (xudanu.com 308s http GETs to https).
-fn http_get_json(url: &str, timeout_secs: u64) -> Result<String, String> {
+pub fn http_get_json(url: &str, timeout_secs: u64) -> Result<String, String> {
     let mut current = url.to_string();
     for _ in 0..4 {
         let is_https = current.starts_with("https://");
@@ -51436,6 +51740,15 @@ fn http_post_json_hop(
     body: &str,
     timeout_secs: u64,
 ) -> Result<(u16, Vec<(String, String)>, String), String> {
+    http_post_json_hop_headers(url, body, timeout_secs, &[])
+}
+
+fn http_post_json_hop_headers(
+    url: &str,
+    body: &str,
+    timeout_secs: u64,
+    extra_headers: &[(String, String)],
+) -> Result<(u16, Vec<(String, String)>, String), String> {
     let is_https = url.starts_with("https://");
     let no_scheme = url
         .strip_prefix("http://")
@@ -51463,8 +51776,15 @@ fn http_post_json_hop(
         .ok();
 
     let request = format!(
-        "POST {} HTTP/1.0\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-        path, host, body.len(), body
+        "POST {} HTTP/1.0\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n{}\r\n{}",
+        path,
+        host,
+        body.len(),
+        extra_headers
+            .iter()
+            .map(|(k, v)| format!("{}: {}\r\n", k, v))
+            .collect::<String>(),
+        body
     );
 
     let mut all = Vec::new();
@@ -51574,9 +51894,21 @@ pub fn http_post_json_status(
     body: &str,
     timeout_secs: u64,
 ) -> Result<(u16, String), String> {
+    http_post_json_status_headers(url, body, timeout_secs, &[])
+}
+
+/// Header-carrying variant (signed backlink notifications pass
+/// X-Xudanu-Origin-Key / X-Xudanu-Signature).
+pub fn http_post_json_status_headers(
+    url: &str,
+    body: &str,
+    timeout_secs: u64,
+    extra_headers: &[(String, String)],
+) -> Result<(u16, String), String> {
     let mut current = url.to_string();
     for _ in 0..4 {
-        let (status, headers, resp_body) = http_post_json_hop(&current, body, timeout_secs)?;
+        let (status, headers, resp_body) =
+            http_post_json_hop_headers(&current, body, timeout_secs, extra_headers)?;
         if !(301..=308).contains(&status) || status == 304 || status == 305 || status == 306 {
             return Ok((status, resp_body));
         }

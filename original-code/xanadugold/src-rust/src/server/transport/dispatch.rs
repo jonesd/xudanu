@@ -228,6 +228,86 @@ fn pre_thaw_targets(request: &WireRequest) -> Vec<crate::edition::backend::BeId>
     }
 }
 
+/// Execute a staged cross-server backlink notify OUTSIDE the server
+/// lock (FR-40 sender feedback): sign the body with this server's
+/// Ed25519 key, POST to the receiver, and record the definitive
+/// outcome on the link (queryable via link_get). Timeout is
+/// deliberately short — a network blackhole must not stall the
+/// creating session beyond ~5s.
+fn execute_cross_server_notify(
+    state: &crate::server::transport::shared::SharedState,
+    pending: crate::server::server::PendingCrossServerNotify,
+) {
+    let notify_url = format!(
+        "{}/api/backlink-notify",
+        if pending.target_addr.starts_with("http") {
+            pending.target_addr.clone()
+        } else {
+            format!("http://{}", pending.target_addr)
+        }
+        .trim_end_matches('/')
+    );
+    let (body_str, (vk_hex, sig_hex)) =
+        state.server.with_server_ref(|srv| {
+            let body = serde_json::json!({
+                "target_work_id": pending.target_work_hex,
+                "origin_server_address": srv.public_address().unwrap_or("").to_string(),
+                "origin_server_name": srv.server_name().to_string(),
+                "origin_work_id": format!("{:04x}", pending.origin),
+                "origin_work_title": srv.works.get(&pending.origin).map(|w| w.cached_title().to_string()).unwrap_or_default(),
+                "excerpt": pending.excerpt,
+                "link_type": "cross-server",
+            });
+            let body_str = body.to_string();
+            let sig = srv.sign_backlink_body(&body_str);
+            (body_str, sig)
+        });
+    tracing::info!(
+        "Sending cross-server backlink notification to {}",
+        notify_url
+    );
+    match crate::server::server::http_post_json_status_headers(
+        &notify_url,
+        &body_str,
+        5,
+        &[
+            ("X-Xudanu-Origin-Key".to_string(), vk_hex),
+            ("X-Xudanu-Signature".to_string(), sig_hex),
+        ],
+    ) {
+        Ok((status, resp_body)) if (200..300).contains(&status) => {
+            state
+                .server
+                .with_server(|srv| srv.set_link_cross_server_notify(pending.link_id, true, None));
+        }
+        Ok((status, resp_body)) => {
+            let reason = if resp_body.trim().is_empty() {
+                format!("receiving server returned HTTP {}", status)
+            } else {
+                format!(
+                    "receiving server rejected (HTTP {}): {}",
+                    status,
+                    resp_body.trim().chars().take(200).collect::<String>()
+                )
+            };
+            tracing::warn!("Cross-server backlink notification rejected: {}", reason);
+            state.server.with_server(|srv| {
+                srv.set_link_cross_server_notify(pending.link_id, false, Some(reason))
+            });
+        }
+        Err(e) => {
+            tracing::warn!("Cross-server backlink notification failed: {}", e);
+            state.server.with_server(|srv| {
+                srv.set_link_cross_server_notify(
+                    pending.link_id,
+                    false,
+                    Some(format!("could not reach receiving server: {}", e)),
+                )
+            });
+        }
+    }
+}
+
 pub fn dispatch(
     state: &SharedState,
     session_id: crate::server::SessionId,
@@ -330,6 +410,18 @@ pub fn dispatch(
                     needs_ckpt = srv.check_periodic_maintenance();
                     dispatch_inner(srv, session_id, request, state)
                 });
+                // Cross-server backlink notify runs AFTER the server
+                // lock releases: the receiver verifies our signature by
+                // fetching OUR .well-known — inline network I/O under
+                // the lock stalls that fetch (self-deadlock for up to
+                // the full timeout). Outcome is recorded on the link
+                // before the create response returns.
+                if let Some(pending) = state
+                    .server
+                    .with_server(|srv| srv.take_pending_cross_server_notify())
+                {
+                    execute_cross_server_notify(&state, pending);
+                }
                 if needs_ckpt {
                     let server = state.server.clone();
                     tokio::spawn(async move {
@@ -2371,76 +2463,28 @@ fn dispatch_inner(
                     if let Some(csr) = csr.to_cross_server_ref() {
                         let target_addr = csr.origin_server_address.clone().unwrap_or_default();
                         if !target_addr.is_empty() {
-                            let work_hex = crate::edition::links::tumbler_local_path(&csr.tumbler)
-                                .split('.')
-                                .next()
-                                .unwrap_or("")
-                                .to_string();
-                            let notify_url = format!(
-                                "{}/api/backlink-notify",
-                                if target_addr.starts_with("http") {
-                                    target_addr.clone()
-                                } else {
-                                    format!("http://{}", target_addr)
-                                }
-                                .trim_end_matches('/')
+                            // STAGE, don't send: dispatch_inner runs under
+                            // the server write lock; a synchronous HTTP
+                            // POST here stalls every other request
+                            // (including the receiver's .well-known
+                            // verification fetch back to THIS server —
+                            // a cross-server self-deadlock, up to the
+                            // 5s timeout). The staged notify executes
+                            // after the lock releases (see
+                            // execute_cross_server_notify) and the
+                            // outcome lands on the link before the
+                            // create response returns.
+                            srv.stage_cross_server_notify(
+                                link_id,
+                                &target_addr,
+                                &crate::edition::links::tumbler_local_path(&csr.tumbler)
+                                    .split('.')
+                                    .next()
+                                    .unwrap_or("")
+                                    .to_string(),
+                                origin,
+                                &csr.excerpt.chars().take(200).collect::<String>(),
                             );
-                            let notify_body = serde_json::json!({
-                                "target_work_id": work_hex,
-                                "origin_server_address": srv.public_address().unwrap_or("").to_string(),
-                                "origin_server_name": srv.server_name().to_string(),
-                                "origin_work_id": format!("{:04x}", origin),
-                                "origin_work_title": srv.works.get(&origin).map(|w| w.cached_title().to_string()).unwrap_or_default(),
-                                "excerpt": csr.excerpt.chars().take(200).collect::<String>(),
-                                "link_type": "cross-server",
-                            });
-                            tracing::info!(
-                                "Sending cross-server backlink notification to {}",
-                                notify_url
-                            );
-                            // FR-40 sender feedback: record the definitive
-                            // outcome on the link so the creating user
-                            // learns whether the receiving server
-                            // accepted it (queryable via link_get).
-                            // Timeout is deliberately short: this runs
-                            // inline on the dispatch path — a network
-                            // blackhole must not stall other users.
-                            match crate::server::server::http_post_json_status(
-                                &notify_url,
-                                &notify_body.to_string(),
-                                5,
-                            ) {
-                                Ok((status, resp_body)) if (200..300).contains(&status) => {
-                                    srv.set_link_cross_server_notify(link_id, true, None);
-                                }
-                                Ok((status, resp_body)) => {
-                                    let reason = if resp_body.trim().is_empty() {
-                                        format!("receiving server returned HTTP {}", status)
-                                    } else {
-                                        format!(
-                                            "receiving server rejected (HTTP {}): {}",
-                                            status,
-                                            resp_body.trim().chars().take(200).collect::<String>()
-                                        )
-                                    };
-                                    tracing::warn!(
-                                        "Cross-server backlink notification rejected: {}",
-                                        reason
-                                    );
-                                    srv.set_link_cross_server_notify(link_id, false, Some(reason));
-                                }
-                                Err(e) => {
-                                    tracing::warn!(
-                                        "Cross-server backlink notification failed: {}",
-                                        e
-                                    );
-                                    srv.set_link_cross_server_notify(
-                                        link_id,
-                                        false,
-                                        Some(format!("could not reach receiving server: {}", e)),
-                                    );
-                                }
-                            }
                         }
                     }
                 }

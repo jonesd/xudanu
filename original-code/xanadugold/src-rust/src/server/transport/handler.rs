@@ -1072,6 +1072,7 @@ async fn introductions_handler(
 async fn backlink_notify_handler(
     State(state): State<SharedState>,
     axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
+    headers: axum::http::HeaderMap,
     body: String,
 ) -> impl IntoResponse {
     #[derive(serde::Deserialize)]
@@ -1107,6 +1108,133 @@ async fn backlink_notify_handler(
             "invalid target_work_id format",
         )
             .into_response();
+    }
+
+    // Sender authenticity (FR-40 hardening): the notify MUST be
+    // signed by the claimed origin's Ed25519 key. Verification is
+    // two-step — (1) signature over the raw body, (2) the claimed
+    // key matches the one the origin server publishes in its
+    // /.well-known/xudanu-server.json (cached). Without step 2 an
+    // attacker could self-generate a key and sign forgeries "from"
+    // any server they name.
+    let origin_key = headers
+        .get("x-xudanu-origin-key")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    let origin_sig = headers
+        .get("x-xudanu-signature")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    if origin_key.is_empty() || origin_sig.is_empty() {
+        tracing::warn!(target: "xudanu::security", ip = %addr, event = "SECURITY:unsigned_backlink", "backlink notify without signature headers — rejected");
+        return (
+            axum::http::StatusCode::UNAUTHORIZED,
+            "unsigned backlink notification rejected (sender must sign: X-Xudanu-Origin-Key / X-Xudanu-Signature)",
+        )
+            .into_response();
+    }
+    if !crate::server::federation::verify_hex_sig(&origin_key, &body, &origin_sig) {
+        tracing::warn!(target: "xudanu::security", ip = %addr, event = "SECURITY:bad_backlink_signature", "backlink notify signature invalid");
+        return (
+            axum::http::StatusCode::UNAUTHORIZED,
+            "backlink signature invalid",
+        )
+            .into_response();
+    }
+    let claimed_origin = notify.origin_server_address.trim().to_string();
+    if claimed_origin.is_empty() {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            "origin_server_address required for signed notifications",
+        )
+            .into_response();
+    }
+    let cached_key = state
+        .server
+        .with_server_ref(|srv| srv.backlink_origin_key_cached(&claimed_origin));
+    let published_key = match cached_key {
+        Some(k) => Some(k),
+        None => {
+            let base = if claimed_origin.starts_with("http") {
+                claimed_origin.clone()
+            } else {
+                format!("http://{}", claimed_origin)
+            };
+            let wk_url = format!(
+                "{}/.well-known/xudanu-server.json",
+                base.trim_end_matches('/')
+            );
+            let fetch = {
+                let url = wk_url.clone();
+                tokio::task::spawn_blocking(move || crate::server::server::http_get_json(&url, 4))
+                    .await
+            };
+            match fetch {
+                Ok(Ok(json_text)) => match serde_json::from_str::<serde_json::Value>(&json_text) {
+                    Ok(v) => v
+                        .get("server_id")
+                        .and_then(|s| s.as_str())
+                        .map(|s| s.to_string()),
+                    Err(e) => {
+                        tracing::warn!(
+                            target: "xudanu::security",
+                            origin = %claimed_origin,
+                            "backlink origin .well-known parse failed: {}",
+                            e
+                        );
+                        None
+                    }
+                },
+                Ok(Err(e)) => {
+                    tracing::warn!(
+                        "backlink origin .well-known fetch failed: {} (url={})",
+                        e,
+                        wk_url
+                    );
+                    tracing::warn!(
+                        target: "xudanu::security",
+                        origin = %claimed_origin,
+                        url = %wk_url,
+                        "backlink origin .well-known fetch failed: {}",
+                        e
+                    );
+                    None
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        target: "xudanu::security",
+                        origin = %claimed_origin,
+                        "backlink origin .well-known task failed: {:?}",
+                        e
+                    );
+                    None
+                }
+            }
+        }
+    };
+    match published_key {
+        Some(ref pk) if pk == &origin_key => {
+            state
+                .server
+                .with_server(|srv| srv.record_backlink_origin_key(&claimed_origin, &origin_key));
+        }
+        Some(_) => {
+            tracing::warn!(target: "xudanu::security", ip = %addr, origin = %claimed_origin, event = "SECURITY:backlink_key_mismatch", "backlink key does not match origin's published key");
+            return (
+                axum::http::StatusCode::FORBIDDEN,
+                "origin key mismatch (claimed key is not the one the origin server publishes)",
+            )
+                .into_response();
+        }
+        None => {
+            return (
+                axum::http::StatusCode::BAD_GATEWAY,
+                "could not fetch origin server identity (.well-known) to verify signature",
+            )
+                .into_response();
+        }
     }
 
     let server_id = if notify.origin_server_address.is_empty() {
