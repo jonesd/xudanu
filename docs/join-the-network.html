@@ -123,14 +123,17 @@ tr:hover{background:rgba(110,118,129,0.04)}
 
 <div class="step"><div class="step-num">1</div><div class="step-body">
 <h3>Get a server running</h3>
-<p>Grab a release binary or use Docker (published ports on <code>127.0.0.1</code> here — put a TLS terminator or a reverse proxy in front for production):</p>
-<pre><code>docker run -d --name xudanu \
-  -p 8080:8080 \
-  -v xudanu-data:/data \
-  xudanu/server run 0.0.0.0:8080 /data \
+<p>From a release binary (multi-platform tarballs on the <a href="https://github.com/jonesd/xudanu/releases">releases page</a> — static Linux build runs anywhere):</p>
+<pre><code>tar xzf xudanu-*-linux-*.tar.gz
+./xudanu-server run 0.0.0.0:8080 ./data \
     --server-name "Alice's server" \
     --public-address alice.example.com \
     --edit-policy public-sandbox</code></pre>
+<p>Or with Docker, building from a clone of the repo:</p>
+<pre><code>git clone https://github.com/jonesd/xudanu && cd xudanu
+echo "XUDANU_ADMIN_PASSPHRASE=$(openssl rand -hex 24)" >> .env
+docker compose -f docker/single-node.yml up -d --build</code></pre>
+<p>Ports are bound to <code>127.0.0.1</code> by default — put a TLS terminator or reverse proxy in front for production, then open the port.</p>
 </div></div>
 
 <div class="step"><div class="step-num">2</div><div class="step-body">

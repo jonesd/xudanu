@@ -1,0 +1,44 @@
+# single-node.yml — one Xudanu server, built from source.
+#
+# The starting point for joining the content network: your corpus,
+# your rules, cross-server links and transclusions to any other
+# server. No mesh, no governance — that's docker-compose.yml (the
+# 4-node shared-stewardship test bed) when you want it.
+#
+# Usage (from a clone of the repo):
+#   echo "XUDANU_ADMIN_PASSPHRASE=$(openssl rand -hex 24)" >> .env
+#   docker compose -f docker/single-node.yml up -d --build
+#
+# Then: http://localhost:8080  (put TLS in front before exposing
+# publicly — reverse proxy or --tls-cert/--tls-key below).
+#
+# BEFORE going public, set --public-address to your real domain:
+# it becomes your network identity (tumbler prefix + the key other
+# servers verify your signatures against).
+
+services:
+  xudanu:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      - XUDANU_ADMIN_PASSPHRASE=${XUDANU_ADMIN_PASSPHRASE:-}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - xudanu-data:/data
+    command:
+      - "run"
+      - "0.0.0.0:8080"
+      - "/data"
+      - "--static-dir"
+      - "/app/dist"
+      - "--server-name"
+      - "My Xudanu server"
+      # Replace with your real domain (and add --tls-cert/--tls-key
+      # or terminate TLS at a proxy) before joining the network:
+      # - "--public-address"
+      # - "example.com"
+
+volumes:
+  xudanu-data:
