@@ -1163,91 +1163,124 @@ async fn backlink_notify_handler(
         )
             .into_response();
     }
-    let cached_key = state
+    // Trust-ladder symmetry: when the claimed origin is a DIRECTORY
+    // peer, the ADD-TIME PIN is the anchor — the signature key must
+    // BE the pinned key. No .well-known fetch needed (MITM-proof:
+    // no network trust at all); a mismatch is rotation outside the
+    // ceremony or substitution — loud 403.
+    let pin = state
         .server
-        .with_server_ref(|srv| srv.backlink_origin_key_cached(&claimed_origin));
-    let published_key = match cached_key {
-        Some(k) => Some(k),
-        None => {
-            let base = if claimed_origin.starts_with("http") {
-                claimed_origin.clone()
-            } else {
-                format!("http://{}", claimed_origin)
-            };
-            let wk_url = format!(
-                "{}/.well-known/xudanu-server.json",
-                base.trim_end_matches('/')
+        .with_server_ref(|srv| srv.directory_anchor_for_origin(&claimed_origin));
+    if let Some(pin) = pin {
+        if origin_key != pin {
+            tracing::warn!(
+                target: "xudanu::security",
+                ip = %addr,
+                origin = %claimed_origin,
+                event = "SECURITY:backlink_pin_mismatch",
+                "notify key does not match the directory pin for this origin — rejecting"
             );
-            let fetch = {
-                let url = wk_url.clone();
-                tokio::task::spawn_blocking(move || crate::server::server::http_get_json(&url, 4))
+            return (
+                axum::http::StatusCode::FORBIDDEN,
+                "origin key does not match the directory pin for this origin (rotation requires re-pinning or a published rotation proof)",
+            )
+                .into_response();
+        }
+        state
+            .server
+            .with_server(|srv| srv.record_backlink_origin_key(&claimed_origin, &origin_key));
+        // Pin-anchored: proceed to store the backlink.
+    } else {
+        let cached_key = state
+            .server
+            .with_server_ref(|srv| srv.backlink_origin_key_cached(&claimed_origin));
+        let published_key = match cached_key {
+            Some(k) => Some(k),
+            None => {
+                let base = if claimed_origin.starts_with("http") {
+                    claimed_origin.clone()
+                } else {
+                    format!("http://{}", claimed_origin)
+                };
+                let wk_url = format!(
+                    "{}/.well-known/xudanu-server.json",
+                    base.trim_end_matches('/')
+                );
+                let fetch = {
+                    let url = wk_url.clone();
+                    tokio::task::spawn_blocking(move || {
+                        crate::server::server::http_get_json(&url, 4)
+                    })
                     .await
-            };
-            match fetch {
-                Ok(Ok(json_text)) => match serde_json::from_str::<serde_json::Value>(&json_text) {
-                    Ok(v) => v
-                        .get("server_id")
-                        .and_then(|s| s.as_str())
-                        .map(|s| s.to_string()),
-                    Err(e) => {
+                };
+                match fetch {
+                    Ok(Ok(json_text)) => {
+                        match serde_json::from_str::<serde_json::Value>(&json_text) {
+                            Ok(v) => v
+                                .get("server_id")
+                                .and_then(|s| s.as_str())
+                                .map(|s| s.to_string()),
+                            Err(e) => {
+                                tracing::warn!(
+                                    target: "xudanu::security",
+                                    origin = %claimed_origin,
+                                    "backlink origin .well-known parse failed: {}",
+                                    e
+                                );
+                                None
+                            }
+                        }
+                    }
+                    Ok(Err(e)) => {
+                        tracing::warn!(
+                            "backlink origin .well-known fetch failed: {} (url={})",
+                            e,
+                            wk_url
+                        );
                         tracing::warn!(
                             target: "xudanu::security",
                             origin = %claimed_origin,
-                            "backlink origin .well-known parse failed: {}",
+                            url = %wk_url,
+                            "backlink origin .well-known fetch failed: {}",
                             e
                         );
                         None
                     }
-                },
-                Ok(Err(e)) => {
-                    tracing::warn!(
-                        "backlink origin .well-known fetch failed: {} (url={})",
-                        e,
-                        wk_url
-                    );
-                    tracing::warn!(
-                        target: "xudanu::security",
-                        origin = %claimed_origin,
-                        url = %wk_url,
-                        "backlink origin .well-known fetch failed: {}",
-                        e
-                    );
-                    None
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        target: "xudanu::security",
-                        origin = %claimed_origin,
-                        "backlink origin .well-known task failed: {:?}",
-                        e
-                    );
-                    None
+                    Err(e) => {
+                        tracing::warn!(
+                            target: "xudanu::security",
+                            origin = %claimed_origin,
+                            "backlink origin .well-known task failed: {:?}",
+                            e
+                        );
+                        None
+                    }
                 }
             }
+        };
+        match published_key {
+            Some(ref pk) if pk == &origin_key => {
+                state.server.with_server(|srv| {
+                    srv.record_backlink_origin_key(&claimed_origin, &origin_key)
+                });
+            }
+            Some(_) => {
+                tracing::warn!(target: "xudanu::security", ip = %addr, origin = %claimed_origin, event = "SECURITY:backlink_key_mismatch", "backlink key does not match origin's published key");
+                return (
+                    axum::http::StatusCode::FORBIDDEN,
+                    "origin key mismatch (claimed key is not the one the origin server publishes)",
+                )
+                    .into_response();
+            }
+            None => {
+                return (
+                    axum::http::StatusCode::BAD_GATEWAY,
+                    "could not fetch origin server identity (.well-known) to verify signature",
+                )
+                    .into_response();
+            }
         }
-    };
-    match published_key {
-        Some(ref pk) if pk == &origin_key => {
-            state
-                .server
-                .with_server(|srv| srv.record_backlink_origin_key(&claimed_origin, &origin_key));
-        }
-        Some(_) => {
-            tracing::warn!(target: "xudanu::security", ip = %addr, origin = %claimed_origin, event = "SECURITY:backlink_key_mismatch", "backlink key does not match origin's published key");
-            return (
-                axum::http::StatusCode::FORBIDDEN,
-                "origin key mismatch (claimed key is not the one the origin server publishes)",
-            )
-                .into_response();
-        }
-        None => {
-            return (
-                axum::http::StatusCode::BAD_GATEWAY,
-                "could not fetch origin server identity (.well-known) to verify signature",
-            )
-                .into_response();
-        }
-    }
+    } // end unanchored-origin path
 
     let server_id = if notify.origin_server_address.is_empty() {
         notify.origin_server_name.clone()

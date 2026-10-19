@@ -4272,6 +4272,32 @@ impl Server {
             .map(|(k, _)| k.clone())
     }
 
+    /// Trust ladder (backlink channel): the ADD-TIME PIN for a
+    /// claimed origin, when that origin is a directory peer. The
+    /// claimed origin may match the entry address ("node1") or the
+    /// address:port form ("node1:8080").
+    pub fn directory_anchor_for_origin(&self, claimed_origin: &str) -> Option<String> {
+        let claimed = claimed_origin
+            .trim()
+            .trim_end_matches('/')
+            .trim_start_matches("http://")
+            .trim_start_matches("https://");
+        for e in self.server_directory.list() {
+            let with_port = e.port.map(|p| format!("{}:{}", e.address, p));
+            let matches = e.address == claimed || with_port.as_deref() == Some(claimed);
+            if matches {
+                return e.pinned_key.clone().filter(|k| !k.is_empty()).or_else(|| {
+                    if e.verifying_key.is_empty() {
+                        None
+                    } else {
+                        Some(e.verifying_key.clone())
+                    }
+                });
+            }
+        }
+        None
+    }
+
     /// Record a confirmed origin verifying key (after .well-known
     /// fetch + match — never for unverified claims).
     pub fn record_backlink_origin_key(&mut self, origin_addr: &str, key_hex: &str) {

@@ -4468,6 +4468,91 @@ async fn backlink_rejects_valid_doc_but_foreign_key() {
     );
 }
 
+/// Trust-ladder symmetry for the backlink channel: when the claimed
+/// origin is a DIRECTORY PEER, the add-time pin anchors — notify key
+/// must BE the pin (no fetch needed); mismatch is a loud 403. The
+/// previous test covers the unanchored (fetch-verify) path.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn backlink_pin_anchor_rejects_foreign_key() {
+    xudanu::server::server::set_allow_loopback(true);
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let wid = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            998,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "pin anchor target"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    let wid_hex = format!("{:04x}", wid);
+
+    let key_a = ed25519_dalek::SigningKey::from([31u8; 32]);
+    let key_b = ed25519_dalek::SigningKey::from([32u8; 32]);
+    // The origin: a mock publishing key A's identity; the receiver
+    // has it in its directory (add-time pin = key A).
+    let port = spawn_mock_peer(
+        mock_well_known(&key_hex(&key_a), 1, vec![0xff; 64]),
+        marker_works_json("unused"),
+    );
+    let origin_addr = format!("127.0.0.1:{}", port);
+    let mut id = 999u16;
+    let _ = trust_mock_peer(&mut s, &mut r, &mut id, port).await;
+
+    let body = serde_json::json!({
+        "target_work_id": wid_hex,
+        "origin_server_address": origin_addr,
+        "origin_server_name": "MockOrigin",
+        "origin_work_id": "01",
+        "origin_work_title": "origin work",
+        "excerpt": "excerpt",
+        "link_type": "cross-server",
+    })
+    .to_string();
+
+    // Signed by key B while the directory pins key A → pin-mismatch 403.
+    let sig_b = {
+        use ed25519_dalek::Signer;
+        hex::encode(key_b.sign(body.as_bytes()).to_bytes())
+    };
+    let (status, resp) = raw_post(
+        srv.addr,
+        "/api/backlink-notify",
+        &[
+            ("X-Xudanu-Origin-Key", &key_hex(&key_b)),
+            ("X-Xudanu-Signature", &sig_b),
+        ],
+        &body,
+    )
+    .await;
+    assert_eq!(status, 403, "pin mismatch must 403: {resp:?}");
+    assert!(resp.contains("directory pin"));
+
+    // Signed by the PINNED key → accepted (fetch-free anchoring).
+    let sig_a = {
+        use ed25519_dalek::Signer;
+        hex::encode(key_a.sign(body.as_bytes()).to_bytes())
+    };
+    let (status_ok, resp_ok) = raw_post(
+        srv.addr,
+        "/api/backlink-notify",
+        &[
+            ("X-Xudanu-Origin-Key", &key_hex(&key_a)),
+            ("X-Xudanu-Signature", &sig_a),
+        ],
+        &body,
+    )
+    .await;
+    assert_eq!(
+        status_ok, 200,
+        "pinned-key notify must be accepted: {resp_ok:?}"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn federated_search_real_peer_verified_roundtrip() {
     // Multi-thread: directory-add's blocking .well-known fetch must
