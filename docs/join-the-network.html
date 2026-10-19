@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Join the Xudanu Network</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:15px;font-weight:600;margin-top:24px;margin-bottom:8px;color:#8b949e}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+pre code{background:none;padding:0;color:inherit;font-size:inherit}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.warn{background:rgba(187,128,9,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warn strong{color:#d29922}
+.example{background:rgba(0,149,97,0.04);border:1px solid rgba(0,149,97,0.15);border-radius:8px;padding:20px;margin:24px 0}
+.example h4{color:#3fb950;margin-top:0}
+.diagram{margin:32px 0;padding:24px;background:#161b22;border:1px solid #30363d;border-radius:12px;overflow-x:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin-bottom:40px}
+.toc-title{font-size:13px;font-weight:700;color:#8b949e;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px}
+.toc ul{list-style:none;padding:0}
+.toc li{padding:3px 0}
+.toc a{font-size:14px}
+.badge{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:12px;vertical-align:middle}
+.badge-signed{background:rgba(63,185,80,0.12);color:#3fb950;border:1px solid rgba(63,185,80,0.2)}
+.badge-optional{background:rgba(110,118,129,0.12);color:#8b949e;border:1px solid rgba(110,118,129,0.2)}
+table{border-collapse:collapse;margin:16px 0;width:100%;max-width:780px}
+th,td{border:1px solid #21262d;padding:8px 12px;text-align:left;font-size:14px}
+th{background:#161b22;color:#8b949e;font-weight:600}
+tr:hover{background:rgba(110,118,129,0.04)}
+.step{display:flex;gap:16px;margin:20px 0}
+.step-num{flex-shrink:0;width:32px;height:32px;border-radius:50%;background:#21262d;color:#58a6ff;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:14px}
+.step-body{flex:1}
+</style>
+</head>
+<body>
+<div class="content-wrap">
+
+<h1>Join the Xudanu Network</h1>
+<p class="subtitle">Run a server. Keep your corpus. Link to anyone's. — a practical guide for operators</p>
+
+<div class="toc">
+<div class="toc-title">Contents</div>
+<ul>
+<li><a href="#what">What the network is</a></li>
+<li><a href="#quickstart">Quick start: run a node</a></li>
+<li><a href="#connect">Connecting to other servers</a></li>
+<li><a href="#trust">Trust &amp; security baseline</a></li>
+<li><a href="#stewardship">Shared stewardship (optional)</a></li>
+<li><a href="#ops">Operating a node</a></li>
+<li><a href="#roadmap">What's coming</a></li>
+</ul>
+</div>
+
+<h2 id="what">What the network is</h2>
+<p>Xudanu is a transclusion-native hypertext system: documents quote, link, and build on each other by reference, with every origin preserved. A <strong>server</strong> is a complete, sovereign instance — its own corpus, its own users, its own rules. The <strong>network</strong> is what happens between sovereign servers:</p>
+<ul>
+<li><strong>Cross-server links</strong> — connect a passage on your server to a passage on another, bidirectionally. The other server is notified and its author sees the connection.</li>
+<li><strong>Transclusion</strong> — quote another server's text live, by address. If the source updates, your quotation points at the same spans; the content hash is verified on every fetch.</li>
+<li><strong>Global addressing</strong> — every passage has a network-wide name, a <em>tumbler</em>: <code>"your.server.example".5.3.10.7</code> — your identity, the work, the span.</li>
+</ul>
+
+<div class="diagram">
+<svg width="860" height="300" viewBox="0 0 860 300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#58a6ff"/>
+    </marker>
+    <marker id="arrowg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3fb950"/>
+    </marker>
+  </defs>
+  <!-- server A -->
+  <rect x="40" y="60" width="200" height="110" rx="10" fill="#161b22" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="140" y="90" text-anchor="middle" fill="#e6edf3" font-size="15" font-weight="600" font-family="Inter">alice.example.com</text>
+  <text x="140" y="112" text-anchor="middle" fill="#8b949e" font-size="12" font-family="Inter">sovereign corpus</text>
+  <text x="140" y="132" text-anchor="middle" fill="#8b949e" font-size="12" font-family="Inter">own users &amp; rules</text>
+  <!-- server B -->
+  <rect x="330" y="60" width="200" height="110" rx="10" fill="#161b22" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="430" y="90" text-anchor="middle" fill="#e6edf3" font-size="15" font-weight="600" font-family="Inter">bob.example.com</text>
+  <text x="430" y="112" text-anchor="middle" fill="#8b949e" font-size="12" font-family="Inter">sovereign corpus</text>
+  <text x="430" y="132" text-anchor="middle" fill="#8b949e" font-size="12" font-family="Inter">own users &amp; rules</text>
+  <!-- server C -->
+  <rect x="620" y="60" width="200" height="110" rx="10" fill="#161b22" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="720" y="90" text-anchor="middle" fill="#e6edf3" font-size="15" font-weight="600" font-family="Inter">statute.example.org</text>
+  <text x="720" y="112" text-anchor="middle" fill="#8b949e" font-size="12" font-family="Inter">canonical sources</text>
+  <text x="720" y="132" text-anchor="middle" fill="#8b949e" font-size="12" font-family="Inter">public, read-mostly</text>
+  <!-- link A->B -->
+  <line x1="240" y1="100" x2="330" y2="100" stroke="#58a6ff" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="285" y="88" text-anchor="middle" fill="#58a6ff" font-size="11" font-family="Inter">link</text>
+  <!-- transclusion B->C -->
+  <path d="M 530 130 Q 585 130 620 110" fill="none" stroke="#3fb950" stroke-width="2" marker-end="url(#arrowg)"/>
+  <text x="575" y="152" text-anchor="middle" fill="#3fb950" font-size="11" font-family="Inter">transclusion (hash-verified)</text>
+  <!-- link A->C -->
+  <path d="M 140 170 Q 430 280 720 170" fill="none" stroke="#58a6ff" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+  <text x="430" y="272" text-anchor="middle" fill="#8b949e" font-size="11" font-family="Inter">link across three servers — each origin keeps its identity</text>
+  <!-- signed notify -->
+  <rect x="330" y="200" width="200" height="34" rx="6" fill="none" stroke="#d29922" stroke-width="1" stroke-dasharray="4 3"/>
+  <text x="430" y="222" text-anchor="middle" fill="#d29922" font-size="11" font-family="JetBrains Mono">signed backlink notify</text>
+  <line x1="330" y1="217" x2="240" y2="150" stroke="#d29922" stroke-width="1" stroke-dasharray="3 3"/>
+</svg>
+<div class="diagram-caption">Sovereign servers, connected by verified reference — no central authority, no global index required.</div>
+</div>
+
+<div class="note"><strong>The design principle:</strong> being able to READ the network is free; governing it is scarce. Joining the content network asks nothing of you and grants your users the whole docuverse to cite. Joint custody (shared stewardship) is a separate, opt-in commitment — see <a href="#stewardship">below</a>.</div>
+
+<h2 id="quickstart">Quick start: run a node</h2>
+
+<div class="step"><div class="step-num">1</div><div class="step-body">
+<h3>Get a server running</h3>
+<p>Grab a release binary or use Docker (published ports on <code>127.0.0.1</code> here — put a TLS terminator or a reverse proxy in front for production):</p>
+<pre><code>docker run -d --name xudanu \
+  -p 8080:8080 \
+  -v xudanu-data:/data \
+  xudanu/server run 0.0.0.0:8080 /data \
+    --server-name "Alice's server" \
+    --public-address alice.example.com \
+    --edit-policy public-sandbox</code></pre>
+</div></div>
+
+<div class="step"><div class="step-num">2</div><div class="step-body">
+<h3>Declare your public address</h3>
+<p><code>--public-address</code> is important: it becomes your <strong>network identity</strong> — the prefix of every tumbler your server mints, and the name other servers verify your signatures against. Use HTTPS in production (<code>--public-address https://alice.example.com</code> plus <code>--tls-cert/--tls-key</code> or a terminating proxy): cross-server exchanges verify content by hash and signature, but plaintext HTTP between servers can be observed and tampered with in transit (tampering is <em>detected</em>; privacy needs TLS).</p>
+</div></div>
+
+<div class="step"><div class="step-num">3</div><div class="step-body">
+<h3>Check your identity document</h3>
+<p>Your server automatically publishes its identity at <code>/.well-known/xudanu-server.json</code> — name, public address, Ed25519 verifying key, tumbler identity, content API. Other servers use this to verify that links and notifications claiming to be from you really are:</p>
+<pre><code>curl https://alice.example.com/.well-known/xudanu-server.json</code></pre>
+</div></div>
+
+<div class="step"><div class="step-num">4</div><div class="step-body">
+<h3>Protect your admin surface</h3>
+<p>Admin login is <strong>fail-closed</strong>: without <code>XUDANU_ADMIN_PASSPHRASE</code> set, admin cannot be logged into at all — not "default password," but "no password works." Set yours via environment variable, never on the command line (visible in <code>ps</code>).</p>
+</div></div>
+
+<h2 id="connect">Connecting to other servers</h2>
+
+<p>Connections are deliberate, not automatic. To work with another server:</p>
+
+<table>
+<tr><th>Step</th><th>How</th></tr>
+<tr><td>Add them to your server directory</td><td>Server settings → Directory: add <code>bob.example.com</code>. Your server fetches their <code>.well-known</code> and records their verifying key.</td></tr>
+<tr><td>Link across</td><td>In the editor, select text → link → <strong>remote server</strong>. Paste or pick the remote passage; a tumbler-addressed link is created.</td></tr>
+<tr><td>Transclude</td><td>Copy a passage on a remote server, paste into your document — the paste offer includes <em>“transclude instead of copying.”</em> Quotation by reference, hash-verified on every fetch.</td></tr>
+<tr><td>See who cites you</td><td>Backlink notifications arrive signed; your Connections panel shows cross-server citations with their origin server.</td></tr>
+</table>
+
+<div class="note"><strong>What a receiving server verifies today:</strong> every backlink notification is checked twice — the Ed25519 signature over the body, <em>and</em> that the claimed key matches the one the origin publishes in its <code>.well-known</code>. Unsigned notifications are rejected. Forged "from alice.example.com" claims require Alice's private key.</div>
+
+<h2 id="trust">Trust &amp; security baseline</h2>
+
+<p>What every node on the network can assume about every other node:</p>
+
+<table>
+<tr><th>Guarantee</th><th>Mechanism</th></tr>
+<tr><td>Content is what it claims</td><td>BLAKE3 content hashes on every cross-server fetch; mismatch = rejection</td></tr>
+<tr><td>Notifications are authentic</td><td>Signed backlinks + <code>.well-known</code> key binding (no spoofed origins)</td></tr>
+<tr><td>Private works stay private</td><td>Cross-server APIs serve public-club works only; private works are invisible (404-shaped)</td></tr>
+<tr><td>One bad server can't flood you</td><td>Per-IP and per-server rate limits; bounded backlink storage (200/work, 10k total, oldest evicted)</td></tr>
+<tr><td>Slow peers can't stall you</td><td>Bounded timeouts on every cross-server call — a blackholed server costs you seconds, never minutes</td></tr>
+<tr><td>Everything is auditable</td><td>Tamper-evident chained security log on every server</td></tr>
+<tr><td>Outbound fetches can't be weaponized</td><td>SSRF guard: servers refuse to fetch private/internal addresses (test setups opt in explicitly)</td></tr>
+</table>
+
+<h2 id="stewardship">Shared stewardship (optional) <span class="badge badge-optional">opt-in</span></h2>
+
+<p>Some corpora deserve joint custody: no single operator can un-publish, suspend, or rotate keys unilaterally. That's the <strong>federation mesh</strong> — Byzantine fault tolerant governance over the same servers. It is entirely optional: content federation (everything above) requires no membership.</p>
+
+<h3>When you want it</h3>
+<ul>
+<li>A shared corpus owned by several organizations</li>
+<li>"Hit by a bus" continuity — the corpus survives any one operator</li>
+<li>Adversarial settings where unilateral destructive power is unacceptable</li>
+</ul>
+
+<h3>How it works</h3>
+<p>Four servers is the minimum (BFT needs 3f+1). Membership is <strong>genesis-pinned</strong>: the founding operators exchange verifying keys (each prints theirs at boot: <code>docker logs &lt;node&gt; | grep "verifying key"</code>), write a shared <code>pinned-members.json</code>, and every node starts with <code>--pin-members /data/pinned-members.json</code> plus <code>--peer</code> entries for the others. From then on:</p>
+<ul>
+<li>Decisions (un-publish, member suspension, key rotation) need <strong>quorum</strong> — 3 of 4</li>
+<li>A member that signs conflicting votes (<em>equivocation</em>) is detected and suspended automatically, with an audit event</li>
+<li>Validator keys have sequence-bounded epochs; expiry is visible in <code>/health</code> before it bites</li>
+<li>Everything users do stays exactly the same — governance never touches the editing hot path</li>
+</ul>
+
+<div class="warn"><strong>The key-custody rule:</strong> four nodes run by one operator give you fault tolerance against machine failure — not against that operator being compromised. Shared stewardship's real security arrives when the keys live with different people. Trade keys in person if you can; certainly not over the same channel the servers talk on.</div>
+
+<h2 id="ops">Operating a node</h2>
+
+<h3>Monitor <code>/health</code></h3>
+<p>The health endpoint carries a <code>federation</code> section that makes liveness visible from outside:</p>
+<pre><code>{
+  "federation": {
+    "peers":              { "bob.example.com": { "connected": true, ... } },
+    "peer_connected_count": 1,
+    "governance":         { "current_view": 0, "last_sealed_seq": null, ... },
+    "cross_server_notify": { "sent": 12, "accepted": 11, "failed": 1, "last_error": null }
+  }
+}</code></pre>
+<p>Watch three things: <code>peer_connected_count</code> (a half-down mesh looks identical to no mesh without it), <code>cross_server_notify.failed</code> climbing (delivery problems), and <code>governance.last_sealed_seq</code> stuck while rounds are expected.</p>
+
+<h3>Backups &amp; keys</h3>
+<ul>
+<li><code>scripts/backup-offsite.sh</code> — data-dir backup (works chunks are content-addressed; restores are clean)</li>
+<li>Your Ed25519 keypair IS your identity. Losing it means a new identity (your old tumblers point at the old key); <strong>back it up</strong>. Key rotation with proof continuity is built in (<code>/.well-known</code> publishes rotation proofs)</li>
+<li>Storage: content-addressed chunks dedupe naturally; the 4-node test bed runs ~13&nbsp;MiB/node idle</li>
+</ul>
+
+<h3>Capacity notes</h3>
+<p>Content federation scales wide — pairwise, verified, stateless; hundreds of servers interlink comfortably. Governance mesh: plan for 4–20 nodes (PBFT's classic envelope). A single server carries hundreds of concurrent editors (CRDT merging is local-first).</p>
+
+<h2 id="roadmap">What's coming</h2>
+<ul>
+<li><strong>Network search</strong> (FR-91a): search the whole network from your editor — your server fans queries out across your trusted directory, routed by bloom filters so most peers are never asked, with signed, attributable results.</li>
+</ul>
+
+<div class="note"><strong>Try it locally:</strong> the repo ships a 4-node federation test bed — <code>docker/docker-compose.yml</code> — with a cross-server network test that exercises healthy delivery, down peers, blackholes, and restart persistence. If you're evaluating a mesh, start there.</div>
+
+<p style="margin-top:48px;color:#484f58;font-size:13px">Xudanu is an independent open-source project (Apache 2.0), not affiliated with Project Xanadu. <a href="https://github.com/jonesd/xudanu">github.com/jonesd/xudanu</a></p>
+
+</div>
+</body>
+</html>
