@@ -69,15 +69,30 @@ degraded client.
 3. FR-148c (sync) — the feature that changes usage.
 4. FR-148d (windows) and FR-148e (authoring) as independent tracks.
 
-## 6. Non-goals (v1)
+## 6. Distribution & monetization (revised 2026-10-19)
+
+**App Store is the primary commercial path.** This aligns with the
+hard design rule (server never handles money): Apple takes payment,
+the shell gates capability, servers stay clean.
+
+- Free tier: read-only viewer (FR-148a/b) — the audience builder
+- Pro subscription (IAP): offline sync + partial caches (148c),
+  light authoring (148e), later windows (148d)
+- Paid features exist only in the Store build (entitlement-gated);
+  the free web build simply omits them — no server paywall, no
+  meaningful piracy surface
+- Shell: Capacitor or Tauri v2 wrapping the SAME wasm + TS codebase
+  (days, not a fork); PWA remains the free web tier
+- Honest ledger: 15–30% Apple cut, review-gated releases, Store
+  discovery is its own effort
+
+## 7. Non-goals (v1)
 
 - Full mobile editing (O-tree authoring stays server-side until
   148e proves itself)
-- Native apps — WebView/PWA first; the engine is the asset, the
-  shell is a detail
 - Background mesh participation — a phone is a citizen, not a peer
 
-## 7. Test plan sketch
+## 8. Test plan sketch
 
 - wasm: same known-value tests as native (crum trees, freeze
   round-trips, chunk dedup) — the engine must be bit-identical
