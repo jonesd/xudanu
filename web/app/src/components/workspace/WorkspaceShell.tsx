@@ -62,6 +62,14 @@ import { useCompoundEdition } from "../../hooks/useCompoundEdition";
 import { authorColorPair, authorOrderedPair, pairedAuthorColors, setPairedAuthorColors } from "../../author-color";
 import { getLastCopiedSpan, clearCopiedSpan } from "../../clipboard-span";
 import { CollaborativeEditor } from "../CollaborativeEditor";
+// FR-150: Lexical authoring-surface spike — enabled per-session via
+// ?editor=lexical or localStorage xudanu:editor=lexical. Core contract
+// only; advanced overlays stay on the contentEditable path.
+import { LexicalSpikeEditor } from "../LexicalSpikeEditor";
+const LEXICAL_SPIKE =
+  typeof window !== "undefined" &&
+  (new URLSearchParams(window.location.search).get("editor") === "lexical" ||
+    window.localStorage.getItem("xudanu:editor") === "lexical");
 import { EasyMDEEditor } from "../EasyMDEEditor";
 import { TransclusionBadge } from "../TransclusionBadge";
 import { SuggestionCardList } from "../SuggestionCardList";
@@ -6288,6 +6296,26 @@ export function WorkspaceShell() {
                   />
                 ) : (
                   <ErrorBoundary label="editor">
+                  {LEXICAL_SPIKE ? (
+                  <LexicalSpikeEditor
+                  text={text}
+                  structuralVersion={structuralVersion}
+                  workId={workBeId ?? undefined}
+                  onTextChange={canEdit ? setText : undefined}
+                  onCursorChange={(idx) => {
+                    sendCursor(idx);
+                    setCursorPos(idx);
+                  }}
+                  onSelectionChange={(s, e) => {
+                    sendSelection(s, e);
+                    if (s !== null && e !== null && s !== e) setSelectionRange({ start: s, end: e });
+                    else setSelectionRange(null);
+                  }}
+                  connected={connected}
+                  attributionSpans={resolvedAttributionSpans}
+                  editable={canEdit}
+                  />
+                  ) : (
                   <CollaborativeEditor
                   structuralVersion={structuralVersion}
                   attributionPaired={pairedAuthorColorsOn}
@@ -6477,6 +6505,7 @@ export function WorkspaceShell() {
                     onResolveLinkDescription={handleResolveLinkDescription}
                     onEditLinkDescription={handleEditLinkDescription}
                   />
+                  )}
                   </ErrorBoundary>
                 )}
                   </>                 )}
