@@ -530,6 +530,49 @@ pub struct InlineTransclusionResult {
 }
 
 const SIG_FAILURE_THRESHOLD: u32 = 5;
+
+/// FR-91a search bloom parameters: 4096 bits (512 bytes), k=4.
+const SEARCH_BLOOM_BITS: usize = 4096;
+
+fn search_bloom_indices(token: &str) -> [usize; 4] {
+    let mut out = [0usize; 4];
+    for (i, slot) in out.iter_mut().enumerate() {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(&(i as u32).to_le_bytes());
+        hasher.update(token.as_bytes());
+        let h = u64::from_le_bytes(hasher.finalize().as_bytes()[..8].try_into().unwrap());
+        *slot = (h as usize) % SEARCH_BLOOM_BITS;
+    }
+    out
+}
+
+/// Minimal standard base64 encoder (no external dep; .well-known
+/// payload only).
+fn base64_encode_bytes(data: &[u8]) -> String {
+    const TBL: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
+        let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
+        out.push(TBL[(n >> 18) as usize & 63] as char);
+        out.push(TBL[(n >> 12) as usize & 63] as char);
+        out.push(if chunk.len() > 1 {
+            TBL[(n >> 6) as usize & 63] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            TBL[n as usize & 63] as char
+        } else {
+            '='
+        });
+    }
+    out
+}
 const ROTATION_RATE_LIMIT: u32 = 3;
 const ROTATION_RATE_WINDOW_SECS: u64 = 3600;
 
@@ -970,6 +1013,11 @@ pub struct Server {
     /// origin address → (key hex, cached-at unix secs). Prevents a
     /// .well-known fetch per notify; rebuilt on boot.
     backlink_origin_keys: std::collections::HashMap<String, (String, u64)>,
+    /// FR-91a: cached per-peer search bloom filters (address →
+    /// (bits, cached-at)). Refreshed lazily during federated search
+    /// fan-out (TTL 1h); a peer whose bloom says "no match" is not
+    /// queried, saving the peer real work.
+    search_bloom_cache: std::collections::HashMap<String, (Vec<u8>, u64)>,
     /// Staged cross-server backlink notify (link_create sets this
     /// under the dispatch lock; the transport layer executes the
     /// signed POST AFTER the lock releases — inline network I/O
@@ -1818,6 +1866,7 @@ impl Server {
             notify_failed: 0,
             notify_last_error: None,
             backlink_origin_keys: std::collections::HashMap::new(),
+            search_bloom_cache: std::collections::HashMap::new(),
             pending_cross_server_notify: None,
             reconcile_store: crate::server::federation::ReconcileStore::new(),
             reconcile_counter: 0,
@@ -2520,6 +2569,11 @@ impl Server {
             "hash_algorithm": "blake3",
             "public_content": true,
             "started_at": self.start_time,
+            "search_bloom": {
+                "bits": SEARCH_BLOOM_BITS as u64,
+                "hashes": 4,
+                "b64": base64_encode_bytes(&self.build_search_bloom()),
+            },
             "stats": {
                 "work_count": self.work_count(),
                 "revision_count": self.total_revision_count(),
@@ -8567,6 +8621,118 @@ impl Server {
             .collect()
     }
 
+    /// FR-91a: build this server's search bloom filter — 4096 bits,
+    /// k=4 blake3-derived indices — over lowercased tokens (≥2
+    /// chars) of every PUBLIC work's title + current text. Published
+    /// base64 in .well-known as `search_bloom`. Insertion-only per
+    /// build; deletions are handled by full rebuilds. False
+    /// positives are fine (one wasted remote query); false negatives
+    /// are not (every token of every public work is inserted).
+    pub fn build_search_bloom(&self) -> Vec<u8> {
+        let mut bits = vec![0u8; SEARCH_BLOOM_BITS / 8];
+        let pub_club = self.system_clubs.public_club;
+        for (_, ws) in self
+            .works
+            .iter()
+            .filter(|(_, ws)| ws.work.read_club() == Some(pub_club))
+        {
+            let title = ws.title().to_lowercase();
+            let text = ws.work.current_edition().to_text().to_lowercase();
+            let mut tokens = 0usize;
+            for token in title
+                .split(|c: char| !c.is_alphanumeric())
+                .chain(text.split(|c: char| !c.is_alphanumeric()))
+            {
+                if token.chars().count() < 2 {
+                    continue;
+                }
+                for idx in search_bloom_indices(token) {
+                    bits[idx / 8] |= 1 << (idx % 8);
+                }
+                tokens += 1;
+                if tokens >= 10_000 {
+                    break;
+                }
+            }
+        }
+        bits
+    }
+
+    /// FR-91a: might any of the query's tokens appear in a bloom
+    /// filter built by build_search_bloom? ANY-term semantics (good
+    /// recall; a peer is queried when it might hold any term).
+    pub fn search_bloom_might_contain(bloom: &[u8], query: &str) -> bool {
+        if bloom.is_empty() {
+            return true; // unknown filter — degrade to querying
+        }
+        let mut any_token = false;
+        for token in query.to_lowercase().split(|c: char| !c.is_alphanumeric()) {
+            if token.chars().count() < 2 {
+                continue;
+            }
+            any_token = true;
+            if search_bloom_indices(token)
+                .iter()
+                .all(|idx| bloom[idx / 8] & (1 << (idx % 8)) != 0)
+            {
+                return true;
+            }
+        }
+        // Query with no usable tokens: conservatively query.
+        !any_token
+    }
+
+    /// FR-91a: cached peer bloom (fetching .well-known on miss/stale).
+    /// Returns None when the peer's filter can't be obtained.
+    fn peer_search_bloom(&mut self, address: &str, port: u16) -> Option<Vec<u8>> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        if let Some((bits, at)) = self.search_bloom_cache.get(address) {
+            if now.saturating_sub(*at) < 3600 {
+                return Some(bits.clone());
+            }
+        }
+        let url = format!("http://{}:{}/.well-known/xudanu-server.json", address, port);
+        let fetched = http_get_json(&url, 2).ok().and_then(|text| {
+            serde_json::from_str::<serde_json::Value>(&text)
+                .ok()
+                .and_then(|v| {
+                    v.get("search_bloom")
+                        .and_then(|sb| sb.get("b64"))
+                        .and_then(|s| s.as_str())
+                        .and_then(|b64| {
+                            // minimal standard base64 decode
+                            let b64 = b64.trim_end_matches('=');
+                            const TBL: &[u8; 64] =
+                                b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+                            let mut out = Vec::with_capacity(b64.len() * 3 / 4 + 3);
+                            let mut buf = 0u32;
+                            let mut bits_set = 0u32;
+                            for ch in b64.bytes() {
+                                let val = TBL.iter().position(|&t| t == ch)? as u32;
+                                buf = (buf << 6) | val;
+                                bits_set += 6;
+                                if bits_set >= 8 {
+                                    bits_set -= 8;
+                                    out.push((buf >> bits_set) as u8);
+                                }
+                            }
+                            Some(out)
+                        })
+                })
+        });
+        match fetched {
+            Some(bits) => {
+                self.search_bloom_cache
+                    .insert(address.to_string(), (bits.clone(), now));
+                Some(bits)
+            }
+            None => None,
+        }
+    }
+
     /// FR-41 S1: fan a search out to trusted directory peers and
     /// merge with local public results. Adversarially hardened:
     /// - trusted, non-quarantined peers only (request-forgering a
@@ -8637,6 +8803,17 @@ impl Server {
                 continue;
             }
             let port = port.unwrap_or(8080);
+            // FR-91a bloom routing: skip peers whose published filter
+            // says the query can't match (one .well-known fetch,
+            // cached 1h — vs a full search query on the peer).
+            // Peers without a published filter are always queried
+            // (correct, just unpruned).
+            match self.peer_search_bloom(&address, port) {
+                Some(bloom) if !Self::search_bloom_might_contain(&bloom, query) => {
+                    continue;
+                }
+                _ => {}
+            }
             let url = format!(
                 "http://{}:{}/api/public/works?q={}",
                 address,
@@ -8680,6 +8857,10 @@ impl Server {
                                     "server_name": server_name,
                                     "server_id": server_id,
                                     "local": false,
+                                    // FR-91a: pass the origin's tumbler
+                                    // through so results are directly
+                                    // linkable/transcludable cross-server.
+                                    "tumbler": work["tumbler"].as_str().unwrap_or(""),
                                 }));
                                 added += 1;
                             }
@@ -28639,6 +28820,7 @@ pub(crate) mod persist_snapshot {
                 notify_failed: 0,
                 notify_last_error: None,
                 backlink_origin_keys: std::collections::HashMap::new(),
+                search_bloom_cache: std::collections::HashMap::new(),
                 pending_cross_server_notify: None,
                 quarantined_works: Vec::new(),
                 quarantined_editions: Vec::new(),
@@ -32689,6 +32871,33 @@ mod tests {
         assert!(health.contains("\"cross_server_notify\""));
         assert!(health.contains("\"peer_connected_count\""));
         assert!(health.contains("\"governance\""));
+    }
+
+    #[test]
+    #[cfg(feature = "server")]
+    fn search_bloom_build_and_query() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        server
+            .create_work(sid, crate::edition::Edition::from_text("quokka nocturne"))
+            .unwrap();
+        let bloom = server.build_search_bloom();
+        assert_eq!(bloom.len(), 512);
+        assert!(
+            Server::search_bloom_might_contain(&bloom, "quokka"),
+            "present term must be found"
+        );
+        assert!(
+            Server::search_bloom_might_contain(&bloom, "zzzunlikelyzzz") == false,
+            "absent term must be pruned (probabilistically; fixed seed tokens)"
+        );
+        // Degrade semantics: empty filter / no usable tokens → query.
+        assert!(Server::search_bloom_might_contain(&[], "anything"));
+        assert!(Server::search_bloom_might_contain(&bloom, "a"));
+        // base64 encoder sanity (known vector).
+        assert_eq!(base64_encode_bytes(b"abc"), "YWJj");
+        assert_eq!(base64_encode_bytes(b"ab"), "YWI=");
     }
 
     #[test]

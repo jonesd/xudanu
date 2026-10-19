@@ -3,11 +3,14 @@
 - **ID:** FR-91a
 - **Parent:** FR-91 (Distributed Docuverse) — sub-FR ranked first for
   cost/benefit
-- **Status:** Proposed (2026-10-19). Grounded in machinery that now
-  exists and is tested: server directory (FR-6), verified
-  `.well-known` identity, signed cross-server exchanges (backlink
-  notifications), the public content API, and the 4-node docker
-  federation test bed.
+- **Status:** In progress (2026-10-19). **Revision discovered: the
+  fan-out already exists as FR-41 S1** (`FederatedSearch` op,
+  rate-limited, trusted-directory fan-out with per-peer timeouts and
+  honest unreachable reporting — server.rs `federated_search`).
+  FR-91a is therefore a DELTA spec on FR-41 S1:
+  1. bloom routing (skip peers whose published filter says no-match)
+  2. tumblers in remote results (enables link-from-search-result)
+  3. signed search responses (reuse the backlink signing scheme)
 - **Depends on:** nothing new — all substrate is shipped.
 
 ## 1. Problem
