@@ -32,6 +32,8 @@ static SUBSCRIPTION_COUNTER: AtomicU16 = AtomicU16::new(1);
 #[derive(Debug, serde::Deserialize)]
 pub struct WorksListQuery {
     pub q: Option<String>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub signed: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -344,11 +346,21 @@ async fn public_works_list_handler(
         .server
         .with_server_ref(|srv| srv.public_work_list_search(query.q.as_deref()));
 
-    let body = serde_json::json!({
+    let mut body = serde_json::json!({
         "api_version": 1,
         "implementation": "xudanu",
         "works": works,
     });
+    // FR-91a: signed variant — binds (query, ts, works) with the
+    // server's Ed25519 key so federated searchers can reject
+    // forgeries, replays, and cross-query substitution.
+    if matches!(query.signed.as_deref(), Some("1") | Some("true")) {
+        let q = query.q.clone().unwrap_or_default();
+        let signed = state
+            .server
+            .with_server_ref(|srv| srv.sign_search_response(&body["works"], &q));
+        body["signed"] = signed;
+    }
 
     (
         axum::http::StatusCode::OK,

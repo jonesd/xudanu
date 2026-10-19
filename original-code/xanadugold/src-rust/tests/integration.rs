@@ -3739,7 +3739,483 @@ async fn link_query_heritage_queries() {
     assert_eq!(res.len(), 3);
 }
 
-/// FR-41 S1: federated search over the wire — local results labeled,
+/// FR-91a adversarial suite: mock peers that lie, forge, replay,
+/// and hide — the fan-out must reject, degrade honestly, or see
+/// through them (audit sampling), never silently trust.
+
+/// A mock HTTP peer serving canned .well-known + works responses.
+fn spawn_mock_peer(well_known: serde_json::Value, works_resp: serde_json::Value) -> u16 {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let mut buf = [0u8; 8192];
+            let _ = stream.read(&mut buf);
+            let req = String::from_utf8_lossy(&buf).to_string();
+            let path = req.split(' ').nth(1).unwrap_or("/");
+            let body = if path.contains(".well-known") {
+                well_known.to_string()
+            } else {
+                works_resp.clone().to_string()
+            };
+            let resp = format!(
+                "HTTP/1.0 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = stream.write_all(resp.as_bytes());
+        }
+    });
+    port
+}
+
+fn test_sign_works(
+    key: &ed25519_dalek::SigningKey,
+    query: &str,
+    ts: u64,
+    works: &serde_json::Value,
+) -> serde_json::Value {
+    use ed25519_dalek::Signer;
+    let payload = format!("{}|{}|{}", query, ts, serde_json::to_string(works).unwrap());
+    let vk_hex: String = key
+        .verifying_key()
+        .to_bytes()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
+    let sig_hex = hex::encode(key.sign(payload.as_bytes()).to_bytes());
+    serde_json::json!({ "key": vk_hex, "sig": sig_hex, "query": query, "ts": ts })
+}
+
+fn mock_well_known(key_hex: &str, work_count: u64, bloom_bits: Vec<u8>) -> serde_json::Value {
+    let b64: String = {
+        const TBL: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        bloom_bits
+            .chunks(3)
+            .map(|c| {
+                let b = [c[0], *c.get(1).unwrap_or(&0), *c.get(2).unwrap_or(&0)];
+                let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
+                let mut s = String::new();
+                s.push(TBL[(n >> 18) as usize & 63] as char);
+                s.push(TBL[(n >> 12) as usize & 63] as char);
+                s.push(if c.len() > 1 {
+                    TBL[(n >> 6) as usize & 63] as char
+                } else {
+                    '='
+                });
+                s.push(if c.len() > 2 {
+                    TBL[n as usize & 63] as char
+                } else {
+                    '='
+                });
+                s
+            })
+            .collect()
+    };
+    serde_json::json!({
+        "server_id": key_hex,
+        "server_name": "MockPeer",
+        "search_bloom": { "bits": 4096, "hashes": 4, "b64": b64 },
+        "stats": { "work_count": work_count },
+    })
+}
+
+fn marker_works_json(marker: &str) -> serde_json::Value {
+    serde_json::json!({
+        "api_version": 1,
+        "implementation": "xudanu",
+        "works": [{
+            "work_id": "03ff",
+            "title": format!("hidden {}", marker),
+            "revision": 0,
+            "char_count": 42,
+            "tumbler": format!("xan://mockpeer/3ff#{}", marker),
+        }],
+    })
+}
+
+/// Register + trust a mock peer on a TestServer via WS ops.
+async fn trust_mock_peer(
+    s: &mut SplitSender,
+    r: &mut SplitReceiver,
+    id: &mut u16,
+    port: u16,
+) -> serde_json::Value {
+    // Cross-server fetches target 127.0.0.1 test peers — relax the
+    // SSRF guard for this process (same as --allow-loopback).
+    xudanu::server::server::set_allow_loopback(true);
+    let resp = send_recv_json(
+        s,
+        r,
+        json_req(
+            *id,
+            "server_directory_add",
+            Some(serde_json::json!({ "address": "127.0.0.1", "port": port })),
+        ),
+    )
+    .await;
+    *id += 1;
+    let sid = resp["value"]["value"]["server_id"].clone();
+    let trust = send_recv_json(
+        s,
+        r,
+        json_req(
+            *id,
+            "server_directory_set_trust",
+            Some(serde_json::json!({ "server_id": sid, "trusted": true })),
+        ),
+    )
+    .await;
+    *id += 1;
+    assert_eq!(trust["type"], "response", "set_trust failed: {trust:?}");
+    resp
+}
+
+async fn run_search(
+    s: &mut SplitSender,
+    r: &mut SplitReceiver,
+    id: &mut u16,
+    q: &str,
+) -> Vec<serde_json::Value> {
+    let resp = send_recv_json(
+        s,
+        r,
+        json_req(
+            *id,
+            "federated_search",
+            Some(serde_json::json!({ "query": q })),
+        ),
+    )
+    .await;
+    *id += 1;
+    resp["value"]["value"]["results"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
+fn is_audit_query(q: &str) -> bool {
+    let mut h = blake3::Hasher::new();
+    h.update(q.as_bytes());
+    h.finalize().as_bytes()[0] % 8 == 0
+}
+
+fn mock_well_known_b64_decode(s: &str) -> Vec<u8> {
+    let s = s.trim_end_matches('=');
+    const TBL: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = Vec::new();
+    let mut buf = 0u32;
+    let mut bits = 0u32;
+    for ch in s.bytes() {
+        let val = TBL.iter().position(|&t| t == ch).unwrap_or(0) as u32;
+        buf = (buf << 6) | val;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buf >> bits) as u8);
+        }
+    }
+    out
+}
+
+fn pick_query(prefix: &str, want_audit: bool) -> String {
+    for i in 0..1000 {
+        let q = format!("{}{}", prefix, i);
+        if is_audit_query(&q) == want_audit {
+            return q;
+        }
+    }
+    unreachable!()
+}
+
+#[tokio::test]
+async fn federated_search_rejects_forged_origin_key() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let key_a = ed25519_dalek::SigningKey::from([1u8; 32]);
+    let key_b = ed25519_dalek::SigningKey::from([2u8; 32]);
+    let key_a_hex: String = key_a
+        .verifying_key()
+        .to_bytes()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
+    let marker = "forgemarker";
+    let mut works = marker_works_json(marker);
+    // Signed correctly — but by the WRONG key (claims A's identity).
+    works["signed"] = test_sign_works(&key_b, marker, now_secs(), &works["works"]);
+    let port = spawn_mock_peer(mock_well_known(&key_a_hex, 1, vec![0xff; 64]), works);
+    let mut id = 900u16;
+    trust_mock_peer(&mut s, &mut r, &mut id, port).await;
+    let results = run_search(&mut s, &mut r, &mut id, marker).await;
+    assert!(
+        results.iter().all(|e| e.get("local").is_none()),
+        "forged-key results must be dropped: {results:?}"
+    );
+    assert!(
+        results.iter().any(|e| e["reason"]
+            .as_str()
+            .unwrap_or("")
+            .contains("key does not match")),
+        "honest rejection reason expected: {results:?}"
+    );
+}
+
+#[tokio::test]
+async fn federated_search_rejects_tampered_body() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let key = ed25519_dalek::SigningKey::from([3u8; 32]);
+    let key_hex: String = key
+        .verifying_key()
+        .to_bytes()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
+    let marker = "tampermarker";
+    let works = marker_works_json(marker);
+    // Signature over DIFFERENT works than returned.
+    let other = marker_works_json("somethingelse");
+    let mut resp = works.clone();
+    resp["signed"] = test_sign_works(&key, marker, now_secs(), &other["works"]);
+    let port = spawn_mock_peer(mock_well_known(&key_hex, 1, vec![0xff; 64]), resp);
+    let mut id = 910u16;
+    trust_mock_peer(&mut s, &mut r, &mut id, port).await;
+    let results = run_search(&mut s, &mut r, &mut id, marker).await;
+    assert!(results.iter().all(|e| e.get("local").is_none()));
+    assert!(
+        results.iter().any(|e| e["reason"]
+            .as_str()
+            .unwrap_or("")
+            .contains("invalid signature")),
+        "tamper reason expected: {results:?}"
+    );
+}
+
+#[tokio::test]
+async fn federated_search_rejects_stale_replay() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let key = ed25519_dalek::SigningKey::from([4u8; 32]);
+    let key_hex: String = key
+        .verifying_key()
+        .to_bytes()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
+    let marker = "stalemarker";
+    let mut works = marker_works_json(marker);
+    works["signed"] = test_sign_works(&key, marker, now_secs() - 3600, &works["works"]);
+    let port = spawn_mock_peer(mock_well_known(&key_hex, 1, vec![0xff; 64]), works);
+    let mut id = 920u16;
+    trust_mock_peer(&mut s, &mut r, &mut id, port).await;
+    let results = run_search(&mut s, &mut r, &mut id, marker).await;
+    assert!(results.iter().all(|e| e.get("local").is_none()));
+    assert!(
+        results
+            .iter()
+            .any(|e| e["reason"].as_str().unwrap_or("").contains("stale")),
+        "stale reason expected: {results:?}"
+    );
+}
+
+#[tokio::test]
+async fn federated_search_rejects_cross_query_signature() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let key = ed25519_dalek::SigningKey::from([5u8; 32]);
+    let key_hex: String = key
+        .verifying_key()
+        .to_bytes()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
+    let marker = "crossqmarker";
+    let mut works = marker_works_json(marker);
+    // Validly signed — for a DIFFERENT query.
+    works["signed"] = test_sign_works(&key, "differentquery", now_secs(), &works["works"]);
+    let port = spawn_mock_peer(mock_well_known(&key_hex, 1, vec![0xff; 64]), works);
+    let mut id = 930u16;
+    trust_mock_peer(&mut s, &mut r, &mut id, port).await;
+    let results = run_search(&mut s, &mut r, &mut id, marker).await;
+    assert!(results.iter().all(|e| e.get("local").is_none()));
+    assert!(
+        results.iter().any(|e| e["reason"]
+            .as_str()
+            .unwrap_or("")
+            .contains("different query")),
+        "cross-query reason expected: {results:?}"
+    );
+}
+
+#[tokio::test]
+async fn federated_search_hiding_peer_caught_by_audit() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let key = ed25519_dalek::SigningKey::from([6u8; 32]);
+    let key_hex: String = key
+        .verifying_key()
+        .to_bytes()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
+    // The lying filter: all zeros ("I hold nothing") — but the peer
+    // DOES return (properly signed) works when asked.
+    let audit_q = pick_query("hideaudit", true);
+    let mut works = marker_works_json("hidecontent");
+    works["works"][0]["title"] = serde_json::json!(format!("hidden {}", audit_q));
+    works["signed"] = test_sign_works(&key, &audit_q, now_secs(), &works["works"]);
+    let port = spawn_mock_peer(mock_well_known(&key_hex, 1, vec![0x00; 64]), works);
+    let mut id = 940u16;
+    trust_mock_peer(&mut s, &mut r, &mut id, port).await;
+    // Audit query: the zero filter must NOT hide the peer.
+    let results = run_search(&mut s, &mut r, &mut id, &audit_q).await;
+    assert!(
+        results
+            .iter()
+            .any(|e| e["local"].as_bool() == Some(false) && e["verified"].as_bool() == Some(true)),
+        "audit sampling must see through a hiding (under-inclusive) filter: {results:?}"
+    );
+    // Non-audit query IS pruned by the lying filter (the honest cost
+    // of pruning; audit sampling is the backstop, not a guarantee).
+    let plain_q = pick_query("hideplain", false);
+    let results2 = run_search(&mut s, &mut r, &mut id, &plain_q).await;
+    assert!(
+        results2
+            .iter()
+            .all(|e| e.get("local").is_none() || e["local"].as_bool() == Some(true)),
+        "non-audit queries are pruned by the (lying) filter — expected: {results2:?}"
+    );
+}
+
+#[tokio::test]
+async fn federated_search_legacy_unsigned_peer_annotated() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let key = ed25519_dalek::SigningKey::from([7u8; 32]);
+    let key_hex: String = key
+        .verifying_key()
+        .to_bytes()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
+    let marker = "legacymarker";
+    let works = marker_works_json(marker); // no signed block
+    let port = spawn_mock_peer(mock_well_known(&key_hex, 1, vec![0xff; 64]), works);
+    let mut id = 950u16;
+    trust_mock_peer(&mut s, &mut r, &mut id, port).await;
+    let results = run_search(&mut s, &mut r, &mut id, marker).await;
+    let remote: Vec<_> = results
+        .iter()
+        .filter(|e| e["local"].as_bool() == Some(false))
+        .collect();
+    assert!(!remote.is_empty(), "legacy results accepted: {results:?}");
+    assert!(
+        remote
+            .iter()
+            .all(|e| e["verified"].as_bool() == Some(false)),
+        "legacy results must be annotated unverified: {results:?}"
+    );
+}
+
+#[tokio::test]
+async fn federated_search_density_anomaly_ignored_for_routing() {
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let key = ed25519_dalek::SigningKey::from([8u8; 32]);
+    let key_hex: String = key
+        .verifying_key()
+        .to_bytes()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
+    let marker = "densitymarker";
+    // work_count=0 but the filter has bits set AND claims no match
+    // for the query: without the density check this peer would be
+    // pruned; the check ignores the lying filter and queries anyway.
+    let mut bloom = vec![0x00; 64];
+    bloom[0] = 0x01; // some bits set, matches nothing relevant
+    let plain_q = pick_query("density", false); // ensure NOT audit
+    let mut works = marker_works_json(marker);
+    works["works"][0]["title"] = serde_json::json!(format!("density {}", plain_q));
+    works["signed"] = test_sign_works(&key, &plain_q, now_secs(), &works["works"]);
+    let port = spawn_mock_peer(mock_well_known(&key_hex, 0, bloom), works);
+    let mut id = 960u16;
+    trust_mock_peer(&mut s, &mut r, &mut id, port).await;
+    let results = run_search(&mut s, &mut r, &mut id, &plain_q).await;
+    assert!(
+        results.iter().any(|e| e["local"].as_bool() == Some(false)),
+        "density-suspect filter must not grant pruning: {results:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn federated_search_real_peer_verified_roundtrip() {
+    // Multi-thread: directory-add's blocking .well-known fetch must
+    // not starve the single-threaded test runtime while the peer's
+    // axum (same runtime) waits to answer.
+    // Two REAL xudanu servers: the happy path end to end —
+    // directory discovery, bloom pass-through, signed response,
+    // tumbler in results.
+    let peer = TestServer::start().await;
+    let (mut ps, mut pr, _) = json_setup(&peer).await;
+    let marker = format!(
+        "realpeer{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    );
+    let wid = send_recv_json(
+        &mut ps,
+        &mut pr,
+        json_req(
+            995,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": format!("the {} corpus entry", marker)}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    // Federated search surfaces PUBLIC works only — publish it.
+    let pub_resp = send_recv_json(
+        &mut ps,
+        &mut pr,
+        json_req(
+            996,
+            "work_publish",
+            Some(serde_json::json!({ "work_id": wid })),
+        ),
+    )
+    .await;
+    assert_eq!(pub_resp["type"], "response", "publish failed: {pub_resp:?}");
+
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let peer_port = peer.addr.port();
+    let mut id = 970u16;
+    let _add_resp = trust_mock_peer(&mut s, &mut r, &mut id, peer_port).await;
+    let results = run_search(&mut s, &mut r, &mut id, &marker).await;
+    let hit = results
+        .iter()
+        .find(|e| e["local"].as_bool() == Some(false))
+        .unwrap_or_else(|| panic!("peer result expected: {results:?}"));
+    assert_eq!(hit["verified"].as_bool(), Some(true), "{hit:?}");
+    assert!(
+        !hit["tumbler"].as_str().unwrap_or("").is_empty(),
+        "tumbler expected: {hit:?}"
+    );
+}
 /// rate-limited (10/min/session, amplifier guard), empty query
 /// refused, and no peers configured means local-only (no fan-out to
 /// test, but the op must not error).

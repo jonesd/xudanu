@@ -534,6 +534,33 @@ const SIG_FAILURE_THRESHOLD: u32 = 5;
 /// FR-91a search bloom parameters: 4096 bits (512 bytes), k=4.
 const SEARCH_BLOOM_BITS: usize = 4096;
 
+/// FR-91a: peer facts pulled from its .well-known during fan-out.
+struct PeerWellKnown {
+    bloom: Option<Vec<u8>>,
+    work_count: u64,
+    origin_key: Option<String>,
+}
+
+/// Minimal standard base64 decode (well-known payloads only; None
+/// on any non-alphabet character).
+fn b64_decode_std(s: &str) -> Option<Vec<u8>> {
+    let s = s.trim_end_matches('=');
+    const TBL: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = Vec::with_capacity(s.len() * 3 / 4 + 3);
+    let mut buf = 0u32;
+    let mut bits_set = 0u32;
+    for ch in s.bytes() {
+        let val = TBL.iter().position(|&t| t == ch)? as u32;
+        buf = (buf << 6) | val;
+        bits_set += 6;
+        if bits_set >= 8 {
+            bits_set -= 8;
+            out.push((buf >> bits_set) as u8);
+        }
+    }
+    Some(out)
+}
+
 fn search_bloom_indices(token: &str) -> [usize; 4] {
     let mut out = [0usize; 4];
     for (i, slot) in out.iter_mut().enumerate() {
@@ -8666,6 +8693,9 @@ impl Server {
             return true; // unknown filter — degrade to querying
         }
         let mut any_token = false;
+        // Adapt to the peer's filter size (spec: 4096 bits; a peer
+        // may publish shorter/longer — index modulo its bit count).
+        let bits = bloom.len().saturating_mul(8);
         for token in query.to_lowercase().split(|c: char| !c.is_alphanumeric()) {
             if token.chars().count() < 2 {
                 continue;
@@ -8673,7 +8703,7 @@ impl Server {
             any_token = true;
             if search_bloom_indices(token)
                 .iter()
-                .all(|idx| bloom[idx / 8] & (1 << (idx % 8)) != 0)
+                .all(|idx| bloom[idx % bits / 8] & (1 << (idx % bits % 8)) != 0)
             {
                 return true;
             }
@@ -8682,55 +8712,86 @@ impl Server {
         !any_token
     }
 
-    /// FR-91a: cached peer bloom (fetching .well-known on miss/stale).
-    /// Returns None when the peer's filter can't be obtained.
-    fn peer_search_bloom(&mut self, address: &str, port: u16) -> Option<Vec<u8>> {
+    /// FR-91a: cached peer well-known facts (bloom filter, reported
+    /// corpus size, published origin key). Fetched on miss/stale;
+    /// the origin key feeds search-response verification (shared
+    /// with the backlink origin-key cache).
+    fn peer_well_known(&mut self, address: &str, port: u16) -> Option<PeerWellKnown> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        if let Some((bits, at)) = self.search_bloom_cache.get(address) {
+        let cache_key = format!("{}:{}", address, port);
+        if let Some((bits, at)) = self.search_bloom_cache.get(&cache_key) {
             if now.saturating_sub(*at) < 3600 {
-                return Some(bits.clone());
+                let origin_key = self
+                    .backlink_origin_keys
+                    .get(&cache_key)
+                    .map(|(k, _)| k.clone());
+                return Some(PeerWellKnown {
+                    bloom: Some(bits.clone()),
+                    work_count: 0,
+                    origin_key,
+                });
             }
         }
         let url = format!("http://{}:{}/.well-known/xudanu-server.json", address, port);
         let fetched = http_get_json(&url, 2).ok().and_then(|text| {
             serde_json::from_str::<serde_json::Value>(&text)
                 .ok()
-                .and_then(|v| {
-                    v.get("search_bloom")
+                .map(|v| PeerWellKnown {
+                    bloom: v
+                        .get("search_bloom")
                         .and_then(|sb| sb.get("b64"))
                         .and_then(|s| s.as_str())
-                        .and_then(|b64| {
-                            // minimal standard base64 decode
-                            let b64 = b64.trim_end_matches('=');
-                            const TBL: &[u8; 64] =
-                                b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-                            let mut out = Vec::with_capacity(b64.len() * 3 / 4 + 3);
-                            let mut buf = 0u32;
-                            let mut bits_set = 0u32;
-                            for ch in b64.bytes() {
-                                let val = TBL.iter().position(|&t| t == ch)? as u32;
-                                buf = (buf << 6) | val;
-                                bits_set += 6;
-                                if bits_set >= 8 {
-                                    bits_set -= 8;
-                                    out.push((buf >> bits_set) as u8);
-                                }
-                            }
-                            Some(out)
-                        })
+                        .and_then(b64_decode_std),
+                    work_count: v
+                        .get("stats")
+                        .and_then(|s| s.get("work_count"))
+                        .and_then(|w| w.as_u64())
+                        .unwrap_or(0),
+                    origin_key: v
+                        .get("server_id")
+                        .and_then(|s| s.as_str())
+                        .map(|s| s.to_string()),
                 })
         });
         match fetched {
-            Some(bits) => {
-                self.search_bloom_cache
-                    .insert(address.to_string(), (bits.clone(), now));
-                Some(bits)
+            Some(wk) => {
+                if let Some(bits) = &wk.bloom {
+                    self.search_bloom_cache
+                        .insert(cache_key.clone(), (bits.clone(), now));
+                }
+                if let Some(key) = &wk.origin_key {
+                    self.backlink_origin_keys
+                        .insert(cache_key, (key.clone(), now));
+                }
+                Some(wk)
             }
             None => None,
         }
+    }
+
+    /// FR-91a: sign a search response body — binds (query, ts, works)
+    /// so verifiers can reject forgeries, replays, and cross-query
+    /// substitution. Same Ed25519 scheme as backlink notifications.
+    pub fn sign_search_response(
+        &self,
+        works: &serde_json::Value,
+        query: &str,
+    ) -> serde_json::Value {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let payload = format!(
+            "{}|{}|{}",
+            query,
+            ts,
+            serde_json::to_string(works).unwrap_or_default()
+        );
+        let (vk, sig) = self.sign_backlink_body(&payload);
+        serde_json::json!({ "key": vk, "sig": sig, "query": query, "ts": ts })
     }
 
     /// FR-41 S1: fan a search out to trusted directory peers and
@@ -8744,7 +8805,79 @@ impl Server {
     /// - unresponsive peers are reported (honesty: results say which
     ///   peers didn't answer) instead of silently omitted
 
+    /// Verify a peer's signed search response: signature over
+    /// "query|ts|works", the key must match the origin's published
+    /// .well-known key, and ts must be fresh (5-minute window —
+    /// signed ≠ fresh, replays are authentic but stale).
+    fn verify_search_signature(
+        sig_block: &serde_json::Value,
+        works: &serde_json::Value,
+        query: &str,
+        published_origin_key: Option<&str>,
+    ) -> Result<(), String> {
+        let key = sig_block
+            .get("key")
+            .and_then(|k| k.as_str())
+            .ok_or("missing key")?;
+        let sig = sig_block
+            .get("sig")
+            .and_then(|s| s.as_str())
+            .ok_or("missing signature")?;
+        let signed_query = sig_block
+            .get("query")
+            .and_then(|q| q.as_str())
+            .ok_or("missing query")?;
+        let ts = sig_block
+            .get("ts")
+            .and_then(|t| t.as_u64())
+            .ok_or("missing ts")?;
+        if signed_query != query {
+            return Err("signed for a different query".into());
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        if now.saturating_sub(ts) > 300 {
+            return Err(format!("stale response ({}s old)", now.saturating_sub(ts)));
+        }
+        match published_origin_key {
+            Some(pk) if pk != key => return Err("key does not match origin's published key".into()),
+            None => return Err("origin key unknown (no .well-known)".into()),
+            _ => {}
+        }
+        let payload = format!(
+            "{}|{}|{}",
+            query,
+            ts,
+            serde_json::to_string(works).unwrap_or_default()
+        );
+        if crate::server::federation::verify_hex_sig(key, &payload, sig) {
+            Ok(())
+        } else {
+            Err("invalid signature".into())
+        }
+    }
+
     pub fn federated_search(&mut self, query: &str) -> Vec<serde_json::Value> {
+        // FR-91a audit sampling: queries hashing to 1-in-8 bypass
+        // bloom pruning entirely, so under-inclusive (hiding)
+        // filters are periodically caught. Query-derived: peers
+        // can't distinguish an audit query from a normal one (the
+        // request is identical); deterministic for tests.
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(query.as_bytes());
+        let audit = hasher.finalize().as_bytes()[0] % 8 == 0;
+        self.federated_search_inner(query, audit)
+    }
+
+    /// Audit-forced variant (tests: deterministic hiding-detection).
+    #[doc(hidden)]
+    pub fn federated_search_force_audit(&mut self, query: &str) -> Vec<serde_json::Value> {
+        self.federated_search_inner(query, true)
+    }
+
+    fn federated_search_inner(&mut self, query: &str, force_audit: bool) -> Vec<serde_json::Value> {
         const PEER_TIMEOUT_SECS: u64 = 3;
         const MAX_RESULTS_PER_PEER: usize = 20;
         const MAX_TITLE_CHARS: usize = 120;
@@ -8807,15 +8940,31 @@ impl Server {
             // says the query can't match (one .well-known fetch,
             // cached 1h — vs a full search query on the peer).
             // Peers without a published filter are always queried
-            // (correct, just unpruned).
-            match self.peer_search_bloom(&address, port) {
-                Some(bloom) if !Self::search_bloom_might_contain(&bloom, query) => {
-                    continue;
+            // (correct, just unpruned). Audit sampling bypasses
+            // pruning (detects under-inclusive/hiding filters); the
+            // density sanity check ignores a filter that claims bits
+            // while reporting an empty corpus (over-inclusive
+            // harvesting). Both act CONSERVATIVELY: the peer is
+            // queried, never hidden.
+            let wk = self.peer_well_known(&address, port);
+            if !force_audit {
+                if let Some(wk) = &wk {
+                    if let Some(bloom) = &wk.bloom {
+                        let density_suspect = wk.work_count == 0 && bloom.iter().any(|b| *b != 0);
+                        let matches = Self::search_bloom_might_contain(bloom, query);
+                        if density_suspect {
+                            tracing::warn!(
+                                peer = %server_name,
+                                "search bloom density anomaly (bits set, empty corpus reported) — filter ignored for routing"
+                            );
+                        } else if !matches {
+                            continue;
+                        }
+                    }
                 }
-                _ => {}
             }
             let url = format!(
-                "http://{}:{}/api/public/works?q={}",
+                "http://{}:{}/api/public/works?q={}&signed=1",
                 address,
                 port,
                 urlencode(query)
@@ -8823,47 +8972,106 @@ impl Server {
 
             match http_get_json(&url, PEER_TIMEOUT_SECS) {
                 Ok(response_text) => {
+                    let body = match serde_json::from_str::<serde_json::Value>(&response_text) {
+                        Ok(b) => b,
+                        Err(_) => {
+                            tracing::warn!(
+                                peer = %server_name,
+                                "federated search peer response not JSON"
+                            );
+                            results.push(serde_json::json!({
+                                "server_name": server_name,
+                                "server_id": server_id,
+                                "unreachable": true,
+                                "reason": "non-JSON response",
+                            }));
+                            continue;
+                        }
+                    };
+                    // FR-91a: verify signed responses. A signature is
+                    // only evidence when the key matches the one the
+                    // origin PUBLISHES (same binding as backlinks);
+                    // the payload binds query + ts + works so forged,
+                    // replayed (stale), and cross-query substituted
+                    // responses all fail. Legacy unsigned responses
+                    // are accepted, annotated unverified.
+                    let mut verified = false;
+                    let mut rejected_reason: Option<String> = None;
+                    if let Some(sig_block) = body.get("signed") {
+                        let origin_key =
+                            wk.as_ref().and_then(|w| w.origin_key.clone()).or_else(|| {
+                                self.backlink_origin_keys
+                                    .get(&format!("{}:{}", address, port))
+                                    .map(|(k, _)| k.clone())
+                            });
+                        match Self::verify_search_signature(
+                            sig_block,
+                            &body["works"],
+                            query,
+                            origin_key.as_deref(),
+                        ) {
+                            Ok(()) => verified = true,
+                            Err(e) => {
+                                tracing::warn!(
+                                    target: "xudanu::security",
+                                    peer = %server_name,
+                                    event = "SECURITY:search_signature_rejected",
+                                    "peer search response rejected: {}",
+                                    e
+                                );
+                                rejected_reason = Some(e);
+                            }
+                        }
+                    }
+                    if let Some(reason) = rejected_reason {
+                        results.push(serde_json::json!({
+                            "server_name": server_name,
+                            "server_id": server_id,
+                            "unreachable": true,
+                            "reason": format!("signature verification failed: {}", reason),
+                        }));
+                        continue;
+                    }
                     let mut added = 0usize;
                     let mut malformed = 0usize;
-                    if let Ok(body) = serde_json::from_str::<serde_json::Value>(&response_text) {
-                        if let Some(works) = body["works"].as_array() {
-                            for work in works {
-                                if added >= MAX_RESULTS_PER_PEER {
-                                    break;
-                                }
-                                let title = work["title"]
-                                    .as_str()
-                                    .unwrap_or("")
-                                    .chars()
-                                    .take(MAX_TITLE_CHARS)
-                                    .collect::<String>();
-                                // Remote ids are hex strings ("03ec") —
-                                // same wire shape as our own public API.
-                                let wid = work["work_id"]
-                                    .as_str()
-                                    .and_then(|h| {
-                                        u64::from_str_radix(h.trim_start_matches("0x"), 16).ok()
-                                    })
-                                    .or_else(|| work["work_id"].as_u64());
-                                let Some(wid) = wid else {
-                                    malformed += 1;
-                                    continue;
-                                };
-                                results.push(serde_json::json!({
-                                    "work_id": wid,
-                                    "title": title,
-                                    "revision": work["revision"].as_u64().unwrap_or(0),
-                                    "char_count": work["char_count"].as_u64().unwrap_or(0),
-                                    "server_name": server_name,
-                                    "server_id": server_id,
-                                    "local": false,
-                                    // FR-91a: pass the origin's tumbler
-                                    // through so results are directly
-                                    // linkable/transcludable cross-server.
-                                    "tumbler": work["tumbler"].as_str().unwrap_or(""),
-                                }));
-                                added += 1;
+                    if let Some(works) = body["works"].as_array() {
+                        for work in works {
+                            if added >= MAX_RESULTS_PER_PEER {
+                                break;
                             }
+                            let title = work["title"]
+                                .as_str()
+                                .unwrap_or("")
+                                .chars()
+                                .take(MAX_TITLE_CHARS)
+                                .collect::<String>();
+                            // Remote ids are hex strings ("03ec") —
+                            // same wire shape as our own public API.
+                            let wid = work["work_id"]
+                                .as_str()
+                                .and_then(|h| {
+                                    u64::from_str_radix(h.trim_start_matches("0x"), 16).ok()
+                                })
+                                .or_else(|| work["work_id"].as_u64());
+                            let Some(wid) = wid else {
+                                malformed += 1;
+                                continue;
+                            };
+                            results.push(serde_json::json!({
+                                "work_id": wid,
+                                "title": title,
+                                "revision": work["revision"].as_u64().unwrap_or(0),
+                                "char_count": work["char_count"].as_u64().unwrap_or(0),
+                                "server_name": server_name,
+                                "server_id": server_id,
+                                "local": false,
+                                "verified": verified,
+                                // FR-91a: pass the origin's tumbler
+                                // through so results are directly
+                                // linkable/transcludable cross-server.
+                                "tumbler": work["tumbler"].as_str().unwrap_or(""),
+                            }));
+                            added += 1;
                         }
                     }
                     if malformed > 0 {
@@ -9191,13 +9399,30 @@ impl Server {
             .collect()
     }
 
+    /// FR-91a: copy the bloom/origin-key caches for the lock-free
+    /// FETCH phase; updates fold back at APPLY.
+    pub fn snapshot_federated_search_caches(&self) -> FederatedFetchCaches {
+        FederatedFetchCaches {
+            blooms: self.search_bloom_cache.clone(),
+            origin_keys: self.backlink_origin_keys.clone(),
+        }
+    }
+
     /// Apply side of federated search: local results for `query`
     /// merged with fetched peer results.
     pub fn federated_search_merge(
         &mut self,
         query: &str,
         fetched: Vec<serde_json::Value>,
+        caches: FederatedFetchCaches,
     ) -> Vec<serde_json::Value> {
+        // FR-91a APPLY: fold FETCH-phase cache updates back in.
+        for (k, v) in caches.blooms {
+            self.search_bloom_cache.insert(k, v);
+        }
+        for (k, v) in caches.origin_keys {
+            self.backlink_origin_keys.insert(k, v);
+        }
         let query = query.trim();
         if query.is_empty() {
             return Vec::new();
@@ -30825,13 +31050,33 @@ fn find_shared_substrings(
     results
 }
 
+/// FR-91a caches carried between the SNAPSHOT and APPLY phases of
+/// the lock-free federated search fan-out (#141 pattern): peer bloom
+/// filters and origin keys fetched during FETCH fold back into the
+/// server's caches at APPLY.
+pub struct FederatedFetchCaches {
+    pub blooms: std::collections::HashMap<String, (Vec<u8>, u64)>,
+    pub origin_keys: std::collections::HashMap<String, (String, u64)>,
+}
+
+/// FR-91a: audit-sampling decision (deterministic per query; peers
+/// cannot distinguish an audit query — the request is identical).
+pub fn search_audit_due(query: &str) -> bool {
+    let mut h = blake3::Hasher::new();
+    h.update(query.as_bytes());
+    h.finalize().as_bytes()[0] % 8 == 0
+}
+
 /// #141: free-standing peer fan-out — runs on a blocking pool with
-/// NO server lock. Same hardening as the sync path: 3s peer timeout,
-/// overall budget, 20-result cap, 120-char titles, honest
-/// unreachable entries.
+/// NO server lock. Hardening: 3s peer timeout, overall budget,
+/// 20-result cap, 120-char titles, honest unreachable entries;
+/// FR-91a adds bloom routing, the density sanity check, audit
+/// sampling, and signed-response verification (forgery, replay,
+/// cross-query substitution all rejected).
 pub fn federated_fetch_peers(
     peers: Vec<(u64, String, Option<u16>, String)>,
     query: &str,
+    caches: &mut FederatedFetchCaches,
 ) -> Vec<serde_json::Value> {
     const PEER_TIMEOUT_SECS: u64 = 3;
     const MAX_RESULTS_PER_PEER: usize = 20;
@@ -30840,6 +31085,11 @@ pub fn federated_fetch_peers(
     if query.is_empty() {
         return Vec::new();
     }
+    let audit = search_audit_due(query);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
     let mut results = Vec::new();
     let deadline =
         std::time::Instant::now() + std::time::Duration::from_secs(2 + peers.len() as u64);
@@ -30851,43 +31101,126 @@ pub fn federated_fetch_peers(
             }));
             continue;
         }
+        let port = port.unwrap_or(8080);
+        let cache_key = format!("{}:{}", address, port);
+
+        // Bloom routing (with fresh .well-known facts on cache miss —
+        // also the source of the peer's published origin key).
+        let mut origin_key: Option<String> =
+            caches.origin_keys.get(&cache_key).map(|(k, _)| k.clone());
+        let mut bloom_fetched: Option<(Option<Vec<u8>>, u64)> = None;
+        if let Some((bits, at)) = caches.blooms.get(&cache_key) {
+            if now.saturating_sub(*at) < 3600 {
+                bloom_fetched = Some((Some(bits.clone()), 0));
+            }
+        }
+        if bloom_fetched.is_none() {
+            let wk_url = format!("http://{}:{}/.well-known/xudanu-server.json", address, port);
+            if let Ok(text) = http_get_json(&wk_url, 2) {
+                if let Some(wk) = parse_peer_well_known(&text) {
+                    if let Some(bits) = &wk.bloom {
+                        caches.blooms.insert(cache_key.clone(), (bits.clone(), now));
+                    }
+                    if let Some(k) = &wk.origin_key {
+                        caches
+                            .origin_keys
+                            .insert(cache_key.clone(), (k.clone(), now));
+                        origin_key = Some(k.clone());
+                    }
+                    bloom_fetched = Some((wk.bloom, wk.work_count));
+                }
+            }
+        }
+        if !audit {
+            if let Some((Some(bloom), work_count)) = &bloom_fetched {
+                // Density sanity: bits set but the peer reports an
+                // empty corpus — the filter is lying; ignore it for
+                // routing (CONSERVATIVE: query, never hide).
+                let density_suspect = *work_count == 0 && bloom.iter().any(|b| *b != 0);
+                if !density_suspect && !search_bloom_might_contain_free(bloom, query) {
+                    continue;
+                }
+                if density_suspect {
+                    tracing::warn!(
+                        peer = %server_name,
+                        "search bloom density anomaly (bits set, empty corpus reported) — filter ignored for routing"
+                    );
+                }
+            }
+        }
+
         let url = format!(
-            "http://{}:{}/api/public/works?q={}",
+            "http://{}:{}/api/public/works?q={}&signed=1",
             address,
-            port.unwrap_or(8080),
+            port,
             urlencode(query)
         );
         match http_get_json(&url, PEER_TIMEOUT_SECS) {
             Ok(body) => {
-                let mut added = 0usize;
-                if let Ok(data) = serde_json::from_str::<serde_json::Value>(&body) {
-                    if let Some(works) = data["works"].as_array() {
-                        for work in works {
-                            if added >= MAX_RESULTS_PER_PEER {
-                                break;
-                            }
-                            let title: String = work["title"]
-                                .as_str()
-                                .unwrap_or("")
-                                .chars()
-                                .take(MAX_TITLE_CHARS)
-                                .collect();
-                            let wid = work["work_id"]
-                                .as_str()
-                                .and_then(|h| {
-                                    u64::from_str_radix(h.trim_start_matches("0x"), 16).ok()
-                                })
-                                .or_else(|| work["work_id"].as_u64());
-                            let Some(wid) = wid else { continue };
+                let data = match serde_json::from_str::<serde_json::Value>(&body) {
+                    Ok(d) => d,
+                    Err(_) => {
+                        results.push(serde_json::json!({
+                            "server_name": server_name, "server_id": server_id,
+                            "unreachable": true, "reason": "non-JSON response",
+                        }));
+                        continue;
+                    }
+                };
+                // Signed-response verification (FR-91a).
+                let mut verified = false;
+                if let Some(sig_block) = data.get("signed") {
+                    match verify_search_signature(
+                        sig_block,
+                        &data["works"],
+                        query,
+                        origin_key.as_deref(),
+                    ) {
+                        Ok(()) => verified = true,
+                        Err(e) => {
+                            tracing::warn!(
+                                target: "xudanu::security",
+                                peer = %server_name,
+                                event = "SECURITY:search_signature_rejected",
+                                "peer search response rejected: {}",
+                                e
+                            );
                             results.push(serde_json::json!({
-                                "work_id": wid, "title": title,
-                                "revision": work["revision"].as_u64().unwrap_or(0),
-                                "char_count": work["char_count"].as_u64().unwrap_or(0),
                                 "server_name": server_name, "server_id": server_id,
-                                "local": false,
+                                "unreachable": true,
+                                "reason": format!("signature verification failed: {}", e),
                             }));
-                            added += 1;
+                            continue;
                         }
+                    }
+                }
+                let mut added = 0usize;
+                if let Some(works) = data["works"].as_array() {
+                    for work in works {
+                        if added >= MAX_RESULTS_PER_PEER {
+                            break;
+                        }
+                        let title: String = work["title"]
+                            .as_str()
+                            .unwrap_or("")
+                            .chars()
+                            .take(MAX_TITLE_CHARS)
+                            .collect();
+                        let wid = work["work_id"]
+                            .as_str()
+                            .and_then(|h| u64::from_str_radix(h.trim_start_matches("0x"), 16).ok())
+                            .or_else(|| work["work_id"].as_u64());
+                        let Some(wid) = wid else { continue };
+                        results.push(serde_json::json!({
+                            "work_id": wid, "title": title,
+                            "revision": work["revision"].as_u64().unwrap_or(0),
+                            "char_count": work["char_count"].as_u64().unwrap_or(0),
+                            "server_name": server_name, "server_id": server_id,
+                            "local": false,
+                            "verified": verified,
+                            "tumbler": work["tumbler"].as_str().unwrap_or(""),
+                        }));
+                        added += 1;
                     }
                 }
             }
@@ -30902,6 +31235,44 @@ pub fn federated_fetch_peers(
         }
     }
     results
+}
+
+/// FR-91a free-standing bloom membership (same parameters as
+/// Server::build_search_bloom).
+pub fn search_bloom_might_contain_free(bloom: &[u8], query: &str) -> bool {
+    Server::search_bloom_might_contain(bloom, query)
+}
+
+/// FR-91a: verify a peer's signed search response (free-standing —
+/// used by the lock-free fan-out and the legacy sync path).
+pub fn verify_search_signature(
+    sig_block: &serde_json::Value,
+    works: &serde_json::Value,
+    query: &str,
+    published_origin_key: Option<&str>,
+) -> Result<(), String> {
+    Server::verify_search_signature(sig_block, works, query, published_origin_key)
+}
+
+/// FR-91a: parse a peer's .well-known into bloom/work_count/key.
+fn parse_peer_well_known(text: &str) -> Option<PeerWellKnown> {
+    let v = serde_json::from_str::<serde_json::Value>(text).ok()?;
+    Some(PeerWellKnown {
+        bloom: v
+            .get("search_bloom")
+            .and_then(|sb| sb.get("b64"))
+            .and_then(|s| s.as_str())
+            .and_then(b64_decode_std),
+        work_count: v
+            .get("stats")
+            .and_then(|s| s.get("work_count"))
+            .and_then(|w| w.as_u64())
+            .unwrap_or(0),
+        origin_key: v
+            .get("server_id")
+            .and_then(|s| s.as_str())
+            .map(|s| s.to_string()),
+    })
 }
 
 /// A resolved origin + span request, produced under the lock and

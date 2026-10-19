@@ -48,20 +48,31 @@ pub async fn dispatch_network(
                     "too many federated searches, wait a moment".into(),
                 ));
             }
-            let peers: Vec<(u64, String, Option<u16>, String)> = state
-                .server
-                .with_server_ref(|srv| srv.snapshot_trusted_peers_for_search());
-            // FETCH: no lock held.
+            let (peers, caches) = state.server.with_server_ref(|srv| {
+                (
+                    srv.snapshot_trusted_peers_for_search(),
+                    srv.snapshot_federated_search_caches(),
+                )
+            });
+            // FETCH: no lock held. Caches travel with the task; peer
+            // bloom/origin-key facts learned during the fan-out fold
+            // back at APPLY.
             let query_for_task = query.clone();
             let fetched = tokio::task::spawn_blocking(move || {
-                crate::server::server::federated_fetch_peers(peers, &query_for_task)
+                let mut caches = caches;
+                let results = crate::server::server::federated_fetch_peers(
+                    peers,
+                    &query_for_task,
+                    &mut caches,
+                );
+                (results, caches)
             })
             .await
             .map_err(|e| ServerError::Internal(format!("fan-out task failed: {}", e)))?;
-            // APPLY: merge local + fetched under the lock.
+            // APPLY: merge local + fetched under the lock, fold caches.
             let results = state
                 .server
-                .with_server(|srv| srv.federated_search_merge(&query, fetched));
+                .with_server(|srv| srv.federated_search_merge(&query, fetched.0, fetched.1));
             Ok(ResponseValue::FederatedSearchResult { results })
         }
 
