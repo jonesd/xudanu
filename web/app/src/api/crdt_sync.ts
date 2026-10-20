@@ -51,6 +51,11 @@ export interface FederatedSearchResultEntry {
   server_name: string;
   server_id: number;
   local: boolean;
+  // FR-91a trust ladder: true when the origin's response carried a
+  // valid, pin-anchored signature; false = legacy unsigned peer.
+  verified?: boolean;
+  // FR-91a: the origin's tumbler for this work (linkable).
+  tumbler?: string;
   // Present only for peers that didn't answer (honesty entries).
   unreachable?: boolean;
   reason?: string;

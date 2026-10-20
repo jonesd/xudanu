@@ -526,8 +526,35 @@ export function SearchOverlay({
                       <div className="sr-title">{r.title || `work 0x${r.work_id.toString(16)}`}</div>
                       <div className="sr-excerpt">
                         {r.char_count} chars · rev {r.revision}
+                        {r.tumbler ? (
+                          <>
+                            {" · "}
+                            <span style={{ fontFamily: "var(--mono-font, monospace)", fontSize: 10 }}>
+                              {r.tumbler.length > 44 ? `${r.tumbler.slice(0, 44)}…` : r.tumbler}
+                            </span>
+                          </>
+                        ) : null}
                       </div>
                     </div>
+                    {!r.local && (
+                      <span
+                        title={
+                          r.verified
+                            ? "Signature verified against the origin's pinned key"
+                            : "Legacy unsigned response (origin not yet on ≥1.20.0)"
+                        }
+                        style={{
+                          borderRadius: 4,
+                          padding: "1px 6px",
+                          fontSize: 10,
+                          background: r.verified ? "var(--green)22" : "var(--text-dim)22",
+                          color: r.verified ? "var(--green)" : "var(--text-dim)",
+                          marginLeft: 6,
+                        }}
+                      >
+                        {r.verified ? "✓ signed" : "unverified"}
+                      </span>
+                    )}
                     <span
                       className="sr-match"
                       style={{
