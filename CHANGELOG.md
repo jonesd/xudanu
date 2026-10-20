@@ -6,6 +6,39 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.20.0] — 2026-10-20
+
+The **verified network** release: cross-server exchanges are now authenticated end to end, the federation test bed runs a genesis-pinned BFT mesh, network search is bloom-routed and signature-verified, and the engine compiles for the browser (wasm) — the foundation of the mobile track.
+
+**⚠ Upgrade note:** backlink notifications are now **required to be signed** (Ed25519, key-bound to the origin's published `.well-known`). Mixed-version pairs — an old sender to a new receiver — will be rejected with 401. Upgrade linked servers together.
+
+### Cross-server trust
+- Signed backlink notifications: body signature + `.well-known` key binding; unsigned/foreign-key sends rejected (401/403)
+- Trust ladder for search + backlinks: add-time directory **pin** anchors everything; fetched keys must match the pin or hash to the recorded identity; signed `.well-known` documents (tamper-evident routing filters); stripped-signature detection (signing peers returning unsigned results are rejected, never silently downgraded)
+- Directory pins are the routing endpoints again (public_address is identity, not transport — fixes `host:port:port` URLs); `split_host_port` tolerates repeated ports + IPv6
+- PBFT equivocation detection: conflicting signed votes recorded, voter suspended (CRDT-safe), security event journaled
+- Bounded backlink storage (200/work, 10k total) — forged-notify floods can no longer grow the corpus
+- Genesis-pinned docker test bed: 4-node BFT mesh forms (pool=4, quorum=3), survives restarts; single-node.yml for content-plane joins
+
+### Network search (FR-91a, delta on FR-41 S1)
+- Bloom-routed fan-out: peers publish 4096-bit filters; no-match peers are not queried (1h cache); density-anomaly + audit-sampling defenses against lying filters
+- Signed, freshness-bound search responses (replay/cross-query/forgery rejected); legacy peers degrade to annotated `verified:false`
+- Tumblers in remote results (linkable from search)
+
+### Runtime honesty + liveness
+- `/health` federation section: per-peer connection state, governance liveness (view/sequence/sealed), notify counters
+- Rate-limited connections die with a parseable `rate_limited` error frame (was: silent empty-frame kill)
+- Blackholed receivers surface as reachability errors, not "HTTP 0"; notify outcomes survive sender restart (restore round-trips)
+- Fix: WS request ids wrap at u16 (long sessions no longer self-destruct into protocol violations); security-log checkpointing tolerates legacy seedless deployments
+
+### Wasm engine (FR-88/148a)
+- `engine` feature seam: chunk store, storage traits, and the enfilade core compile for wasm32; browser tests prove bit-identical blake3/framing with native
+- npm `build:engine` (wasm-pack); `engine-wasm-loader` (browser + Node)
+
+### Tooling & docs
+- `deploy.sh` rewritten for the real systemd topology (host binary swap, live-data backup, rollback hint)
+- New docs: join-the-network (public operator guide, live at dgjones.info), FR-91a/148/149/150/151 cards, always-on mobile exploration (crum wake protocol)
+
 ## [v1.19.0] — 2026-10-15
 
 The **attribution** release: per-passage authorship identification, detection, and audit — the infrastructure for accountable machine reasoning.
