@@ -2385,7 +2385,14 @@ export class CrdtSyncClient {
   }
 
   private nextId(): number {
-    return ++this.requestId;
+    // WS request ids are u16 on the wire; id 0 is reserved (error
+    // frames return with id:0). Long-lived sessions ran the counter
+    // past 65535 → every subsequent request rejected as a protocol
+    // violation (observed live: ~5k violations after id 71640).
+    // Wrap 1..=65535; collision risk needs 65k requests in flight
+    // within the 30s timeout — unreachable.
+    this.requestId = (this.requestId % 65535) + 1;
+    return this.requestId;
   }
 
   private static readonly REQUEST_TIMEOUT_MS = 30000;

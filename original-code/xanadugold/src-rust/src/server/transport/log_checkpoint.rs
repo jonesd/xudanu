@@ -278,9 +278,16 @@ pub fn checkpoint_security_log(
     let (mut entries, mut prev) = match existing.last() {
         Some(cp) => (cp.entries, cp.head_hash.clone()),
         None => {
+            // No checkpoint yet. A missing seed is tolerable in two
+            // cases (fresh server: nothing logged yet; legacy server:
+            // logs predate the seed mechanism) — the chain simply
+            // anchors at empty and the first entry's own hash begins
+            // the verifiable span. Hard-failing here broke log
+            // checkpoints on upgraded deployments whose log files
+            // predate seeds (observed live on xudanu.com).
             let seed = std::fs::read_to_string(data_dir.join("security.log.seed"))
                 .map(|s| s.trim().to_string())
-                .map_err(|e| format!("read seed: {}", e))?;
+                .unwrap_or_default();
             (0, seed)
         }
     };
@@ -609,9 +616,16 @@ pub fn verify_security_log(data_dir: &Path, history: Option<&KeyHistory>) -> Ver
                 .push("no chain yet (fresh server, nothing logged)".into());
             return report;
         }
-        Err(e) => {
-            report.lines.push(format!("cannot read seed: {}", e));
-            return report;
+        // Legacy deployment: log files predate the seed mechanism.
+        // Anchor at empty and verify the chain's INTERNAL linkage
+        // (each entry carries its predecessor's hash) — note the
+        // weaker anchor rather than failing the whole verification.
+        Err(_) => {
+            report.lines.push(
+                "warning: no seed (legacy logs) — verifying internal linkage from empty anchor"
+                    .into(),
+            );
+            String::new()
         }
     };
 
@@ -789,6 +803,33 @@ mod tests {
             .open(dir.join(name))
             .unwrap();
         f.write_all(out.as_bytes()).unwrap();
+    }
+
+    #[test]
+    fn checkpoint_tolerates_legacy_logs_without_seed() {
+        // Upgraded deployment: log files exist from before the seed
+        // mechanism, security.log.seed absent. Checkpointing must
+        // anchor at empty and succeed (observed failing live on
+        // xudanu.com: "checkpoint failed: read seed: No such file").
+        let dir = test_dir("legacy-noseed");
+        let mut prev = String::new();
+        write_log(
+            &dir,
+            "security.log.2026-10-18",
+            &[r#"{"ts":"t1","event":"SessionOpened"}"#],
+            &mut prev,
+        );
+        let kp = ServerKeyPair::generate("test");
+        let outcomes =
+            checkpoint_security_log(&dir, &kp, true).expect("checkpoint must tolerate missing seed");
+        assert!(!outcomes.is_empty(), "at least one file covered");
+        // And verification degrades to a warning, not a failure.
+        let verify = verify_security_log(&dir, None);
+        assert!(
+            verify.lines.iter().any(|l| l.contains("no seed")),
+            "legacy warning expected: {:?}",
+            verify.lines
+        );
     }
 
     #[test]
