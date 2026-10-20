@@ -13,6 +13,54 @@ pub fn init() {
     console_error_panic_hook::set_once();
 }
 
+// ── FR-148a engine surface: chunk framing + content hashing ──
+// The read-only viewer's core verbs: fetch chunks over HTTP (JS),
+// frame/verify them here. Bit-identical with native by construction
+// (same pure fns); the browser test asserts the same known vectors
+// as the native suite.
+
+#[wasm_bindgen]
+pub fn chunk_tag(format: &str, payload: &[u8]) -> Result<Vec<u8>, JsValue> {
+    let fmt = match format {
+        "json" => crate::persist::chunk_store::CHUNK_FORMAT_JSON,
+        "postcard" => crate::persist::chunk_store::CHUNK_FORMAT_POSTCARD,
+        other => {
+            return Err(JsValue::from_str(&format!(
+                "unknown chunk format {:?} (expected \"json\" or \"postcard\")",
+                other
+            )))
+        }
+    };
+    Ok(crate::persist::chunk_store::tag_chunk_data(fmt, payload))
+}
+
+#[wasm_bindgen]
+pub fn chunk_payload(data: &[u8]) -> Result<Vec<u8>, JsValue> {
+    crate::persist::chunk_store::untag_chunk_data(data)
+        .map(|(_, payload)| payload.to_vec())
+        .map_err(|e| JsValue::from_str(&format!("malformed chunk: {}", e)))
+}
+
+#[wasm_bindgen]
+pub fn chunk_format_is_json(data: &[u8]) -> bool {
+    matches!(
+        crate::persist::chunk_store::untag_chunk_data(data),
+        Ok((crate::persist::chunk_store::CHUNK_FORMAT_JSON, _))
+    )
+}
+
+#[wasm_bindgen]
+pub fn blake3_hex(data: &[u8]) -> String {
+    let hash = blake3::hash(data);
+    hash.to_hex().to_string()
+}
+
+#[wasm_bindgen]
+pub fn verify_blake3(data: &[u8], expected_hex: &str) -> bool {
+    let hash = blake3::hash(data);
+    hash.to_hex().to_string() == expected_hex.to_lowercase()
+}
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
@@ -279,6 +327,27 @@ impl WasmAssertionStore {
 #[cfg(all(test, feature = "serde_json"))]
 mod wasm_tests {
     use super::*;
+
+    #[test]
+    fn wasm_engine_known_vectors() {
+        // blake3("") — canonical test vector; the browser suite
+        // asserts the SAME value (bit-identical cross-target).
+        assert_eq!(
+            blake3_hex(b""),
+            "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        );
+        assert!(verify_blake3(
+            b"",
+            "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        ));
+        assert!(!verify_blake3(b"tampered", "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"));
+        // chunk framing round-trip
+        let tagged = chunk_tag("postcard", b"\x01\x02\x03").unwrap();
+        assert!(chunk_format_is_json(&tagged) == false);
+        assert_eq!(chunk_payload(&tagged).unwrap(), vec![1, 2, 3]);
+        assert!(chunk_payload(b"").is_err());
+        assert!(chunk_tag("yaml", b"").is_err());
+    }
 
     fn make_store_with_doc(
         _n_children: usize,

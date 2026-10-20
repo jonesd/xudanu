@@ -82,3 +82,6 @@ docs/videos/reel/page@*
 # Tarball guard — never commit archive blobs (email-archive license exception risk)
 original-code/xanadugold/*.tar
 original-code/xanadugold/*.tar.gz
+
+# FR-148a: generated wasm engine artifact (npm run build:engine)
+web/app/src/engine-wasm/
