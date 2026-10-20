@@ -3,6 +3,10 @@
 - **ID:** FR-148
 - **Status:** Proposed (2026-10-19), queued behind v1.20.0 and the
   FR-91a follow-ups. Grew out of `enfilade-mobile-notes.md`.
+  **Sequencing agreed (2026-10-20):** FR-150 spike device verdict →
+  FR-88 extraction + 148a wasm build → 148b viewer → FR-149 shell;
+  offline editing slots in after the spike verdict (queue is
+  surface-agnostic, transfers fully to the engine app).
 - **Depends on:** FR-88 (engine extraction — the enfilade must be a
   crate before it can be a mobile crate), FR-76 (freeze/eviction —
   shipped; the mobile memory story is built on it), FR-91a (bloom
