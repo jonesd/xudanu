@@ -2,8 +2,8 @@ use std::io::{self, Read};
 use std::path::Path;
 
 use super::engine::{StorageEngine, StorageResult};
+use super::flock::{FlockFlags, FlockId, FlockInfo, FlockLocation};
 use super::packer::SnarfStorage;
-use super::persistent::{FlockFlags, FlockId, FlockInfo, FlockLocation};
 use super::snarf::SnarfStore;
 use super::traits::{DeserializerFn, Persistent, PersistentRegistry};
 use super::urdi::{

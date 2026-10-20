@@ -1,6 +1,6 @@
 use std::fmt;
 
-use super::persistent::{FlockId, FlockInfo, FlockLocation};
+use super::flock::{FlockId, FlockInfo, FlockLocation};
 use super::traits::{Persistent, PersistentRegistry};
 
 pub type StorageResult<T> = Result<T, StorageError>;

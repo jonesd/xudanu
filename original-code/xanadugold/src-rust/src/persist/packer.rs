@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use super::engine::{StorageEngine, StorageError, StorageResult};
-use super::persistent::{FlockId, FlockInfo, FlockLocation};
+use super::flock::{FlockId, FlockInfo, FlockLocation};
 use super::snarf::{SnarfStore, DEFAULT_SNARF_SIZE};
 use super::traits::{decode_flock, encode_flock, Persistent, PersistentRegistry, TypeRegistry};
 
@@ -185,14 +185,13 @@ impl SnarfStorage {
         &mut self,
         flock_id: FlockId,
         location: Option<FlockLocation>,
-        flags: super::persistent::FlockFlags,
+        flags: super::flock::FlockFlags,
         old_size: u32,
     ) {
         let mut info = FlockInfo::new(flock_id);
         info.location = location.clone();
-        info.flags = flags
-            & !super::persistent::FlockFlags::CONTENTS_DIRTY
-            & !super::persistent::FlockFlags::IS_NEW;
+        info.flags =
+            flags & !super::flock::FlockFlags::CONTENTS_DIRTY & !super::flock::FlockFlags::IS_NEW;
         info.old_size = old_size;
         self.flock_infos.insert(flock_id, info);
         if let Some(loc) = location {

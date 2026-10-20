@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::fmt;
 
 use super::engine::StorageError;
-use super::persistent::{FlockId, FlockInfo, FlockLocation};
+use super::flock::{FlockId, FlockInfo, FlockLocation};
 
 pub trait Persistent: fmt::Debug + Send + Sync + 'static {
     fn flock_id(&self) -> FlockId;

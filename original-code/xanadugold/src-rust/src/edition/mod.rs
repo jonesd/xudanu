@@ -38,7 +38,7 @@ pub mod orgl;
 #[cfg(feature = "serde")]
 // Depends on crate::persist (server feature): edition snapshots are
 // serialized only by the server, never by the wasm/default builds.
-#[cfg(feature = "server")]
+#[cfg(feature = "engine")]
 pub mod persistent;
 pub mod pool;
 pub mod props;

@@ -1,6 +1,6 @@
 use std::io::{self, Cursor, Read};
 
-use super::persistent::FlockLocation;
+use super::flock::FlockLocation;
 use super::urdi::UrdiFile;
 
 const FLAG_BIT: u32 = 1 << 25;

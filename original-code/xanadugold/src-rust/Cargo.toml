@@ -54,8 +54,9 @@ path = "src/bin/xudanu-verify.rs"
 
 [features]
 default = []
-wasm = ["wasm-bindgen", "console_error_panic_hook", "serde", "serde_json", "js-sys"]
-server = ["tokio", "axum", "postcard", "tracing", "tracing-subscriber", "tracing-appender", "serde", "serde_json", "futures-util", "tokio-tungstenite", "chacha20poly1305", "x25519-dalek", "ed25519-dalek", "sha2", "hmac", "hkdf", "argon2", "subtle", "rand", "zeroize", "mime_guess", "axum-server", "rustls-pemfile", "rustls", "ring", "base64", "reqwest", "oauth2", "webpki-roots", "hex", "image", "oxipng", "fs4", "epub-parser"]
+engine = ["serde", "serde_json", "postcard", "tracing", "sha2", "hex"]
+wasm = ["wasm-bindgen", "console_error_panic_hook", "serde", "serde_json", "js-sys", "engine"]
+server = ["engine", "tokio", "axum", "postcard", "tracing", "tracing-subscriber", "tracing-appender", "serde", "serde_json", "futures-util", "tokio-tungstenite", "chacha20poly1305", "x25519-dalek", "ed25519-dalek", "sha2", "hmac", "hkdf", "argon2", "subtle", "rand", "zeroize", "mime_guess", "axum-server", "rustls-pemfile", "rustls", "ring", "base64", "reqwest", "oauth2", "webpki-roots", "hex", "image", "oxipng", "fs4", "epub-parser"]
 # EPUB import pulls epub-2.x (GPL-3.0) into the binary. Off by default:
 # enabling it opts the OPERATOR's build into GPL terms for that
 # feature (xudanu core stays Apache-2.0 / GPL-free).

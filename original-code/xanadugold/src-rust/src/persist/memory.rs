@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use super::engine::{StorageEngine, StorageError, StorageResult};
-use super::persistent::{FlockId, FlockInfo};
+use super::flock::{FlockId, FlockInfo};
 use super::traits::{Persistent, PersistentRegistry};
 
 #[derive(Debug)]
@@ -111,7 +111,7 @@ impl StorageEngine for InMemoryStorage {
 
     fn fetch_by_location(
         &self,
-        _location: &super::persistent::FlockLocation,
+        _location: &super::flock::FlockLocation,
     ) -> StorageResult<Option<Box<dyn Persistent>>> {
         Ok(None)
     }

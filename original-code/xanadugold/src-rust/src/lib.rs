@@ -2,7 +2,7 @@ pub mod edition;
 pub mod ent;
 pub mod space;
 
-#[cfg(feature = "server")]
+#[cfg(feature = "engine")]
 pub mod persist;
 
 #[cfg(feature = "server")]

@@ -10,7 +10,7 @@ use crate::edition::range_element::{Carrier, RangeElement};
 use crate::edition::work::Work;
 use crate::edition::xn_region::XnRegion;
 use crate::persist::engine::StorageError;
-use crate::persist::persistent::{FlockId, FlockInfo};
+use crate::persist::flock::{FlockId, FlockInfo};
 use crate::persist::traits::Persistent;
 
 #[derive(Debug, Clone)]
