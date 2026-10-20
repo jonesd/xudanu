@@ -263,7 +263,7 @@ export function LexicalSpikeEditor(props: LexicalSpikeEditorProps) {
   return (
     <div
       className="lexical-spike-editor"
-      style={{ minHeight: "60vh", fontSize: 15, lineHeight: 1.7 }}
+      style={{ minHeight: "60vh", fontSize: 16, lineHeight: 1.7 }}
       data-testid="lexical-spike"
     >
       <LexicalComposer initialConfig={initialConfig}>

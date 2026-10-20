@@ -69,7 +69,13 @@ import { LexicalSpikeEditor } from "../LexicalSpikeEditor";
 const LEXICAL_SPIKE =
   typeof window !== "undefined" &&
   (new URLSearchParams(window.location.search).get("editor") === "lexical" ||
-    window.localStorage.getItem("xudanu:editor") === "lexical");
+    (() => {
+      try {
+        return window.localStorage.getItem("xudanu:editor") === "lexical";
+      } catch {
+        return false; // Safari private mode / blocked storage (v1.8.0 lesson)
+      }
+    })());
 import { EasyMDEEditor } from "../EasyMDEEditor";
 import { TransclusionBadge } from "../TransclusionBadge";
 import { SuggestionCardList } from "../SuggestionCardList";
