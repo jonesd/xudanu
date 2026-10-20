@@ -820,8 +820,8 @@ mod tests {
             &mut prev,
         );
         let kp = ServerKeyPair::generate("test");
-        let outcomes =
-            checkpoint_security_log(&dir, &kp, true).expect("checkpoint must tolerate missing seed");
+        let outcomes = checkpoint_security_log(&dir, &kp, true)
+            .expect("checkpoint must tolerate missing seed");
         assert!(!outcomes.is_empty(), "at least one file covered");
         // And verification degrades to a warning, not a failure.
         let verify = verify_security_log(&dir, None);
