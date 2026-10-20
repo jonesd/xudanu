@@ -106,7 +106,7 @@ export async function runEngineBenches(): Promise<{
     0,
     2000,
     () => {
-      for (let i = 0; i < 50; i++) e.WasmAssertionStore === undefined ? undefined : doc();
+      for (let i = 0; i < 50; i++) doc();
     },
   );
 
