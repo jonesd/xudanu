@@ -340,7 +340,10 @@ mod wasm_tests {
             b"",
             "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
         ));
-        assert!(!verify_blake3(b"tampered", "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"));
+        assert!(!verify_blake3(
+            b"tampered",
+            "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        ));
         // chunk framing round-trip
         let tagged = chunk_tag("postcard", b"\x01\x02\x03").unwrap();
         assert!(chunk_format_is_json(&tagged) == false);
