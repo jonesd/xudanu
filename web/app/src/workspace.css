@@ -1878,12 +1878,24 @@
     padding: 6px 8px;
     font-size: 12px;
   }
-  /* Selection toolbar: wrap instead of overflow. */
+  /* Selection + format toolbars: ONE horizontally-scrollable row
+     each on phones (wrapping stacked 3+ rows and ate the screen).
+     Buttons keep touch targets; the row scrolls with momentum. */
   .ws-selection-toolbar,
   .ws-format-bar {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
     max-width: calc(100vw - 16px);
-    row-gap: 4px;
+    row-gap: 0;
+  }
+  .ws-selection-toolbar::-webkit-scrollbar,
+  .ws-format-bar::-webkit-scrollbar {
+    display: none;
+  }
+  .ws-sel-btn {
+    flex: 0 0 auto;
   }
   .ws-sel-btn {
     padding: 4px 8px;
