@@ -1932,9 +1932,28 @@
   }
   .ws-doc-header {
     padding: 8px 16px;
+    /* Scroll-responsive: collapses away while reading down */
+    max-height: 320px;
+    transition: max-height 0.18s ease-out, padding 0.18s ease-out, opacity 0.18s ease-out;
+    overflow: hidden;
+  }
+  .ws-doc-header.ws-doc-header-collapsed {
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    opacity: 0;
+    border-bottom-color: transparent;
   }
   .ws-doc-scroll {
-    padding: 16px;
+    padding: 10px 12px 24px;
+  }
+  /* Reading mode: the meta/stats row goes chromeless on phones —
+     the title line is the only permanent chrome. */
+  .ws-doc-surface.reading-mode .ws-doc-meta {
+    display: none;
+  }
+  .ws-doc-surface.reading-mode .ws-doc-scroll {
+    line-height: 1.6;
   }
   .ws-doc-pid {
     display: none;

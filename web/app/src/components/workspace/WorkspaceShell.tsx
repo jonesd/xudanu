@@ -257,6 +257,21 @@ export function WorkspaceShell() {
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [showUndoToast, setShowUndoToast] = useState(false);
   const [editorMode, setEditorMode] = useState<"authoring" | "reading">("authoring");
+
+  // Phone space reclaim: collapse the doc header while scrolling DOWN
+  // into content, reveal on scroll UP or near the top. Phone widths
+  // only (matchMedia keeps desktop unaffected).
+  const [docHeaderCollapsed, setDocHeaderCollapsed] = useState(false);
+  const docScrollTopRef = useRef(0);
+  const onDocScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (typeof window !== "undefined" && !window.matchMedia("(max-width: 767px)").matches) return;
+    const y = e.currentTarget.scrollTop;
+    const last = docScrollTopRef.current;
+    docScrollTopRef.current = y;
+    if (y < 24) setDocHeaderCollapsed(false);
+    else if (y - last > 8) setDocHeaderCollapsed(true);
+    else if (last - y > 8) setDocHeaderCollapsed(false);
+  }, []);
   // FR-74 Phase A: bumps after every structural operation — forces
   // the editor to rebuild its DOM from the model text
   const [structuralVersion, setStructuralVersion] = useState(0);
@@ -5283,7 +5298,7 @@ export function WorkspaceShell() {
             </div>
                 ) : docMode === "layout" && imageEntries.length > 0 ? null : (
                   <>
-              <header className="ws-doc-header">
+              <header className={`ws-doc-header${docHeaderCollapsed ? " ws-doc-header-collapsed" : ""}`}>
                 {!authenticated && !identity && (
                   <div className="ws-auth-warning" onClick={() => setShowIdentity(true)}>
                     ⚠ You're browsing anonymously. Sign in to save links, edits, and revisions.
@@ -5725,7 +5740,7 @@ export function WorkspaceShell() {
                 </div>
               </header>
 
-              <div className="ws-doc-scroll">
+              <div className="ws-doc-scroll" onScroll={onDocScroll}>
                  {webShadowInfo && (
                    <div
                      style={{
