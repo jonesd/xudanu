@@ -262,15 +262,25 @@ export function WorkspaceShell() {
   // into content, reveal on scroll UP or near the top. Phone widths
   // only (matchMedia keeps desktop unaffected).
   const [docHeaderCollapsed, setDocHeaderCollapsed] = useState(false);
-  const docScrollTopRef = useRef(0);
-  const onDocScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    if (typeof window !== "undefined" && !window.matchMedia("(max-width: 767px)").matches) return;
-    const y = e.currentTarget.scrollTop;
-    const last = docScrollTopRef.current;
-    docScrollTopRef.current = y;
-    if (y < 24) setDocHeaderCollapsed(false);
-    else if (y - last > 8) setDocHeaderCollapsed(true);
-    else if (last - y > 8) setDocHeaderCollapsed(false);
+  // Capture-phase listener: scroll events don't bubble, but they DO
+  // pass through ancestors in the capture phase — so whichever
+  // element actually scrolls on the phone (the doc column or an
+  // ancestor tab container), this sees it.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let last = 0;
+    const onScroll = (e: Event) => {
+      if (!window.matchMedia("(max-width: 767px)").matches) return;
+      const t = e.target as HTMLElement | Document;
+      if (!(t instanceof HTMLElement)) return;
+      const y = t.scrollTop;
+      if (y < 24) setDocHeaderCollapsed(false);
+      else if (y - last > 8) setDocHeaderCollapsed(true);
+      else if (last - y > 8) setDocHeaderCollapsed(false);
+      last = y;
+    };
+    window.addEventListener("scroll", onScroll, true);
+    return () => window.removeEventListener("scroll", onScroll, true);
   }, []);
   // FR-74 Phase A: bumps after every structural operation — forces
   // the editor to rebuild its DOM from the model text
@@ -5740,7 +5750,7 @@ export function WorkspaceShell() {
                 </div>
               </header>
 
-              <div className="ws-doc-scroll" onScroll={onDocScroll}>
+              <div className="ws-doc-scroll">
                  {webShadowInfo && (
                    <div
                      style={{
