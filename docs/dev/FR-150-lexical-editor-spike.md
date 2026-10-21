@@ -13,6 +13,20 @@
   Fallback: ProseMirror/TipTap if Lexical's structure-editing ceiling
   shows during the spike.
 
+## Device findings (2026-10-20, iPhone iOS 18.7 / FxiOS WebKit)
+
+1. **Old surface: text vanishes after link-create** — after
+   attempting a link to another document, the editor rendered only
+   link-marker underlines; all glyphs invisible until refresh.
+   Data intact server-side (render-state corruption in the
+   post-link structural rebuild on iOS WebKit). This is criterion-1
+   class evidence: the contentEditable surface fails on device
+   without IME even being involved. (Lexical surface unaffected by
+   construction — it has no link-marker rebuild path.)
+2. Mobile chrome feedback (fixed on branch): selection+format bars
+   now single scrollable rows; LAN origin + 16px-font + storage
+   guards ported from v1.8.0 lessons.
+
 ## Scope
 
 IN: plain-text editing surface behind a feature flag
