@@ -328,6 +328,12 @@ export function LexicalSpikeEditor(props: LexicalSpikeEditorProps) {
         // gesture boundary on WebKit; focus explicitly here.
         editorRef.current?.focus();
       }}
+      onClick={() => {
+        // iOS keyboard opens for focus within CLICK specifically;
+        // pointerdown alone leaves focus set but keyboard closed.
+        spikeDebugSink?.("click@editor");
+        editorRef.current?.focus();
+      }}
       style={{ minHeight: "60vh", fontSize: 16, lineHeight: 1.7 }}
       data-testid="lexical-spike"
     >
