@@ -74,7 +74,13 @@ const LEXICAL_SPIKE = (() => {
     // than the URL, the localStorage choice does.
     const param = new URLSearchParams(window.location.search).get("editor");
     if (param === "lexical" || param === "classic") {
-      window.localStorage.setItem("xudanu:editor", param);
+      try {
+        window.localStorage.setItem("xudanu:editor", param);
+      } catch {}
+      // The explicit URL param ALWAYS wins — even where storage is
+      // blocked (the write above throws and the read below would
+      // too, which previously fell back to the OLD editor).
+      return param === "lexical";
     }
     return window.localStorage.getItem("xudanu:editor") === "lexical";
   } catch {
