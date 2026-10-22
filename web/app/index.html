@@ -23,6 +23,21 @@
     />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Xudanu" />
+  <script id="boot-error-trap">
+      window.addEventListener("error", function (e) {
+        var d = document.createElement("pre");
+        d.id = "boot-error";
+        d.style.cssText = "position:fixed;bottom:0;left:0;right:0;z-index:99999;background:#400;color:#f88;font:11px monospace;padding:6px 8px;white-space:pre-wrap;margin:0";
+        d.textContent = "BOOT ERROR: " + (e.message || e.error) + " @ " + (e.filename || "?") + ":" + e.lineno;
+        document.body.appendChild(d);
+      });
+      window.addEventListener("unhandledrejection", function (e) {
+        var d = document.createElement("pre");
+        d.style.cssText = "position:fixed;bottom:0;left:0;right:0;z-index:99999;background:#420;color:#f88;font:11px monospace;padding:6px 8px;white-space:pre-wrap;margin:0";
+        d.textContent = "REJECT: " + (e.reason && e.reason.message ? e.reason.message : String(e.reason));
+        document.body.appendChild(d);
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -934,8 +934,16 @@ export function WorkspaceShell() {
     if (works.length === 0) return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("work") || params.get("tumbler")) return;
-    if (localStorage.getItem("xudanu_intro_done") === "1") return;
-    localStorage.setItem("xudanu_intro_done", "1");
+    // Guarded (v1.8.0 lesson): blocked-storage Safari contexts throw
+    // SecurityError on access — the intro must not crash the app.
+    let introDone = false;
+    try {
+      introDone = localStorage.getItem("xudanu_intro_done") === "1";
+      localStorage.setItem("xudanu_intro_done", "1");
+    } catch {
+      introDone = false;
+    }
+    if (introDone) return;
     if (galleryShowcase) return; // welcome + showcase is the landing
     if (courseEntryId === null) return; // flag only counts once opened
     selectWork(courseEntryId);
