@@ -13,6 +13,18 @@
   Fallback: ProseMirror/TipTap if Lexical's structure-editing ceiling
   shows during the spike.
 
+## VERDICT (2026-10-22, automation-verified on-device)
+
+**Lexical spike PASSES where the incumbent failed catastrophically.**
+Typed on iPhone via safaridriver (real device Safari): "Hello there"
+→ server stored "Hello there" → survives reload. Old editor under
+identical conditions stored MIRRORED text (finding 0). The focus
+flakiness that blocked manual testing resolved into four separate
+environment bugs (editability deadlock; blocked-storage boot crash;
+sticky-flag fallback; stale LAN origin) — all fixed on this branch.
+Remaining before merge: one HUMAN IME pass (autocorrect/dictation by
+finger) — automation cannot exercise the real keyboard pipeline.
+
 ## Device findings (2026-10-20/21, iPhone iOS 18.7, WebKit)
 
 0. **Old surface: typing writes MIRRORED text to the server** —
