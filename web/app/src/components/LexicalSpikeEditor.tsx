@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { PlainTextPlugin } from "@lexical/react/LexicalPlainTextPlugin";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
@@ -247,6 +247,47 @@ function EditableGate({
   return null;
 }
 
+/** Debug probe (FR-150 device triage): on-screen truth about the
+ * spike's editable/focus state + whether taps reach the editor. */
+let spikeDebugSink: ((msg: string) => void) | null = null;
+function DebugProbe() {
+  const [editor] = useLexicalComposerContext();
+  const [msg, setMsg] = useState("e=? f=?");
+  useEffect(() => {
+    spikeDebugSink = (m) => setMsg(m);
+    const push = () =>
+      setMsg(
+        `e=${editor.isEditable() ? 1 : 0} f=${document.activeElement === editor.getRootElement() ? 1 : 0}`,
+      );
+    push();
+    const t = window.setInterval(push, 500);
+    return () => {
+      window.clearInterval(t);
+      spikeDebugSink = null;
+    };
+  }, [editor]);
+  return (
+    <div
+      data-testid="spike-debug"
+      style={{
+        position: "fixed",
+        bottom: "calc(60px + env(safe-area-inset-bottom, 0px))",
+        left: 8,
+        zIndex: 9999,
+        background: "rgba(0,0,0,0.85)",
+        color: "#3fb950",
+        fontFamily: "monospace",
+        fontSize: 11,
+        padding: "4px 8px",
+        borderRadius: 4,
+        pointerEvents: "none",
+      }}
+    >
+      {msg}
+    </div>
+  );
+}
+
 export function LexicalSpikeEditor(props: LexicalSpikeEditorProps) {
   const {
     text,
@@ -280,6 +321,7 @@ export function LexicalSpikeEditor(props: LexicalSpikeEditorProps) {
   return (
     <div
       className="lexical-spike-editor"
+      onPointerDown={() => spikeDebugSink?.("tap@editor")}
       style={{ minHeight: "60vh", fontSize: 16, lineHeight: 1.7 }}
       data-testid="lexical-spike"
     >
@@ -291,6 +333,7 @@ export function LexicalSpikeEditor(props: LexicalSpikeEditorProps) {
             ErrorBoundary={() => <div role="alert">editor error</div>}
           />
           <HistoryPlugin />
+          <DebugProbe />
           <EditableGate editable={editable} editorRef={editorRef} />
           <OnChangePlugin onChange={handleChange} ignoreSelectionChange={false} />
           <RemoteSync text={text} structuralVersion={structuralVersion} attributionSpans={attributionSpans} />
