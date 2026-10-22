@@ -5881,3 +5881,15 @@ canvas._bridge {
 }
 .cb-structure-item.original .cb-structure-num { color: var(--text-muted, #8b949e); }
 .cb-structure-item.original .cb-structure-preview { color: var(--text-muted, #8b949e); }
+
+/* Phone: the welcome showcase overflows the centered flex column and
+   the content below the fold is unreachable. Scroll from the top
+   instead of center-clipping. */
+@media (max-width: 767px) {
+  .welcome-screen {
+    justify-content: flex-start;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 24px 16px 48px;
+  }
+}
