@@ -13,7 +13,15 @@
   Fallback: ProseMirror/TipTap if Lexical's structure-editing ceiling
   shows during the spike.
 
-## Device findings (2026-10-20, iPhone iOS 18.7 / FxiOS WebKit)
+## Device findings (2026-10-20/21, iPhone iOS 18.7, WebKit)
+
+0. **Old surface: typing writes MIRRORED text to the server** —
+   typing "Hello there" on iPhone stored "ereht olleH" (persists
+   across reload; attribution colors the reversed span, so storage
+   is definitively reversed). Mechanism consistent with per-char
+   inserts all landing at offset 0 — the iOS offset/coordinate path
+   is broken in the old editor's diff pipeline. Repro: new doc,
+   type two words. This is disqualifying on its own.)
 
 1. **Old surface: text vanishes after link-create** — after
    attempting a link to another document, the editor rendered only
