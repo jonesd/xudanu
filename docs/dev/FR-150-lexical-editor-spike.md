@@ -21,7 +21,16 @@
    is definitively reversed). Mechanism consistent with per-char
    inserts all landing at offset 0 — the iOS offset/coordinate path
    is broken in the old editor's diff pipeline. Repro: new doc,
-   type two words. This is disqualifying on its own.)
+   type two words. This is disqualifying on its own.
+1. **Spike on iPhone (iOS 18.7 Safari): focus/keyboard failure —
+   UNRESOLVED, needs Web Inspector.** Five iterations: editability
+   deadlock fixed (EditableGate); probe shows e=1 consistently;
+   focus oscillates f=0<->f=1 across gesture-focus patches
+   (pointerdown, click, user-select insurance) — keyboard never
+   reliably opens. Next step: USB + Web Inspector (or safaridriver,
+   the v1.8.0 approach) to watch events/DOM live. NOT a Lexical
+   verdict yet — the OLD-surface verdict is already decisive
+   (finding 0).)
 
 1. **Old surface: text vanishes after link-create** — after
    attempting a link to another document, the editor rendered only
