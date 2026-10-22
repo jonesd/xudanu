@@ -66,16 +66,21 @@ import { CollaborativeEditor } from "../CollaborativeEditor";
 // ?editor=lexical or localStorage xudanu:editor=lexical. Core contract
 // only; advanced overlays stay on the contentEditable path.
 import { LexicalSpikeEditor } from "../LexicalSpikeEditor";
-const LEXICAL_SPIKE =
-  typeof window !== "undefined" &&
-  (new URLSearchParams(window.location.search).get("editor") === "lexical" ||
-    (() => {
-      try {
-        return window.localStorage.getItem("xudanu:editor") === "lexical";
-      } catch {
-        return false; // Safari private mode / blocked storage (v1.8.0 lesson)
-      }
-    })());
+const LEXICAL_SPIKE = (() => {
+  if (typeof window === "undefined") return false;
+  try {
+    // Sticky: visiting ONCE with ?editor=lexical (or ?editor=classic
+    // to revert) sets the preference — the param survives no longer
+    // than the URL, the localStorage choice does.
+    const param = new URLSearchParams(window.location.search).get("editor");
+    if (param === "lexical" || param === "classic") {
+      window.localStorage.setItem("xudanu:editor", param);
+    }
+    return window.localStorage.getItem("xudanu:editor") === "lexical";
+  } catch {
+    return false; // Safari private mode / blocked storage (v1.8.0 lesson)
+  }
+})();
 import { EasyMDEEditor } from "../EasyMDEEditor";
 import { TransclusionBadge } from "../TransclusionBadge";
 import { SuggestionCardList } from "../SuggestionCardList";
