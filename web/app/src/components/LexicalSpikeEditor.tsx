@@ -227,6 +227,26 @@ function SelectionReporter({
   return null;
 }
 
+
+/** Editability resolves as soon as the editor instance exists.
+ * (canEdit may still be loading at outer mount — setting it only
+ * after a first change deadlocks: never editable, never a change,
+ * no keyboard on iOS.) */
+function EditableGate({
+  editable,
+  editorRef,
+}: {
+  editable: boolean;
+  editorRef: React.MutableRefObject<LexicalEditor | null>;
+}) {
+  const [editor] = useLexicalComposerContext();
+  useEffect(() => {
+    editorRef.current = editor;
+    editor.setEditable(editable);
+  }, [editor, editable]);
+  return null;
+}
+
 export function LexicalSpikeEditor(props: LexicalSpikeEditorProps) {
   const {
     text,
@@ -250,9 +270,6 @@ export function LexicalSpikeEditor(props: LexicalSpikeEditorProps) {
     [],
   );
   const editorRef = useRef<LexicalEditor | null>(null);
-  useEffect(() => {
-    if (editorRef.current) editorRef.current.setEditable(editable);
-  }, [editable]);
   const handleChange = (state: EditorState, editor: LexicalEditor) => {
     editorRef.current = editor;
     state.read(() => {
@@ -274,6 +291,7 @@ export function LexicalSpikeEditor(props: LexicalSpikeEditorProps) {
             ErrorBoundary={() => <div role="alert">editor error</div>}
           />
           <HistoryPlugin />
+          <EditableGate editable={editable} editorRef={editorRef} />
           <OnChangePlugin onChange={handleChange} ignoreSelectionChange={false} />
           <RemoteSync text={text} structuralVersion={structuralVersion} attributionSpans={attributionSpans} />
           <SelectionReporter onCursorChange={onCursorChange} onSelectionChange={onSelectionChange} />
