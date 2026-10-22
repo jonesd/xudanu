@@ -4643,7 +4643,10 @@ export function WorkspaceShell() {
     }
   }, [connectPair, paneConnectType, workBeId, works, loadLinks, showToast]);
 
-  const paneAreaVw = Math.min(panes.length * 30, 78);
+  // FR-84: panes area width — auto by count, user-draggable once
+  // adjusted (pointer events: one implementation for mouse + touch).
+  const [paneVwOverride, setPaneVwOverride] = useState<number | null>(null);
+  const paneAreaVw = paneVwOverride ?? Math.min(panes.length * 30, 78);
 
   // System font: persisted preference → CSS var for all chrome
   // surfaces (--ws-font) + the editor's content size directly.
@@ -6894,6 +6897,31 @@ export function WorkspaceShell() {
             />
           )}
 </main>
+        {panes.length > 0 && (
+          <div
+            className="ws-pane-divider"
+            title="Drag to resize the pinned panes"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              const el = e.currentTarget as HTMLElement;
+              el.setPointerCapture(e.pointerId);
+              const onMove = (ev: PointerEvent) => {
+                const vw =
+                  ((window.innerWidth - ev.clientX) / window.innerWidth) * 100;
+                setPaneVwOverride(Math.max(25, Math.min(85, vw)));
+              };
+              const onUp = (ev: PointerEvent) => {
+                el.releasePointerCapture(ev.pointerId);
+                el.removeEventListener("pointermove", onMove);
+                el.removeEventListener("pointerup", onUp);
+                el.removeEventListener("pointercancel", onUp);
+              };
+              el.addEventListener("pointermove", onMove);
+              el.addEventListener("pointerup", onUp);
+              el.addEventListener("pointercancel", onUp);
+            }}
+          />
+        )}
         {panes.length > 0 && (
           <div
             className="ws-panes"
