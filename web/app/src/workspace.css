@@ -4257,3 +4257,13 @@
 .ws-pane-divider:active::after {
   background: rgba(88, 166, 255, 0.35);
 }
+
+/* iOS WebKit: force selectability inside the spike editor — any
+   ancestor interfering with user-select makes contentEditable
+   refuse focus entirely on iPhone. */
+.lexical-spike-editor,
+.lexical-spike-editor * {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}

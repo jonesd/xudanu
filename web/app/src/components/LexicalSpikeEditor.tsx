@@ -321,7 +321,13 @@ export function LexicalSpikeEditor(props: LexicalSpikeEditorProps) {
   return (
     <div
       className="lexical-spike-editor"
-      onPointerDown={() => spikeDebugSink?.("tap@editor")}
+      onPointerDown={() => {
+        spikeDebugSink?.("tap@editor");
+        // iOS: contentEditable focus must be triggered within the
+        // user gesture — Lexical's internal click handler loses the
+        // gesture boundary on WebKit; focus explicitly here.
+        editorRef.current?.focus();
+      }}
       style={{ minHeight: "60vh", fontSize: 16, lineHeight: 1.7 }}
       data-testid="lexical-spike"
     >
