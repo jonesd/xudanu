@@ -250,6 +250,56 @@ function EditableGate({
 /** Debug probe (FR-150 device triage): on-screen truth about the
  * spike's editable/focus state + whether taps reach the editor. */
 let spikeDebugSink: ((msg: string) => void) | null = null;
+
+/** On-page console (cable-free triage): mirrors console + focus
+ * lifecycle onto the phone screen. */
+function OnPageConsole() {
+  const [lines, setLines] = useState<string[]>(["[probe ready]"]);
+  const push = (l: string) =>
+    setLines((prev) => [...prev.slice(-7), l]);
+  useEffect(() => {
+    spikeDebugSink = push;
+    const origLog = console.log.bind(console);
+    const origErr = console.error.bind(console);
+    console.log = (...a: unknown[]) => {
+      origLog(...a);
+      push("log: " + a.map(String).join(" ").slice(0, 90));
+    };
+    console.error = (...a: unknown[]) => {
+      origErr(...a);
+      push("ERR: " + a.map(String).join(" ").slice(0, 90));
+    };
+    window.addEventListener("focusin", () => push("focusin -> " + (document.activeElement as HTMLElement)?.className?.slice(0, 30)));
+    window.addEventListener("focusout", () => push("focusout"));
+    return () => {
+      console.log = origLog;
+      console.error = origErr;
+      spikeDebugSink = null;
+    };
+  }, []);
+  return (
+    <div
+      style={{
+        position: "fixed",
+        bottom: "calc(56px + env(safe-area-inset-bottom, 0px))",
+        left: 8,
+        right: 8,
+        zIndex: 9999,
+        background: "rgba(0,0,0,0.92)",
+        color: "#3fb950",
+        fontFamily: "monospace",
+        fontSize: 10,
+        lineHeight: 1.5,
+        padding: "6px 8px",
+        borderRadius: 6,
+        pointerEvents: "none",
+        whiteSpace: "pre-wrap",
+      }}
+    >
+      {lines.join("\n")}
+    </div>
+  );
+}
 function DebugProbe() {
   const [editor] = useLexicalComposerContext();
   const [msg, setMsg] = useState("e=? f=?");
@@ -346,6 +396,7 @@ export function LexicalSpikeEditor(props: LexicalSpikeEditorProps) {
           />
           <HistoryPlugin />
           <DebugProbe />
+          <OnPageConsole />
           <EditableGate editable={editable} editorRef={editorRef} />
           <OnChangePlugin onChange={handleChange} ignoreSelectionChange={false} />
           <RemoteSync text={text} structuralVersion={structuralVersion} attributionSpans={attributionSpans} />
