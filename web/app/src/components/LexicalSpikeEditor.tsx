@@ -361,11 +361,22 @@ export function LexicalSpikeEditor(props: LexicalSpikeEditorProps) {
     [],
   );
   const editorRef = useRef<LexicalEditor | null>(null);
+  const emitTimer = useRef<number | null>(null);
   const handleChange = (state: EditorState, editor: LexicalEditor) => {
     editorRef.current = editor;
     state.read(() => {
       const out = serializeRoot();
-      if (out !== text) onTextChange?.(out);
+      if (out === text) return;
+      // Batch commits (~350ms): per-KEYSTROKE commits expose an
+      // offset bug in the shared CRDT diff pipeline (observed: each
+      // char lands at offset 0 -> mirrored text on iOS). Batching
+      // sidesteps it while typing; the pipeline fix is the real
+      // solution (see FR-150 findings).
+      if (emitTimer.current !== null) window.clearTimeout(emitTimer.current);
+      emitTimer.current = window.setTimeout(() => {
+        onTextChange?.(out);
+        emitTimer.current = null;
+      }, 350);
     });
   };
   return (
