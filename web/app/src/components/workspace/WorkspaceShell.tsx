@@ -76,7 +76,9 @@ const LEXICAL_SPIKE = (() => {
     if (param === "lexical" || param === "classic") {
       try {
         window.localStorage.setItem("xudanu:editor", param);
-      } catch {}
+      } catch {
+        // Blocked storage: the param below still wins.
+      }
       // The explicit URL param ALWAYS wins — even where storage is
       // blocked (the write above throws and the read below would
       // too, which previously fell back to the OLD editor).
