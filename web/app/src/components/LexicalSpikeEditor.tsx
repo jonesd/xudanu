@@ -198,6 +198,11 @@ function RemoteSync({
     applied.current = text;
     editor.update(
       () => {
+        // Echo guard: if the editor already holds this text (the
+        // common case — local typing echoed back by the server),
+        // skip the rebuild entirely. No DOM churn, no caret restore,
+        // no jump between paragraphs.
+        if (serializeRoot() === text) return;
         const sel = selectionOffsets();
         buildContent(text, attributionSpans);
         if (sel[0] !== null) {
