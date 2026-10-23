@@ -188,21 +188,48 @@ function RemoteSync({
   const [editor] = useLexicalComposerContext();
   const applied = useRef<string | null>(null);
   useEffect(() => {
+    // Rebuild ONLY when the text prop itself changes — never for
+    // attributionSpan identity churn (a fresh array arrives every
+    // poll; rebuilding during the typing-debounce window applied
+    // STALE text and reset the caret to index 0 — the
+    // "cursor jumps to start in the pause" bug, and the same class
+    // as the old editor's structural rebuild).
+    if (text === applied.current) return;
+    applied.current = text;
     editor.update(
       () => {
-        const cur = serializeRoot();
-        if (cur === text && applied.current === text) return;
-        applied.current = text;
         const sel = selectionOffsets();
         buildContent(text, attributionSpans);
-        return;
-        void sel;
+        if (sel[0] !== null) {
+          // Restore caret/selection to its pre-rebuild offset.
+          const root = $getRoot();
+          let pos = sel[0];
+          for (const child of root.getChildren() as unknown as (
+            | { getTextContent(): string; getChildren(): unknown[]; select?: (a: number, b: number) => void }
+          )[]) {
+            const len = child.getTextContent().replace(/\n$/, "").length;
+            if (pos <= len) {
+              const kids = child.getChildren();
+              const last = kids[kids.length - 1];
+              if (
+                last &&
+                typeof (last as { select?: unknown }).select === "function"
+              ) {
+                (last as { select: (a: number, b: number) => void }).select(pos, pos);
+              } else if (typeof child.select === "function") {
+                child.select(0, 0);
+              }
+              break;
+            }
+            pos -= len + 1;
+          }
+        }
       },
       { discrete: true },
     );
     // structuralVersion intentionally not read — it participates via
     // the effect dependency to force re-application.
-  }, [text, structuralVersion, attributionSpans, editor]);
+  }, [text, structuralVersion, editor]);
   return null;
 }
 
