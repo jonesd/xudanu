@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { PlainTextPlugin } from "@lexical/react/LexicalPlainTextPlugin";
-import { HeadingNode } from "@lexical/rich-text";
+import { HeadingNode, QuoteNode } from "@lexical/rich-text";
+import { ListNode, ListItemNode } from "@lexical/list";
+import { CodeNode } from "@lexical/code";
 import { registerMarkdownShortcuts, TRANSFORMERS } from "@lexical/markdown";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
@@ -438,7 +440,7 @@ export function LexicalSpikeEditor(props: LexicalSpikeEditorProps) {
       onError(e: Error) {
         console.error("lexical-spike:", e);
       },
-      nodes: [HeadingNode],
+      nodes: [HeadingNode, QuoteNode, ListNode, ListItemNode, CodeNode],
       editable,
     }),
     // editable changes are applied imperatively below
