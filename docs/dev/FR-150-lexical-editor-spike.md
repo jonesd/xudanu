@@ -13,6 +13,19 @@
   Fallback: ProseMirror/TipTap if Lexical's structure-editing ceiling
   shows during the spike.
 
+## Root cause isolated (2026-10-23, human-typed on device)
+
+Human typing on the spike with ~350ms commit batching: **mixed
+forward/corrupted fragments** — batched single inserts land correctly;
+interleaved batches misapply offsets. Combined with earlier evidence
+(per-keystroke = fully mirrored text on BOTH editors; single batched
+insert = correct), the bug is definitively in the SHARED client
+diff→CRDT-op pipeline (crdt_sync.ts area), triggered by op cadence —
+NOT the editor surface, NOT Lexical, NOT iOS rendering. Fix target:
+insert-offset computation in the diff/op generator (suspect: base
+text staleness between consecutive diffs — each op's position
+computed against a pre-batch baseline).
+
 ## VERDICT (2026-10-22, automation-verified on-device)
 
 **Lexical spike PASSES where the incumbent failed catastrophically.**
