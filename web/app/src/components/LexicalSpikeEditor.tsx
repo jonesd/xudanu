@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { PlainTextPlugin } from "@lexical/react/LexicalPlainTextPlugin";
+import { HeadingNode } from "@lexical/rich-text";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
 import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
@@ -17,7 +18,7 @@ import {
   type LexicalNode,
   type Point,
 } from "lexical";
-import type { AttributionSpan } from "../api/crdt_sync";
+import type { AttributionSpan, AnnotationEntry } from "../api/crdt_sync";
 
 /**
  * FR-150: Lexical authoring-surface spike. Plain text only; the
@@ -41,6 +42,7 @@ export interface LexicalSpikeEditorProps {
   onSelectionChange: (start: number | null, end: number | null) => void;
   connected: boolean;
   attributionSpans: AttributionSpan[];
+  styleAnnotations?: AnnotationEntry[];
   editable: boolean;
 }
 
@@ -119,7 +121,11 @@ function authorHue(author: string | number | undefined): number {
 
 /** Rebuild the document from model text, splitting TextNodes at
  * attribution-span boundaries so each run carries its author color. */
-export function buildContent(text: string, spans: AttributionSpan[]): void {
+export function buildContent(
+  text: string,
+  spans: AttributionSpan[],
+  styleAnnotations: AnnotationEntry[] = [],
+): void {
   const root = $getRoot();
   root.clear();
   const lines = text.split("\n");
@@ -133,10 +139,24 @@ export function buildContent(text: string, spans: AttributionSpan[]): void {
     .sort((a, b) => a.start - b.start);
   let cursor = 0;
   const flushLine = (line: string, lineStart: number) => {
-    const para = $createParagraphNode();
     const pos = lineStart;
+    // Block type detection from text markers (same source as the old
+    // editor's detectLineBlock — markers live in the text model and
+    // serialize back through serializeRoot unchanged).
+    const headingMatch = line.match(/^(#{1,3})\s(.*)$/);
+    const isBullet = /^[*-]\s/.test(line);
+    const isQuote = /^>\s/.test(line);
+    const para = headingMatch
+      ? (() => {
+          const tag = ("h" + headingMatch[1].length) as "h1" | "h2" | "h3";
+          const hn = new HeadingNode(tag);
+          return hn;
+        })()
+      : $createParagraphNode();
+    if (isBullet) para.setStyle?.("padding-left: 1.2em; ");
+    if (isQuote) para.setStyle?.("padding-left: 1em; border-left: 3px solid #58a6ff55; color: #8b949e; ");
     let plain = 0;
-    const push = (str: string, author?: string | number) => {
+    const push = (str: string, startInLine: number, author?: string | number) => {
       if (!str) return;
       const node = $createTextNode(str);
       if (author !== undefined) {
@@ -145,6 +165,15 @@ export function buildContent(text: string, spans: AttributionSpan[]): void {
           `background-color: hsla(${hue}, 70%, 50%, 0.18); border-bottom: 2px solid hsla(${hue}, 70%, 45%, 0.6)`,
         );
       }
+      // Bold/italic from style annotations (server-authoritative):
+      const absStart = pos + startInLine;
+      const absEnd = absStart + str.length;
+      for (const ann of styleAnnotations) {
+        if (ann.char_start < absEnd && ann.char_end > absStart) {
+          if (ann.kind === "bold") node.setFormat("bold");
+          if (ann.kind === "italic") node.setFormat("italic");
+        }
+      }
       para.append(node);
     };
     for (const span of sorted) {
@@ -152,14 +181,14 @@ export function buildContent(text: string, spans: AttributionSpan[]): void {
       const spanEndInLine = Math.min(span.end - pos, line.length);
       if (spanStartInLine >= line.length || spanEndInLine <= 0) continue;
       if (spanStartInLine > plain) {
-        push(line.slice(plain, spanStartInLine));
+        push(line.slice(plain, spanStartInLine), plain);
         plain = spanStartInLine;
       }
       const segEnd = Math.max(spanEndInLine, plain);
-      push(line.slice(plain, segEnd), span.author);
+      push(line.slice(plain, segEnd), plain, span.author);
       plain = segEnd;
     }
-    if (plain < line.length) push(line.slice(plain));
+    if (plain < line.length) push(line.slice(plain), plain);
     root.append(para);
     void cursor;
   };
@@ -180,10 +209,12 @@ function RemoteSync({
   text,
   structuralVersion,
   attributionSpans,
+  styleAnnotations,
 }: {
   text: string;
   structuralVersion?: number;
   attributionSpans: AttributionSpan[];
+  styleAnnotations: AnnotationEntry[];
 }) {
   const [editor] = useLexicalComposerContext();
   const applied = useRef<string | null>(null);
@@ -204,7 +235,7 @@ function RemoteSync({
         // no jump between paragraphs.
         if (serializeRoot() === text) return;
         const sel = selectionOffsets();
-        buildContent(text, attributionSpans);
+        buildContent(text, attributionSpans, styleAnnotations);
         if (sel[0] !== null) {
           // Restore caret/selection to its pre-rebuild offset.
           const root = $getRoot();
@@ -378,6 +409,7 @@ export function LexicalSpikeEditor(props: LexicalSpikeEditorProps) {
     onCursorChange,
     onSelectionChange,
     attributionSpans,
+    styleAnnotations = [],
     editable,
   } = props;
   const initialConfig = useMemo(
@@ -386,6 +418,7 @@ export function LexicalSpikeEditor(props: LexicalSpikeEditorProps) {
       onError(e: Error) {
         console.error("lexical-spike:", e);
       },
+      nodes: [HeadingNode],
       editable,
     }),
     // editable changes are applied imperatively below
@@ -442,7 +475,7 @@ export function LexicalSpikeEditor(props: LexicalSpikeEditorProps) {
           <OnPageConsole />
           <EditableGate editable={editable} editorRef={editorRef} />
           <OnChangePlugin onChange={handleChange} ignoreSelectionChange={false} />
-          <RemoteSync text={text} structuralVersion={structuralVersion} attributionSpans={attributionSpans} />
+          <RemoteSync text={text} structuralVersion={structuralVersion} attributionSpans={attributionSpans} styleAnnotations={styleAnnotations} />
           <SelectionReporter onCursorChange={onCursorChange} onSelectionChange={onSelectionChange} />
         </div>
       </LexicalComposer>

@@ -6368,6 +6368,7 @@ export function WorkspaceShell() {
                   }}
                   connected={connected}
                   attributionSpans={resolvedAttributionSpans}
+                  styleAnnotations={annotations}
                   editable={canEdit}
                   />
                   ) : (
