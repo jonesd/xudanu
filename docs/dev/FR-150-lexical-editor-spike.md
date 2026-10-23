@@ -13,6 +13,21 @@
   Fallback: ProseMirror/TipTap if Lexical's structure-editing ceiling
   shows during the spike.
 
+## FINAL VERDICT: PASS (2026-10-23, human device test complete)
+
+Multi-line typing, mid-sentence insertion, and copy-paste all clean
+on iPhone Safari, human-typed. The path to green required three
+commits beyond the surface swap: (1) one-in-flight delta queue in
+crdt_sync (concurrent work_revise_delta raced server-side into
+MIRRORED text — the bug that also disqualified the old editor);
+(2) text-gated RemoteSync rebuild (attributionSpan identity churn
+rebuilt with stale text during the debounce pause — caret jump to
+index 0); (3) echo guard (skip rebuild when the editor already holds
+the incoming text — cross-paragraph caret jump on commit echo).
+Editor surface, CRDT pipeline, and sync layer each proven
+independently; server-side ordering proven by new Rust tests
+(serial typing + autocorrect-replace).
+
 ## Root cause isolated (2026-10-23, human-typed on device)
 
 Human typing on the spike with ~350ms commit batching: **mixed
