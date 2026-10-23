@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { PlainTextPlugin } from "@lexical/react/LexicalPlainTextPlugin";
 import { HeadingNode } from "@lexical/rich-text";
+import { registerMarkdownShortcuts, TRANSFORMERS } from "@lexical/markdown";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
 import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
@@ -55,7 +56,15 @@ export function serializeRoot(): string {
   return root
     .getChildren()
     .map((p) => {
-      const t = p.getTextContent();
+      let prefix = "";
+      // HeadingNode: re-add the markdown marker so the text model
+      // round-trips (# / ## / ###) — markdown shortcuts strip it on
+      // conversion, we restore it on serialization.
+      const tag = (p as unknown as { __tag?: string }).__tag;
+      if (tag === "h1") prefix = "# ";
+      else if (tag === "h2") prefix = "## ";
+      else if (tag === "h3") prefix = "### ";
+      const t = prefix + p.getTextContent();
       return t.endsWith("\n") ? t.slice(0, -1) : t;
     })
     .join("\n");
@@ -291,6 +300,17 @@ function SelectionReporter({
 }
 
 
+/** Live markdown: typing `# ` converts to H1 etc. in-place. The
+ * text model keeps the markers (serializeRoot adds them back via
+ * HeadingNode text content detection — see serializeRoot). */
+function MarkdownShortcuts() {
+  const [editor] = useLexicalComposerContext();
+  useEffect(() => {
+    return registerMarkdownShortcuts(editor, TRANSFORMERS);
+  }, [editor]);
+  return null;
+}
+
 /** Editability resolves as soon as the editor instance exists.
  * (canEdit may still be loading at outer mount — setting it only
  * after a first change deadlocks: never editable, never a change,
@@ -471,6 +491,7 @@ export function LexicalSpikeEditor(props: LexicalSpikeEditorProps) {
             ErrorBoundary={() => <div role="alert">editor error</div>}
           />
           <HistoryPlugin />
+          <MarkdownShortcuts />
           <DebugProbe />
           <OnPageConsole />
           <EditableGate editable={editable} editorRef={editorRef} />
