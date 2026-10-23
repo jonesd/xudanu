@@ -13,6 +13,15 @@
   Fallback: ProseMirror/TipTap if Lexical's structure-editing ceiling
   shows during the spike.
 
+## Merge-phase follow-ups
+
+- Rich text on the Lexical surface: heading nodes (H1-H3), bold/
+  italic marks, lists — maps to Lexical's HeadingNode and mark
+  system; the format bar's ops (handleToggleStyle/handleToggleBlock)
+  need Lexical adapters. The user explicitly wants the format bar.
+- Remove the spike's 350ms debounce once the queue is proven in the
+  wild (the queue makes it redundant).
+
 ## FINAL VERDICT: PASS (2026-10-23, human device test complete)
 
 Multi-line typing, mid-sentence insertion, and copy-paste all clean
