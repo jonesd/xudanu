@@ -7,8 +7,9 @@
 ///   budget (default 50MB; text works are ~2-5KB, images change the
 ///   math). Eviction order: unstarred LRU first; a starred set larger
 ///   than the budget is reported, never silently dropped.
-/// - Editing is never served from cache: offline mode is read-only
-///   by design (offline CRDT queueing is a separate, larger project).
+/// - Editing offline persists here and reconciles on reconnect
+///   (EditSyncEngine, FR-69 S2); annotation ops queue separately
+///   (annotation-queue.ts).
 
 import { storageGet, storageSet } from "./safe-storage";
 

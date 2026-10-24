@@ -639,6 +639,7 @@ export function WorkspaceShell() {
       if (clearTimer) clearTimeout(clearTimer);
     };
   }, [clientRef, connected, showToast]);
+
   useEffect(() => {
     if (!connected || !clientRef.current) return;
     let cancelled = false;
@@ -785,6 +786,14 @@ export function WorkspaceShell() {
   }, [connected, authenticated, workBeId, switchingWork]);
 
   const transclusion = useTransclusion();
+
+  // Optimistic marker rebase: link underlines follow the text the
+  // instant it moves; the next link refresh confirms positions.
+  useEffect(() => {
+    const client = clientRef.current;
+    if (!client) return;
+    return client.onTextDeltaApplied((ops) => transclusion.rebaseMarkers(ops));
+  }, [clientRef, connected, transclusion.rebaseMarkers]);
 
   // Clear link/markers/backlinks the moment the work changes — stale
   // markers from the previous work rendered against the new document

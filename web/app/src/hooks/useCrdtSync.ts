@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { storageGet, storageSet, storageRemove } from "../safe-storage";
 import { CrdtSyncClient, type AwarenessState, type ContentMatch, type AttributionSpan, type AttributionLogStatus, type WhoAmIEntry, type WorkListEntry, type AnnotationEntry, type ChangeHighlight, type LlmUsageSummary, type SaveState } from "../api/crdt_sync";
+import { rebaseAttributionSpans, rebaseAnnotations } from "../api/span-sync";
 
 export interface CrdtSyncState {
   text: string;
@@ -188,6 +189,13 @@ export function useCrdtSync(
       setIdentityEpoch(identityEpochRef.current);
     });
     const unsubChanges = client.onChangeHighlights(setRecentChanges);
+    // Optimistic overlay rebase: attribution spans and annotations
+    // shift the instant text moves; the periodic server re-query
+    // confirms/corrects. No-op while the lists are empty.
+    const unsubDelta = client.onTextDeltaApplied((ops) => {
+      setAttributionSpans((prev) => (prev.length ? rebaseAttributionSpans(prev, ops) : prev));
+      setAnnotations((prev) => (prev.length ? rebaseAnnotations(prev, ops) : prev));
+    });
 
     const unsubConn2 = client.onConnectionChange((isConnected) => {
       if (isConnected) {
@@ -210,6 +218,7 @@ export function useCrdtSync(
       unsubMatch();
       unsubIdentity();
       unsubChanges();
+      unsubDelta();
       if (disconnectTimerRef.current) {
         clearTimeout(disconnectTimerRef.current);
         disconnectTimerRef.current = null;

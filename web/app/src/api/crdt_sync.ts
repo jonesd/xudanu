@@ -5,8 +5,16 @@ import {
 } from "../offline-cache";
 import { storageGet, storageSet, storageRemove } from "../safe-storage";
 import { PROTOCOL_VERSION, extractValue, LICENSES } from "./protocol";
-import { EditSyncEngine } from "./edit-sync";
-import { rebasePosition } from "./position-transform";
+import { EditSyncEngine, type TextDeltaSource } from "./edit-sync";
+import { rebasePosition, rebaseSpan } from "./position-transform";
+import {
+  enqueueAnnotationOp,
+  pendingAnnotationOps,
+  removePendingOp,
+  replacePendingOps,
+  mergePendingAnnotations,
+  type PendingAnnotationOp,
+} from "./annotation-queue";
 import type { TextDeltaOp } from "./text_buffer";
 import type {
   AwarenessState,
@@ -125,7 +133,92 @@ export class CrdtSyncClient {
     // Cursor rebase (step 1): every visible text transition shifts
     // displayed remote carets so they track the same characters
     // instead of floating mid-word after concurrent edits.
-    this.engine.onTextDeltaApplied((ops) => this.rebaseAwarenessCursors(ops));
+    this.engine.onTextDeltaApplied((ops) => {
+      this.rebaseAwarenessCursors(ops);
+      this.rebasePendingAnnotations(ops);
+    });
+  }
+
+  /** Pending annotation ops for the currently open work (offline
+   * creates/deletes awaiting replay). Mirror of the persisted
+   * queue — rebased through text deltas so spans stay anchored to
+   * the text that lands after the reconnect merge. */
+  private pendingAnnotationOps: PendingAnnotationOp[] = [];
+  private pendingAnnotationsLoadedFor: number | null = null;
+
+  private async loadPendingAnnotations(workId: number): Promise<void> {
+    if (this.pendingAnnotationsLoadedFor === workId) return;
+    this.pendingAnnotationsLoadedFor = workId;
+    this.pendingAnnotationOps = await pendingAnnotationOps(workId);
+  }
+
+  private async persistPendingAnnotations(): Promise<void> {
+    if (this.pendingAnnotationsLoadedFor === null) return;
+    await replacePendingOps(this.pendingAnnotationsLoadedFor, this.pendingAnnotationOps);
+  }
+
+  private async enqueuePendingAnnotation(op: PendingAnnotationOp): Promise<void> {
+    if (!this.pendingAnnotationOps.some((e) => e.id === op.id)) {
+      this.pendingAnnotationOps.push(op);
+      await enqueueAnnotationOp(op);
+    }
+  }
+
+  /** Rebase pending annotation spans through a text delta (same
+   * own-your-characters policy as overlays). */
+  private rebasePendingAnnotations(ops: import("./text_buffer").TextDeltaOp[]): void {
+    if (this.pendingAnnotationOps.length === 0) return;
+    let changed = false;
+    this.pendingAnnotationOps = this.pendingAnnotationOps.map((p) => {
+      if (p.kind !== "create" || p.char_start === undefined) return p;
+      const r = rebaseSpan({ start: p.char_start, end: p.char_end ?? p.char_start }, ops);
+      if (r.start !== p.char_start || r.end !== p.char_end) {
+        changed = true;
+        return { ...p, char_start: r.start, char_end: r.end };
+      }
+      return p;
+    });
+    if (changed) void this.persistPendingAnnotations();
+  }
+
+  /** Replay queued annotation ops to the server (reconnect/open).
+   * Client-supplied ids make creates idempotent; a delete that
+   * targets an annotation the server never saw simply drops. */
+  async replayPendingAnnotations(): Promise<void> {
+    if (!this.isConnected() || this.pendingAnnotationOps.length === 0) return;
+    const workId = this.pendingAnnotationsLoadedFor;
+    if (workId === null) return;
+    const queue = [...this.pendingAnnotationOps];
+    for (const op of queue) {
+      try {
+        if (op.kind === "create") {
+          await this.sendRequest("annotation_create", {
+            work_id: op.work_id,
+            annotation_id: op.annotation_id,
+            kind: op.ann_kind,
+            payload: op.payload,
+            char_start: op.char_start,
+            char_end: op.char_end,
+            is_private: op.is_private ?? false,
+          });
+        } else {
+          await this.sendRequest("annotation_delete", {
+            work_id: op.work_id,
+            annotation_id: op.annotation_id,
+          });
+        }
+      } catch (e) {
+        const msg = String((e as Error)?.message || e || "");
+        if (msg.includes("WebSocket not open") || msg.includes("connection closed")) {
+          return; // offline again — keep the queue for the next open
+        }
+        // Permanent failure (e.g. delete of a vanished annotation):
+        // drop the op rather than looping forever.
+        console.warn("[crdt] pending annotation replay failed, dropping:", msg);
+      }
+      this.pendingAnnotationOps = this.pendingAnnotationOps.filter((e) => e.id !== op.id);
+      await removePendingOp(op.id);
+    }
   }
 
   /** Rebase remote cursors/selections through a text delta and
@@ -292,6 +385,12 @@ export class CrdtSyncClient {
 
   onChangeHighlights(cb: (changes: ChangeHighlight[]) => void): () => void {
     return this.engine.onChangeHighlights(cb);
+  }
+
+  /** Fires once per visible text transition (local/remote/server)
+   * with the delta ops — the seam overlay rebasing consumes. */
+  onTextDeltaApplied(cb: (ops: TextDeltaOp[], source: TextDeltaSource) => void): () => void {
+    return this.engine.onTextDeltaApplied(cb);
   }
 
   onCompoundSourceChange(cb: (compoundWorkId: number, sourceWorkId: number) => void): () => void {
@@ -1877,6 +1976,7 @@ export class CrdtSyncClient {
 
   async tryOpenWork(): Promise<void> {
     if (!this.workBeId || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    void this.loadPendingAnnotations(this.workBeId);
     let loaded = false;
     let accessDenied = false;
     if (!this.skipCrdt) {
@@ -2025,6 +2125,10 @@ export class CrdtSyncClient {
         this.engine.serveOfflineCache(cached.text);
       }
     }
+    // Offline annotations recorded earlier replay now (idempotent,
+    // client-supplied ids); a fresh open while still offline is a
+    // no-op inside replayPendingAnnotations.
+    void this.replayPendingAnnotations();
   }
 
   private switching = false;
@@ -2419,29 +2523,83 @@ export class CrdtSyncClient {
   }
 
   async annotationCreate(workId: number, annotationId: number, kind: string, payload: string, charStart: number, charEnd: number, isPrivate?: boolean): Promise<void> {
-    await this.sendRequest("annotation_create", {
-      work_id: workId,
-      annotation_id: annotationId,
-      kind,
-      payload,
-      char_start: charStart,
-      char_end: charEnd,
-      is_private: isPrivate ?? false,
-    });
+    await this.loadPendingAnnotations(workId);
+    try {
+      await this.sendRequest("annotation_create", {
+        work_id: workId,
+        annotation_id: annotationId,
+        kind,
+        payload,
+        char_start: charStart,
+        char_end: charEnd,
+        is_private: isPrivate ?? false,
+      });
+    } catch (e) {
+      const msg = String((e as Error)?.message || e || "");
+      if (msg.includes("WebSocket not open") || msg.includes("connection closed")) {
+        // Offline: queue for replay (idempotent — client-supplied id)
+        await this.enqueuePendingAnnotation({
+          id: `create:${annotationId}`,
+          work_id: workId,
+          kind: "create",
+          annotation_id: annotationId,
+          ann_kind: kind,
+          payload,
+          char_start: charStart,
+          char_end: charEnd,
+          is_private: isPrivate ?? false,
+          created_at: Date.now(),
+        });
+        return;
+      }
+      throw e;
+    }
   }
 
   async annotationDelete(workId: number, annotationId: number): Promise<void> {
-    await this.sendRequest("annotation_delete", {
-      work_id: workId,
-      annotation_id: annotationId,
-    });
+    await this.loadPendingAnnotations(workId);
+    // Deleting an offline-created annotation never sent to the
+    // server: just drop it from the queue.
+    const pendingCreate = this.pendingAnnotationOps.find(
+      (p) => p.kind === "create" && p.annotation_id === annotationId,
+    );
+    if (pendingCreate) {
+      this.pendingAnnotationOps = this.pendingAnnotationOps.filter((e) => e.id !== pendingCreate.id);
+      await removePendingOp(pendingCreate.id);
+      return;
+    }
+    try {
+      await this.sendRequest("annotation_delete", {
+        work_id: workId,
+        annotation_id: annotationId,
+      });
+    } catch (e) {
+      const msg = String((e as Error)?.message || e || "");
+      if (msg.includes("WebSocket not open") || msg.includes("connection closed")) {
+        await this.enqueuePendingAnnotation({
+          id: `delete:${annotationId}`,
+          work_id: workId,
+          kind: "delete",
+          annotation_id: annotationId,
+          created_at: Date.now(),
+        });
+        return;
+      }
+      throw e;
+    }
   }
 
   async annotationList(workId: number): Promise<AnnotationEntry[]> {
-    const resp = await this.sendRequest("annotation_list", { work_id: workId });
-    const val = extractValue(resp);
-    if (Array.isArray(val)) return val as AnnotationEntry[];
-    return [];
+    await this.loadPendingAnnotations(workId);
+    let server: AnnotationEntry[] = [];
+    try {
+      const resp = await this.sendRequest("annotation_list", { work_id: workId });
+      const val = extractValue(resp);
+      if (Array.isArray(val)) server = val as AnnotationEntry[];
+    } catch {
+      // Offline: the pending queue is the whole list.
+    }
+    return mergePendingAnnotations(server, this.pendingAnnotationOps);
   }
 }
 

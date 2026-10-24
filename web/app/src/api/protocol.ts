@@ -442,6 +442,9 @@ export interface AnnotationEntry {
   created_by_name: string | null;
   created_at?: number;
   is_private?: boolean;
+  /** Client-side flag: created offline, replay to the server is
+   * pending (annotation-queue). Never set by the server. */
+  pending_sync?: boolean;
 }
 
 export interface TransclusionMarker {

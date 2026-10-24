@@ -1,6 +1,8 @@
 import { useState, useCallback, useRef } from "react";
 import type { CrdtSyncClient, LinkEntry, TransclusionMarker, WorkListEntry, BacklinkEntry, LinkTypeInfo } from "../api/crdt_sync";
 import { resolveMarkerPositions, localEndSetMembers, refSpan } from "../link-markers";
+import { rebaseMarkers as rebaseMarkersImpl } from "../api/span-sync";
+import type { TextDeltaOp } from "../api/text_buffer";
 import { linkEnds } from "../link-ends";
 import type { HyperRefPayload } from "../api/crdt_sync";
 
@@ -73,6 +75,10 @@ export interface TransclusionState {
   loadLinkTypes: (client: CrdtSyncClient) => Promise<void>;
   deleteLink: (client: CrdtSyncClient, linkId: number) => Promise<void>;
   clearOnWorkSwitch: () => void;
+  /** Optimistic rebase of marker spans through a text delta; the
+   * next link refresh confirms. target spans (another work's
+   * coordinates) are untouched. */
+  rebaseMarkers: (ops: TextDeltaOp[]) => void;
 }
 
 const MARKER_COLORS = [
@@ -130,6 +136,10 @@ export function useTransclusion(): TransclusionState {
 
   const clearPending = useCallback(() => {
     setPending(null);
+  }, []);
+
+  const rebaseMarkers = useCallback((ops: TextDeltaOp[]) => {
+    setMarkers((prev) => (prev.length ? rebaseMarkersImpl(prev, ops) : prev));
   }, []);
 
   const placeTransclusion = useCallback(
@@ -490,5 +500,6 @@ export function useTransclusion(): TransclusionState {
     loadLinkTypes,
     deleteLink,
     clearOnWorkSwitch,
+    rebaseMarkers,
   };
 }
