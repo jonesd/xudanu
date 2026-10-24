@@ -24,7 +24,7 @@ describe("offline editing", () => {
     (client as any).connected = false; // offline
     (client as any).ws = null;
 
-    let sentCount = 0;
+    const sentCount = 0;
     // Even if a ws existed, it's null — no sends possible
 
     const texts: string[] = [];

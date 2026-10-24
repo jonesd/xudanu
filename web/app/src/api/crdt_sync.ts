@@ -867,7 +867,7 @@ export class CrdtSyncClient {
     // OFFLINE FIRST: persist regardless of the delta base (a page
     // reload while offline loses lastAckedLocalText — the user's
     // post-reload edits still need to survive another reload).
-    if (!this.connected || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       this.hasUnsyncedLocalEdits = true;
       import("../offline-cache").then(({ cacheDocument }) => {
         cacheDocument({
