@@ -6,7 +6,7 @@ describe("Transclusion delta computation", () => {
     const client = new CrdtSyncClient("ws://test", 1);
     const sentFrames: Array<{ op: string; payload?: object }> = [];
     (client as any).crdtReady = true;
-    (client as any).text = "Hello";
+    (client as any).adoptServerText("Hello");
     (client as any).ws = {
       readyState: WebSocket.OPEN,
       send: (data: string) => {
@@ -30,7 +30,7 @@ describe("Transclusion delta computation", () => {
     const client = new CrdtSyncClient("ws://test", 1);
     const sentFrames: Array<{ op: string; payload?: object }> = [];
     (client as any).crdtReady = true;
-    (client as any).text = "Hello World";
+    (client as any).adoptServerText("Hello World");
     (client as any).ws = {
       readyState: WebSocket.OPEN,
       send: (data: string) => {
@@ -58,7 +58,7 @@ describe("Transclusion delta computation", () => {
     const client = new CrdtSyncClient("ws://test", 1);
     const sentFrames: Array<{ op: string; payload?: object }> = [];
     (client as any).crdtReady = true;
-    (client as any).text = "Hello World";
+    (client as any).adoptServerText("Hello World");
     (client as any).ws = {
       readyState: WebSocket.OPEN,
       send: (data: string) => {
@@ -79,7 +79,7 @@ describe("Transclusion delta computation", () => {
     const client = new CrdtSyncClient("ws://test", 1);
     let sendCount = 0;
     (client as any).crdtReady = true;
-    (client as any).text = "Hello";
+    (client as any).adoptServerText("Hello");
     (client as any).ws = {
       readyState: WebSocket.OPEN,
       send: () => { sendCount++; },
@@ -92,7 +92,7 @@ describe("Transclusion delta computation", () => {
   it("fires text listeners on setText", () => {
     const client = new CrdtSyncClient("ws://test", 1);
     (client as any).crdtReady = true;
-    (client as any).text = "Hello";
+    (client as any).adoptServerText("Hello");
     (client as any).ws = { readyState: WebSocket.OPEN, send: () => {} };
 
     const newTexts: string[] = [];
@@ -309,7 +309,7 @@ describe("Transclusion placement simulation", () => {
     const client = new CrdtSyncClient("ws://test", 1);
     const sentFrames: Array<{ op: string; payload?: object }> = [];
     (client as any).crdtReady = true;
-    (client as any).text = "Hello World";
+    (client as any).adoptServerText("Hello World");
     (client as any).workBeId = 1;
     (client as any).ws = {
       readyState: WebSocket.OPEN,
@@ -340,7 +340,7 @@ describe("Transclusion placement simulation", () => {
   it("text remains editable after work_revised echo following transclusion", () => {
     const client = new CrdtSyncClient("ws://test", 42);
     (client as any).crdtReady = true;
-    (client as any).text = "Hello beautiful World";
+    (client as any).adoptServerText("Hello beautiful World");
     (client as any).workBeId = 42;
     (client as any).skipCrdt = false;
 
@@ -382,7 +382,7 @@ describe("Transclusion placement simulation", () => {
     const client = new CrdtSyncClient("ws://test", 1);
     const sentFrames: Array<{ op: string; payload?: object }> = [];
     (client as any).crdtReady = true;
-    (client as any).text = "Start End";
+    (client as any).adoptServerText("Start End");
     (client as any).workBeId = 1;
     (client as any).ws = {
       readyState: WebSocket.OPEN,
@@ -398,6 +398,10 @@ describe("Transclusion placement simulation", () => {
     client.setText(text);
     expect(client.getText()).toBe("Start ONE End");
 
+    // Simulate the first delta's server ACK (queue: one in flight).
+    (client as any).deltaInFlight = false;
+    (client as any).lastAckedLocalText = client.getText();
+
     // Second transclusion: insert "TWO " before "End" (position 10 in "Start ONE End")
     text = client.getText();
     text = text.slice(0, 10) + "TWO " + text.slice(10);
@@ -411,7 +415,7 @@ describe("Transclusion placement simulation", () => {
   it("editing after transclusion with work_revised arriving mid-edit", () => {
     const client = new CrdtSyncClient("ws://test", 42);
     (client as any).crdtReady = true;
-    (client as any).text = "Hello excerpt World";
+    (client as any).adoptServerText("Hello excerpt World");
     (client as any).workBeId = 42;
     (client as any).skipCrdt = false;
 
@@ -440,6 +444,10 @@ describe("Transclusion placement simulation", () => {
     // Text must not have been clobbered
     expect(client.getText()).toBe("Hello excerpt World!");
 
+    // First delta's server ACK (queue: one in flight at a time)
+    (client as any).deltaInFlight = false;
+    (client as any).lastAckedLocalText = client.getText();
+
     // User types again
     client.setText("Hello excerpt World!!!");
     expect(client.getText()).toBe("Hello excerpt World!!!");
@@ -453,7 +461,7 @@ describe("Delta application correctness", () => {
   it("applyDeltaOps handles pure insert", () => {
     const client = new CrdtSyncClient("ws://test", 42);
     (client as any).crdtReady = true;
-    (client as any).text = "ABC";
+    (client as any).adoptServerText("ABC");
     (client as any).workBeId = 42;
     (client as any).skipCrdt = false;
 
@@ -478,7 +486,7 @@ describe("Delta application correctness", () => {
   it("applyDeltaOps handles replace (delete + insert)", () => {
     const client = new CrdtSyncClient("ws://test", 42);
     (client as any).crdtReady = true;
-    (client as any).text = "ABC";
+    (client as any).adoptServerText("ABC");
     (client as any).workBeId = 42;
     (client as any).skipCrdt = false;
 
@@ -504,7 +512,7 @@ describe("Delta application correctness", () => {
   it("falls back to refreshText on invalid delta ops", () => {
     const client = new CrdtSyncClient("ws://test", 42);
     (client as any).crdtReady = true;
-    (client as any).text = "ABC";
+    (client as any).adoptServerText("ABC");
     (client as any).workBeId = 42;
     (client as any).skipCrdt = false;
 

@@ -66,6 +66,7 @@ cd "$SRC_RUST"
   --allowed-origin http://localhost:8080 \
   --allowed-origin http://127.0.0.1:8080 \
   --allowed-origin http://localhost:5173 \
+  --allowed-origin http://192.168.1.122:5173 \
   --allowed-origin http://127.0.0.1:5173 \
   --csrf-token \
   --admin-passphrase "$XUDANU_ADMIN_PASSPHRASE" \

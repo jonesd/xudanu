@@ -1878,12 +1878,24 @@
     padding: 6px 8px;
     font-size: 12px;
   }
-  /* Selection toolbar: wrap instead of overflow. */
+  /* Selection + format toolbars: ONE horizontally-scrollable row
+     each on phones (wrapping stacked 3+ rows and ate the screen).
+     Buttons keep touch targets; the row scrolls with momentum. */
   .ws-selection-toolbar,
   .ws-format-bar {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
     max-width: calc(100vw - 16px);
-    row-gap: 4px;
+    row-gap: 0;
+  }
+  .ws-selection-toolbar::-webkit-scrollbar,
+  .ws-format-bar::-webkit-scrollbar {
+    display: none;
+  }
+  .ws-sel-btn {
+    flex: 0 0 auto;
   }
   .ws-sel-btn {
     padding: 4px 8px;
@@ -1920,9 +1932,28 @@
   }
   .ws-doc-header {
     padding: 8px 16px;
+    /* Scroll-responsive: collapses away while reading down */
+    max-height: 320px;
+    transition: max-height 0.18s ease-out, padding 0.18s ease-out, opacity 0.18s ease-out;
+    overflow: hidden;
+  }
+  .ws-doc-header.ws-doc-header-collapsed {
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    opacity: 0;
+    border-bottom-color: transparent;
   }
   .ws-doc-scroll {
-    padding: 16px;
+    padding: 10px 12px 24px;
+  }
+  /* Reading mode: the meta/stats row goes chromeless on phones —
+     the title line is the only permanent chrome. */
+  .ws-doc-surface.reading-mode .ws-doc-meta {
+    display: none;
+  }
+  .ws-doc-surface.reading-mode .ws-doc-scroll {
+    line-height: 1.6;
   }
   .ws-doc-pid {
     display: none;
@@ -4201,3 +4232,38 @@
 }
 .cb-badge-drift { color: var(--amber); font-size: 11px; }
 .cb-badge-ph { color: #f85149; font-size: 11px; }
+
+/* FR-84 pane divider — draggable (pointer capture, mouse + touch) */
+.ws-pane-divider {
+  flex: 0 0 10px;
+  cursor: col-resize;
+  touch-action: none; /* REQUIRED for touch drag */
+  background: linear-gradient(
+    to right,
+    transparent,
+    #30363d 40%,
+    #30363d 60%,
+    transparent
+  );
+  position: relative;
+}
+.ws-pane-divider::after {
+  content: "";
+  position: absolute;
+  inset: 0 3px;
+  border-radius: 3px;
+}
+.ws-pane-divider:hover::after,
+.ws-pane-divider:active::after {
+  background: rgba(88, 166, 255, 0.35);
+}
+
+/* iOS WebKit: force selectability inside the spike editor — any
+   ancestor interfering with user-select makes contentEditable
+   refuse focus entirely on iPhone. */
+.lexical-spike-editor,
+.lexical-spike-editor * {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}

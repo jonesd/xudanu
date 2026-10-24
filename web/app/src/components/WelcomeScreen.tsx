@@ -65,6 +65,17 @@ export function WelcomeScreen({
         A connected literature where every quotation maintains its bond to the original,
         where every reuse carries its full provenance.
       </div>
+      <div className="welcome-actions">
+        <button className="welcome-btn primary" onClick={onNewDocument}>
+          New Document
+        </button>
+        <button className="welcome-btn" onClick={onImport}>
+          Import Source
+        </button>
+        <button className="welcome-btn" onClick={onBrowseLibrary}>
+          Browse Library
+        </button>
+      </div>
       {showcase && showcase.length > 0 && onOpenShowcaseWork && (
         <div className="welcome-showcase">
           <div className="welcome-showcase-head">
@@ -121,17 +132,6 @@ export function WelcomeScreen({
           <div className="welcome-feature-name">Real-time CRDT</div>
           <div className="welcome-feature-desc">Live multi-user editing without locks. Purpose-built O-tree CRDT with presence awareness and conflict-free merges.</div>
         </div>
-      </div>
-      <div className="welcome-actions">
-        <button className="welcome-btn primary" onClick={onNewDocument}>
-          New Document
-        </button>
-        <button className="welcome-btn" onClick={onImport}>
-          Import Source
-        </button>
-        <button className="welcome-btn" onClick={onBrowseLibrary}>
-          Browse Library
-        </button>
       </div>
       <div className="welcome-actions">
         {hasCourse && onLearnLinks && (

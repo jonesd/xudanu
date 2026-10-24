@@ -846,16 +846,33 @@ export class CrdtSyncClient {
   }
 
   setText(newText: string): void {
-    const oldText = this.text;
-    if (newText === oldText) return;
+    if (newText === this.text) return;
     this.text = newText;
     this.hasUnsyncedLocalEdits = true;
 
     if (this.crdtReady) {
-      this.sendTextDelta(oldText, newText);
+      this.flushTextDelta();
     }
 
     this.textListeners.forEach((cb) => cb(newText));
+  }
+
+  /** ONE delta in flight, ever (see flushTextDelta for why). */
+  private flushTextDelta(): void {
+    if (this.deltaInFlight) return;
+    const base = this.lastAckedLocalText;
+    if (base === null || base === this.text) return;
+    this.sendTextDelta(base, this.text);
+  }
+
+
+  /** Server-authoritative text adoption: sets local text AND the
+   * delta base (lastAckedLocalText) — the queue cannot send without
+   * a base, and the base must equal what the server actually has. */
+  private adoptServerText(t: string): void {
+    this.text = t;
+    this.lastAckedLocalText = t;
+    this.textListeners.forEach((cb) => cb(t));
   }
 
   setTextLocal(newText: string): void {
@@ -2544,7 +2561,7 @@ export class CrdtSyncClient {
             // Pushed but not yet acked: the unacked guard stays armed
             // until the real acknowledgement lands (FR-69 S2).
           } else {
-            this.text = serverText;
+            this.adoptServerText(serverText);
             // Adopting the server view: this IS the acknowledged state.
             this.hasUnsyncedLocalEdits = false;
           }
@@ -2609,8 +2626,7 @@ export class CrdtSyncClient {
               }).join("");
             }
           }
-          this.text = edText;
-          this.textListeners.forEach((cb) => cb(this.text));
+          this.adoptServerText(edText);
           // A successful edition response proves the work is readable —
           // clear the denied flag regardless of the payload text shape
           // (the edition may arrive as per-position entries, not text).
@@ -2796,8 +2812,7 @@ export class CrdtSyncClient {
             );
             this.sendTextDelta(newText, this.text, { protectLocal: true });
           } else {
-            this.text = newText;
-            this.textListeners.forEach((cb) => cb(newText));
+            this.adoptServerText(newText);
           }
         }
       }
@@ -3032,11 +3047,17 @@ export class CrdtSyncClient {
       if (this.pendingServerText !== null) {
         const serverText = this.pendingServerText;
         this.pendingServerText = null;
-        const currentText = this.text;
-        if (serverText !== currentText) {
-          this.text = serverText;
-          this.textListeners.forEach((cb) => cb(serverText));
+        if (serverText !== this.text) {
+          this.adoptServerText(serverText);
         }
+      }
+      // Queue drain: edits that arrived while this delta was in
+      // flight now send against the fresh base — one in flight,
+      // ever. (Concurrent work_revise_delta requests raced on the
+      // server and produced MIRRORED text when per-keystroke
+      // typing fired N at once — the iOS bug, FR-150.)
+      if (this.text !== this.lastAckedLocalText) {
+        this.flushTextDelta();
       }
     }).catch((e) => {
       this.deltaInFlight = false;

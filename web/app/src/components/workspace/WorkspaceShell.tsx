@@ -62,6 +62,33 @@ import { useCompoundEdition } from "../../hooks/useCompoundEdition";
 import { authorColorPair, authorOrderedPair, pairedAuthorColors, setPairedAuthorColors } from "../../author-color";
 import { getLastCopiedSpan, clearCopiedSpan } from "../../clipboard-span";
 import { CollaborativeEditor } from "../CollaborativeEditor";
+// FR-150: Lexical authoring-surface spike — enabled per-session via
+// ?editor=lexical or localStorage xudanu:editor=lexical. Core contract
+// only; advanced overlays stay on the contentEditable path.
+import { LexicalSpikeEditor } from "../LexicalSpikeEditor";
+const LEXICAL_SPIKE = (() => {
+  if (typeof window === "undefined") return false;
+  try {
+    // Sticky: visiting ONCE with ?editor=lexical (or ?editor=classic
+    // to revert) sets the preference — the param survives no longer
+    // than the URL, the localStorage choice does.
+    const param = new URLSearchParams(window.location.search).get("editor");
+    if (param === "lexical" || param === "classic") {
+      try {
+        window.localStorage.setItem("xudanu:editor", param);
+      } catch {
+        // Blocked storage: the param below still wins.
+      }
+      // The explicit URL param ALWAYS wins — even where storage is
+      // blocked (the write above throws and the read below would
+      // too, which previously fell back to the OLD editor).
+      return param === "lexical";
+    }
+    return window.localStorage.getItem("xudanu:editor") === "lexical";
+  } catch {
+    return false; // Safari private mode / blocked storage (v1.8.0 lesson)
+  }
+})();
 import { EasyMDEEditor } from "../EasyMDEEditor";
 import { TransclusionBadge } from "../TransclusionBadge";
 import { SuggestionCardList } from "../SuggestionCardList";
@@ -243,6 +270,31 @@ export function WorkspaceShell() {
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [showUndoToast, setShowUndoToast] = useState(false);
   const [editorMode, setEditorMode] = useState<"authoring" | "reading">("authoring");
+
+  // Phone space reclaim: collapse the doc header while scrolling DOWN
+  // into content, reveal on scroll UP or near the top. Phone widths
+  // only (matchMedia keeps desktop unaffected).
+  const [docHeaderCollapsed, setDocHeaderCollapsed] = useState(false);
+  // Capture-phase listener: scroll events don't bubble, but they DO
+  // pass through ancestors in the capture phase — so whichever
+  // element actually scrolls on the phone (the doc column or an
+  // ancestor tab container), this sees it.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let last = 0;
+    const onScroll = (e: Event) => {
+      if (!window.matchMedia("(max-width: 767px)").matches) return;
+      const t = e.target as HTMLElement | Document;
+      if (!(t instanceof HTMLElement)) return;
+      const y = t.scrollTop;
+      if (y < 24) setDocHeaderCollapsed(false);
+      else if (y - last > 8) setDocHeaderCollapsed(true);
+      else if (last - y > 8) setDocHeaderCollapsed(false);
+      last = y;
+    };
+    window.addEventListener("scroll", onScroll, true);
+    return () => window.removeEventListener("scroll", onScroll, true);
+  }, []);
   // FR-74 Phase A: bumps after every structural operation — forces
   // the editor to rebuild its DOM from the model text
   const [structuralVersion, setStructuralVersion] = useState(0);
@@ -890,8 +942,16 @@ export function WorkspaceShell() {
     if (works.length === 0) return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("work") || params.get("tumbler")) return;
-    if (localStorage.getItem("xudanu_intro_done") === "1") return;
-    localStorage.setItem("xudanu_intro_done", "1");
+    // Guarded (v1.8.0 lesson): blocked-storage Safari contexts throw
+    // SecurityError on access — the intro must not crash the app.
+    let introDone = false;
+    try {
+      introDone = localStorage.getItem("xudanu_intro_done") === "1";
+      localStorage.setItem("xudanu_intro_done", "1");
+    } catch {
+      introDone = false;
+    }
+    if (introDone) return;
     if (galleryShowcase) return; // welcome + showcase is the landing
     if (courseEntryId === null) return; // flag only counts once opened
     selectWork(courseEntryId);
@@ -4604,7 +4664,10 @@ export function WorkspaceShell() {
     }
   }, [connectPair, paneConnectType, workBeId, works, loadLinks, showToast]);
 
-  const paneAreaVw = Math.min(panes.length * 30, 78);
+  // FR-84: panes area width — auto by count, user-draggable once
+  // adjusted (pointer events: one implementation for mouse + touch).
+  const [paneVwOverride, setPaneVwOverride] = useState<number | null>(null);
+  const paneAreaVw = paneVwOverride ?? Math.min(panes.length * 30, 78);
 
   // System font: persisted preference → CSS var for all chrome
   // surfaces (--ws-font) + the editor's content size directly.
@@ -5269,7 +5332,7 @@ export function WorkspaceShell() {
             </div>
                 ) : docMode === "layout" && imageEntries.length > 0 ? null : (
                   <>
-              <header className="ws-doc-header">
+              <header className={`ws-doc-header${docHeaderCollapsed ? " ws-doc-header-collapsed" : ""}`}>
                 {!authenticated && !identity && (
                   <div className="ws-auth-warning" onClick={() => setShowIdentity(true)}>
                     ⚠ You're browsing anonymously. Sign in to save links, edits, and revisions.
@@ -6288,6 +6351,27 @@ export function WorkspaceShell() {
                   />
                 ) : (
                   <ErrorBoundary label="editor">
+                  {LEXICAL_SPIKE ? (
+                  <LexicalSpikeEditor
+                  text={text}
+                  structuralVersion={structuralVersion}
+                  workId={workBeId ?? undefined}
+                  onTextChange={canEdit ? setText : undefined}
+                  onCursorChange={(idx) => {
+                    sendCursor(idx);
+                    setCursorPos(idx);
+                  }}
+                  onSelectionChange={(s, e) => {
+                    sendSelection(s, e);
+                    if (s !== null && e !== null && s !== e) setSelectionRange({ start: s, end: e });
+                    else setSelectionRange(null);
+                  }}
+                  connected={connected}
+                  attributionSpans={resolvedAttributionSpans}
+                  styleAnnotations={annotations}
+                  editable={canEdit}
+                  />
+                  ) : (
                   <CollaborativeEditor
                   structuralVersion={structuralVersion}
                   attributionPaired={pairedAuthorColorsOn}
@@ -6477,6 +6561,7 @@ export function WorkspaceShell() {
                     onResolveLinkDescription={handleResolveLinkDescription}
                     onEditLinkDescription={handleEditLinkDescription}
                   />
+                  )}
                   </ErrorBoundary>
                 )}
                   </>                 )}
@@ -6834,6 +6919,31 @@ export function WorkspaceShell() {
             />
           )}
 </main>
+        {panes.length > 0 && (
+          <div
+            className="ws-pane-divider"
+            title="Drag to resize the pinned panes"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              const el = e.currentTarget as HTMLElement;
+              el.setPointerCapture(e.pointerId);
+              const onMove = (ev: PointerEvent) => {
+                const vw =
+                  ((window.innerWidth - ev.clientX) / window.innerWidth) * 100;
+                setPaneVwOverride(Math.max(25, Math.min(85, vw)));
+              };
+              const onUp = (ev: PointerEvent) => {
+                el.releasePointerCapture(ev.pointerId);
+                el.removeEventListener("pointermove", onMove);
+                el.removeEventListener("pointerup", onUp);
+                el.removeEventListener("pointercancel", onUp);
+              };
+              el.addEventListener("pointermove", onMove);
+              el.addEventListener("pointerup", onUp);
+              el.addEventListener("pointercancel", onUp);
+            }}
+          />
+        )}
         {panes.length > 0 && (
           <div
             className="ws-panes"

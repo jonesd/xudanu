@@ -37690,6 +37690,76 @@ mod tests {
     }
 
     #[test]
+    fn crdt_apply_text_delta_serial_typing_preserves_order() {
+        let (mut server, _pub_sid) = ac_setup();
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
+        let sid = ac_login_as(&mut server, owner_club, test_owner_credential());
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text(""))
+            .unwrap();
+        let _ = server.crdt_open_session(sid, work_id).unwrap();
+        // Type "hello there" one character at a time — the exact
+        // cadence that produced MIRRORED text from the phone.
+        for (i, ch) in "hello there".chars().enumerate() {
+            let mut ops = vec![];
+            if i > 0 {
+                ops.push(TextDeltaOp::Retain { count: i as u64 });
+            }
+            ops.push(TextDeltaOp::Insert {
+                text: ch.to_string(),
+            });
+            server.crdt_apply_text_delta(sid, work_id, &ops).unwrap();
+        }
+        let text = server.crdt_current_text(work_id).unwrap();
+        assert_eq!(
+            text, "hello there",
+            "per-char serial typing must preserve order"
+        );
+    }
+
+    #[test]
+    fn crdt_apply_text_delta_autocorrect_replace() {
+        let (mut server, _pub_sid) = ac_setup();
+        let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());
+        let sid = ac_login_as(&mut server, owner_club, test_owner_credential());
+        let work_id = server
+            .create_work(owner_sid, Edition::from_text(""))
+            .unwrap();
+        let _ = server.crdt_open_session(sid, work_id).unwrap();
+        // Type "teh cat" per char
+        for (i, ch) in "teh cat".chars().enumerate() {
+            let mut ops = vec![];
+            if i > 0 {
+                ops.push(TextDeltaOp::Retain { count: i as u64 });
+            }
+            ops.push(TextDeltaOp::Insert {
+                text: ch.to_string(),
+            });
+            server.crdt_apply_text_delta(sid, work_id, &ops).unwrap();
+        }
+        // Autocorrect: replace "teh" with "the" (retain0? no — retain 0,
+        // delete 3, insert 3)
+        server
+            .crdt_apply_text_delta(
+                sid,
+                work_id,
+                &[
+                    TextDeltaOp::Delete { count: 3 },
+                    TextDeltaOp::Insert {
+                        text: "the".to_string(),
+                    },
+                    TextDeltaOp::Retain { count: 4 },
+                ],
+            )
+            .unwrap();
+        let text = server.crdt_current_text(work_id).unwrap();
+        assert_eq!(
+            text, "the cat",
+            "autocorrect-style replace must apply positionally"
+        );
+    }
+
+    #[test]
     fn crdt_apply_text_delta_checks_edit_permission() {
         let (mut server, _pub_sid) = ac_setup();
         let (owner_club, owner_sid) = ac_create_user(&mut server, "owner", test_owner_credential());

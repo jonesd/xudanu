@@ -13,6 +13,7 @@ export default defineConfig({
     include: ["@uiw/react-md-editor"],
   },
   server: {
+    host: true,
     proxy: {
       "/api": {
         target: backend,

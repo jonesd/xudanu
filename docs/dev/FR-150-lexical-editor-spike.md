@@ -13,6 +13,86 @@
   Fallback: ProseMirror/TipTap if Lexical's structure-editing ceiling
   shows during the spike.
 
+## Merge-phase follow-ups
+
+- Rich text on the Lexical surface: heading nodes (H1-H3), bold/
+  italic marks, lists — maps to Lexical's HeadingNode and mark
+  system; the format bar's ops (handleToggleStyle/handleToggleBlock)
+  need Lexical adapters. The user explicitly wants the format bar.
+- Remove the spike's 350ms debounce once the queue is proven in the
+  wild (the queue makes it redundant).
+
+## FINAL VERDICT: PASS (2026-10-23, human device test complete)
+
+Multi-line typing, mid-sentence insertion, and copy-paste all clean
+on iPhone Safari, human-typed. The path to green required three
+commits beyond the surface swap: (1) one-in-flight delta queue in
+crdt_sync (concurrent work_revise_delta raced server-side into
+MIRRORED text — the bug that also disqualified the old editor);
+(2) text-gated RemoteSync rebuild (attributionSpan identity churn
+rebuilt with stale text during the debounce pause — caret jump to
+index 0); (3) echo guard (skip rebuild when the editor already holds
+the incoming text — cross-paragraph caret jump on commit echo).
+Editor surface, CRDT pipeline, and sync layer each proven
+independently; server-side ordering proven by new Rust tests
+(serial typing + autocorrect-replace).
+
+## Root cause isolated (2026-10-23, human-typed on device)
+
+Human typing on the spike with ~350ms commit batching: **mixed
+forward/corrupted fragments** — batched single inserts land correctly;
+interleaved batches misapply offsets. Combined with earlier evidence
+(per-keystroke = fully mirrored text on BOTH editors; single batched
+insert = correct), the bug is definitively in the SHARED client
+diff→CRDT-op pipeline (crdt_sync.ts area), triggered by op cadence —
+NOT the editor surface, NOT Lexical, NOT iOS rendering. Fix target:
+insert-offset computation in the diff/op generator (suspect: base
+text staleness between consecutive diffs — each op's position
+computed against a pre-batch baseline).
+
+## VERDICT (2026-10-22, automation-verified on-device)
+
+**Lexical spike PASSES where the incumbent failed catastrophically.**
+Typed on iPhone via safaridriver (real device Safari): "Hello there"
+→ server stored "Hello there" → survives reload. Old editor under
+identical conditions stored MIRRORED text (finding 0). The focus
+flakiness that blocked manual testing resolved into four separate
+environment bugs (editability deadlock; blocked-storage boot crash;
+sticky-flag fallback; stale LAN origin) — all fixed on this branch.
+Remaining before merge: one HUMAN IME pass (autocorrect/dictation by
+finger) — automation cannot exercise the real keyboard pipeline.
+
+## Device findings (2026-10-20/21, iPhone iOS 18.7, WebKit)
+
+0. **Old surface: typing writes MIRRORED text to the server** —
+   typing "Hello there" on iPhone stored "ereht olleH" (persists
+   across reload; attribution colors the reversed span, so storage
+   is definitively reversed). Mechanism consistent with per-char
+   inserts all landing at offset 0 — the iOS offset/coordinate path
+   is broken in the old editor's diff pipeline. Repro: new doc,
+   type two words. This is disqualifying on its own.
+1. **Spike on iPhone (iOS 18.7 Safari): focus/keyboard failure —
+   UNRESOLVED, needs Web Inspector.** Five iterations: editability
+   deadlock fixed (EditableGate); probe shows e=1 consistently;
+   focus oscillates f=0<->f=1 across gesture-focus patches
+   (pointerdown, click, user-select insurance) — keyboard never
+   reliably opens. Next step: USB + Web Inspector (or safaridriver,
+   the v1.8.0 approach) to watch events/DOM live. NOT a Lexical
+   verdict yet — the OLD-surface verdict is already decisive
+   (finding 0).)
+
+1. **Old surface: text vanishes after link-create** — after
+   attempting a link to another document, the editor rendered only
+   link-marker underlines; all glyphs invisible until refresh.
+   Data intact server-side (render-state corruption in the
+   post-link structural rebuild on iOS WebKit). This is criterion-1
+   class evidence: the contentEditable surface fails on device
+   without IME even being involved. (Lexical surface unaffected by
+   construction — it has no link-marker rebuild path.)
+2. Mobile chrome feedback (fixed on branch): selection+format bars
+   now single scrollable rows; LAN origin + 16px-font + storage
+   guards ported from v1.8.0 lessons.
+
 ## Scope
 
 IN: plain-text editing surface behind a feature flag
