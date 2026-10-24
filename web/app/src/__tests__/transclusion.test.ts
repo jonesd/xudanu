@@ -5,7 +5,7 @@ describe("Transclusion delta computation", () => {
   it("computes insert-only delta when excerpt is appended", () => {
     const client = new CrdtSyncClient("ws://test", 1);
     const sentFrames: Array<{ op: string; payload?: object }> = [];
-    (client as any).crdtReady = true;
+    (client as any).engine.crdtReady = true;
     (client as any).adoptServerText("Hello");
     (client as any).ws = {
       readyState: WebSocket.OPEN,
@@ -29,7 +29,7 @@ describe("Transclusion delta computation", () => {
   it("computes insert-at-position delta for excerpt insertion", () => {
     const client = new CrdtSyncClient("ws://test", 1);
     const sentFrames: Array<{ op: string; payload?: object }> = [];
-    (client as any).crdtReady = true;
+    (client as any).engine.crdtReady = true;
     (client as any).adoptServerText("Hello World");
     (client as any).ws = {
       readyState: WebSocket.OPEN,
@@ -57,7 +57,7 @@ describe("Transclusion delta computation", () => {
   it("computes delete delta when text is removed", () => {
     const client = new CrdtSyncClient("ws://test", 1);
     const sentFrames: Array<{ op: string; payload?: object }> = [];
-    (client as any).crdtReady = true;
+    (client as any).engine.crdtReady = true;
     (client as any).adoptServerText("Hello World");
     (client as any).ws = {
       readyState: WebSocket.OPEN,
@@ -78,7 +78,7 @@ describe("Transclusion delta computation", () => {
   it("does not send delta when text is unchanged", () => {
     const client = new CrdtSyncClient("ws://test", 1);
     let sendCount = 0;
-    (client as any).crdtReady = true;
+    (client as any).engine.crdtReady = true;
     (client as any).adoptServerText("Hello");
     (client as any).ws = {
       readyState: WebSocket.OPEN,
@@ -91,7 +91,7 @@ describe("Transclusion delta computation", () => {
 
   it("fires text listeners on setText", () => {
     const client = new CrdtSyncClient("ws://test", 1);
-    (client as any).crdtReady = true;
+    (client as any).engine.crdtReady = true;
     (client as any).adoptServerText("Hello");
     (client as any).ws = { readyState: WebSocket.OPEN, send: () => {} };
 
@@ -108,8 +108,8 @@ describe("Event handling: work_revised does not clobber text", () => {
 
   function setupClient(): CrdtSyncClient {
     const client = new CrdtSyncClient("ws://test", 42);
-    (client as any).crdtReady = true;
-    (client as any).text = originalText;
+    (client as any).engine.crdtReady = true;
+    (client as any).engine.setTextSilent(originalText);
     (client as any).workBeId = 42;
     (client as any).skipCrdt = false;
     return client;
@@ -134,7 +134,7 @@ describe("Event handling: work_revised does not clobber text", () => {
 
   it("does NOT call refreshText on work_revised", () => {
     const client = setupClient();
-    const refreshSpy = vi.spyOn(client as any, "refreshText");
+    const refreshSpy = vi.spyOn((client as any).engine, "refreshText");
 
     (client as any).handleEvent({
       type: "event",
@@ -181,8 +181,8 @@ describe("Event handling: work_revised does not clobber text", () => {
 describe("Event handling: crdt_text_update applies remote text", () => {
   function setupClient(text = "Hello World"): CrdtSyncClient {
     const client = new CrdtSyncClient("ws://test", 42);
-    (client as any).crdtReady = true;
-    (client as any).text = text;
+    (client as any).engine.crdtReady = true;
+    (client as any).engine.setTextSilent(text);
     (client as any).workBeId = 42;
     (client as any).skipCrdt = false;
     return client;
@@ -254,8 +254,8 @@ describe("Event handling: crdt_text_update applies remote text", () => {
 describe("Event handling: crdt_text_delta applies remote deltas", () => {
   function setupClient(text = "Hello World"): CrdtSyncClient {
     const client = new CrdtSyncClient("ws://test", 42);
-    (client as any).crdtReady = true;
-    (client as any).text = text;
+    (client as any).engine.crdtReady = true;
+    (client as any).engine.setTextSilent(text);
     (client as any).workBeId = 42;
     (client as any).skipCrdt = false;
     return client;
@@ -308,7 +308,7 @@ describe("Transclusion placement simulation", () => {
   it("simulates text insertion for transclusion placement", () => {
     const client = new CrdtSyncClient("ws://test", 1);
     const sentFrames: Array<{ op: string; payload?: object }> = [];
-    (client as any).crdtReady = true;
+    (client as any).engine.crdtReady = true;
     (client as any).adoptServerText("Hello World");
     (client as any).workBeId = 1;
     (client as any).ws = {
@@ -339,7 +339,7 @@ describe("Transclusion placement simulation", () => {
 
   it("text remains editable after work_revised echo following transclusion", () => {
     const client = new CrdtSyncClient("ws://test", 42);
-    (client as any).crdtReady = true;
+    (client as any).engine.crdtReady = true;
     (client as any).adoptServerText("Hello beautiful World");
     (client as any).workBeId = 42;
     (client as any).skipCrdt = false;
@@ -381,7 +381,7 @@ describe("Transclusion placement simulation", () => {
   it("multiple transclusions can be placed sequentially", () => {
     const client = new CrdtSyncClient("ws://test", 1);
     const sentFrames: Array<{ op: string; payload?: object }> = [];
-    (client as any).crdtReady = true;
+    (client as any).engine.crdtReady = true;
     (client as any).adoptServerText("Start End");
     (client as any).workBeId = 1;
     (client as any).ws = {
@@ -399,8 +399,8 @@ describe("Transclusion placement simulation", () => {
     expect(client.getText()).toBe("Start ONE End");
 
     // Simulate the first delta's server ACK (queue: one in flight).
-    (client as any).deltaInFlight = false;
-    (client as any).lastAckedLocalText = client.getText();
+    (client as any).engine.deltaInFlight = false;
+    (client as any).engine.lastAckedLocalText = client.getText();
 
     // Second transclusion: insert "TWO " before "End" (position 10 in "Start ONE End")
     text = client.getText();
@@ -414,7 +414,7 @@ describe("Transclusion placement simulation", () => {
 
   it("editing after transclusion with work_revised arriving mid-edit", () => {
     const client = new CrdtSyncClient("ws://test", 42);
-    (client as any).crdtReady = true;
+    (client as any).engine.crdtReady = true;
     (client as any).adoptServerText("Hello excerpt World");
     (client as any).workBeId = 42;
     (client as any).skipCrdt = false;
@@ -445,8 +445,8 @@ describe("Transclusion placement simulation", () => {
     expect(client.getText()).toBe("Hello excerpt World!");
 
     // First delta's server ACK (queue: one in flight at a time)
-    (client as any).deltaInFlight = false;
-    (client as any).lastAckedLocalText = client.getText();
+    (client as any).engine.deltaInFlight = false;
+    (client as any).engine.lastAckedLocalText = client.getText();
 
     // User types again
     client.setText("Hello excerpt World!!!");
@@ -460,7 +460,7 @@ describe("Transclusion placement simulation", () => {
 describe("Delta application correctness", () => {
   it("applyDeltaOps handles pure insert", () => {
     const client = new CrdtSyncClient("ws://test", 42);
-    (client as any).crdtReady = true;
+    (client as any).engine.crdtReady = true;
     (client as any).adoptServerText("ABC");
     (client as any).workBeId = 42;
     (client as any).skipCrdt = false;
@@ -485,7 +485,7 @@ describe("Delta application correctness", () => {
 
   it("applyDeltaOps handles replace (delete + insert)", () => {
     const client = new CrdtSyncClient("ws://test", 42);
-    (client as any).crdtReady = true;
+    (client as any).engine.crdtReady = true;
     (client as any).adoptServerText("ABC");
     (client as any).workBeId = 42;
     (client as any).skipCrdt = false;
@@ -511,12 +511,12 @@ describe("Delta application correctness", () => {
 
   it("falls back to refreshText on invalid delta ops", () => {
     const client = new CrdtSyncClient("ws://test", 42);
-    (client as any).crdtReady = true;
+    (client as any).engine.crdtReady = true;
     (client as any).adoptServerText("ABC");
     (client as any).workBeId = 42;
     (client as any).skipCrdt = false;
 
-    const refreshSpy = vi.spyOn(client as any, "refreshText").mockImplementation(() => {});
+    const refreshSpy = vi.spyOn((client as any).engine, "refreshText").mockImplementation(() => {});
 
     (client as any).handleEvent({
       type: "event",
