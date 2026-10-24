@@ -17,8 +17,8 @@ export function ConnectionOverlay({ connected, reconnectAttempt }: ConnectionOve
         showRetry: false,
       }
     : {
-        background: "rgba(248, 81, 73, 0.95)",
-        message: `Connection lost — reconnecting (attempt ${reconnectAttempt}, next in ${delayText})`,
+        background: "rgba(210, 153, 34, 0.95)",
+        message: `Offline — your edits will sync when you reconnect (attempt ${reconnectAttempt}, next in ${delayText})`,
         showRetry: true,
       };
 

@@ -857,9 +857,28 @@ export class CrdtSyncClient {
     this.textListeners.forEach((cb) => cb(newText));
   }
 
-  /** ONE delta in flight, ever (see flushTextDelta for why). */
+  /** ONE delta in flight, ever (see flushTextDelta for why).
+   * Offline: the delta is not sent — the edited text persists to
+   * the offline cache (IndexedDB), and the existing reconciliation
+   * path (reconnect: local state differs → push local) replays it
+   * when the server returns. The user types normally, unaware. */
   private flushTextDelta(): void {
     if (this.deltaInFlight) return;
+    // OFFLINE FIRST: persist regardless of the delta base (a page
+    // reload while offline loses lastAckedLocalText — the user's
+    // post-reload edits still need to survive another reload).
+    if (!this.connected || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.hasUnsyncedLocalEdits = true;
+      import("../offline-cache").then(({ cacheDocument }) => {
+        cacheDocument({
+          work_id: this.workBeId,
+          title: this.openWorkTitle || "",
+          text: this.text,
+          starred: this.currentStarred,
+        }).catch(() => {});
+      });
+      return;
+    }
     const base = this.lastAckedLocalText;
     if (base === null || base === this.text) return;
     this.sendTextDelta(base, this.text);
