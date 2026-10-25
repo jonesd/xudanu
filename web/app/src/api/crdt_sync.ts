@@ -17,6 +17,7 @@ import {
 } from "./annotation-queue";
 import type { TextDeltaOp } from "./text_buffer";
 import type {
+  PaginatedWorkList,
   AwarenessState,
   OutlineEntry,
   SearchMatchItem,
@@ -722,22 +723,52 @@ export class CrdtSyncClient {
     return (val.patterns as SourcePatternEntry[]) || [];
   }
 
-  async fetchWorkList(): Promise<WorkListEntry[]> {
-    const resp = await this.sendRequest("work_list", { limit: 1000 });
+  /** One page of the work list. The wire protocol is pagination-native
+   * (PaginatedWorkList: entries + total_count + has_more); the
+   * sidebar consumes fetchWorkList (all pages) today — windowing is
+   * FR-154. */
+  async fetchWorkListPage(offset = 0, limit = 1000): Promise<PaginatedWorkList> {
+    const resp = await this.sendRequest("work_list", { offset, limit });
     const val = extractValue(resp);
-    const list: WorkListEntry[] = Array.isArray(val)
+    const rec = (val ?? {}) as Record<string, unknown>;
+    const entries: WorkListEntry[] = Array.isArray(val)
       ? (val as WorkListEntry[])
-      : ((val as Record<string, unknown>).entries as WorkListEntry[])
-        || ((val as Record<string, unknown>).work_list as WorkListEntry[])
-        || ((val as Record<string, unknown>).value as WorkListEntry[])
+      : (rec.entries as WorkListEntry[])
+        || (rec.work_list as WorkListEntry[])
+        || (rec.value as WorkListEntry[])
         || [];
+    return {
+      entries,
+      total_count: (rec.total_count as number) ?? entries.length,
+      has_more: rec.has_more === true,
+    };
+  }
+
+  async fetchWorkList(): Promise<WorkListEntry[]> {
+    // Page until the server says done — the old single-request form
+    // silently truncated at 1,000 works (FR-154 bug 1: 90% of a 10k
+    // library invisible, has_more discarded). Bound: 100 pages x
+    // 1,000 = MAX_WORK_COUNT (100,000) server-side.
+    const all: WorkListEntry[] = [];
+    const PAGE = 1000;
+    let offset = 0;
+    for (let page = 0; page < 100; page++) {
+      const { entries, has_more } = await this.fetchWorkListPage(offset, PAGE);
+      all.push(...entries);
+      if (entries.length === 0) break;
+      // Accumulate by entries actually received — servers may cap
+      // page sizes below the requested limit, and a fixed stride
+      // would skip whatever a short page omitted.
+      offset += entries.length;
+      if (!has_more) break;
+    }
     // Feed the offline mirror's star pinning + title for the open work.
-    const mine = list.find((w) => w.work_id === this.workBeId);
+    const mine = all.find((w) => w.work_id === this.workBeId);
     if (mine) {
       this.openWorkTitle = mine.title || "";
       this.currentStarred = !!mine.is_starred;
     }
-    return list;
+    return all;
   }
 
   async linkCreate(

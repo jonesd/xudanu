@@ -557,6 +557,12 @@ export interface WorkListEntry {  work_id: number;
   preview?: string;
 }
 
+export interface PaginatedWorkList {
+  entries: WorkListEntry[];
+  total_count: number;
+  has_more: boolean;
+}
+
 export type WorkKind = "document" | "note" | "person" | "concept" | "collection" | "commentary" | "book" | "web-shadow";
 
 /** FR-86: one LLM-proposed connection. Proposals are NOT links —
