@@ -88,6 +88,26 @@ describe("EditSyncEngine — onTextDeltaApplied", () => {
     ]);
   });
 
+  it("does NOT fire when adopting over EMPTY text (work open — span-corruption race)", () => {
+    // Regression: annotation_list beating crdt_sync_open meant spans
+    // were in state when the adopt fired diffToOps("", fullText) —
+    // an insert-everything op that shifted every span past the
+    // document end (code_block styling lost after a work switch).
+    const { host } = makeHost();
+    const engine = new EditSyncEngine(host);
+
+    const fired: Array<{ ops: any[]; source: string }> = [];
+    engine.onTextDeltaApplied((ops, source) => fired.push({ ops, source }));
+
+    engine.adoptServerText("the whole document arrives at open");
+    expect(fired).toHaveLength(0);
+
+    // Mid-session adoption (echo recovery) still fires — real diff
+    engine.adoptServerText("the whole document arrives at open, edited");
+    expect(fired).toHaveLength(1);
+    expect(fired[0].source).toBe("server");
+  });
+
   it("does not fire on identical text or silent/local-only bookkeeping", () => {
     const { host } = makeHost();
     const engine = new EditSyncEngine(host);

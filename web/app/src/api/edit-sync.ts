@@ -122,7 +122,17 @@ export class EditSyncEngine {
     const prev = this.text;
     this.text = t;
     this.lastAckedLocalText = t;
-    this.notifyTextDelta(diffToOps(prev, t), "server");
+    // Work open/load: adopting over EMPTY text is not a rebase event.
+    // Consumers' server lists (annotations, attribution) are measured
+    // against the incoming text already — rebasing them through the
+    // insert-everything diff would shift every span past the document
+    // end. Observed as code_block styling lost after a work switch
+    // when the annotation_list response beat crdt_sync_open. Mid-
+    // session adoptions (echo recovery, prev non-empty) keep firing:
+    // those diffs are meaningful.
+    if (prev !== "") {
+      this.notifyTextDelta(diffToOps(prev, t), "server");
+    }
     this.textListeners.forEach((cb) => cb(t));
   }
 
