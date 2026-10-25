@@ -125,6 +125,12 @@ export function useCrdtSync(
   const authInitiatedRef = useRef(false);
   const attributionEpochRef = useRef(0);
   const annotationEpochRef = useRef(0);
+  /** Post-open refreshes — set once the callbacks exist (they are
+   * defined below this effect), invoked when switchWork resolves so
+   * per-work data loads against LOADED text, never racing the open.
+   * The old path fired on the workBeId/switchingWork effect, whose
+   * stale-closure ordering let annotation_list beat crdt_sync_open. */
+  const postOpenRef = useRef<() => void>(() => {});
   useEffect(() => {
     if (!wsUrl) return;
 
@@ -264,6 +270,12 @@ export function useCrdtSync(
     if (client) {
       client
         .switchWork(workBeId)
+        .then(() => {
+          // Open resolved: the work's text is adopted. Only now may
+          // per-work span data load — spans arrive measured against
+          // the text that is actually on screen.
+          postOpenRef.current();
+        })
         .catch((e: unknown) => {
           // A failed switch must never leave the user silently
           // viewing the previous work's text.
@@ -290,7 +302,10 @@ export function useCrdtSync(
     // moment identity arrives — clear it so the retry's result (success or
     // a fresh denial) renders without the old message sticking.
     setAccessDeniedWorkId(null);
-    clientRef.current?.switchWork(workBeId);
+    clientRef.current
+      ?.switchWork(workBeId)
+      .then(() => postOpenRef.current())
+      .catch(() => {});
   }, [authenticated, connected, workBeId, switchingWork]);
 
   // Low-frequency awareness reconciliation (30s safety net).
@@ -705,6 +720,10 @@ export function useCrdtSync(
       client.connect();
     }
   }, []);
+
+  postOpenRef.current = () => {
+    refreshAnnotations();
+  };
 
   const refreshAnnotations = useCallback(() => {
     const client = clientRef.current;

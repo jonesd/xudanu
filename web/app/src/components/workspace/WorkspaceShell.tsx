@@ -2431,8 +2431,11 @@ export function WorkspaceShell() {
     // lost them too. The ticket-redeem window is a timing concern, not
     // a permission one; a redundant early fetch is harmless.
     if (!connected || workBeId === null || switchingWork) return;
-    refreshAttribution();
-    refreshAnnotations();
+    // Attribution + annotations load AFTER the open resolves (the
+    // hook's post-open path) — never from here, where stale effect
+    // ordering let the fetches race crdt_sync_open. Attribution also
+    // has the debounced text-keyed refresher below. Links keep their
+    // own epoch guards + delay.
     const linkTimer = setTimeout(() => {
       if (clientRef.current) {
         void loadLinks(clientRef.current, workBeId, works);
@@ -2440,7 +2443,7 @@ export function WorkspaceShell() {
       }
     }, 200);
     return () => clearTimeout(linkTimer);
-  }, [connected, workBeId, switchingWork, clientRef, works, loadLinks, loadBacklinks, refreshAttribution, refreshAnnotations]);
+  }, [connected, workBeId, switchingWork, clientRef, works, loadLinks, loadBacklinks]);
 
   // Markers track text: the server migrates every link span on each
   // edit, but the client's marker data was computed once at load —
