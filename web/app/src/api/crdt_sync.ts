@@ -213,9 +213,18 @@ export class CrdtSyncClient {
         if (msg.includes("WebSocket not open") || msg.includes("connection closed")) {
           return; // offline again — keep the queue for the next open
         }
-        // Permanent failure (e.g. delete of a vanished annotation):
-        // drop the op rather than looping forever.
-        console.warn("[crdt] pending annotation replay failed, dropping:", msg);
+        // Only delete-of-a-vanished-annotation is genuinely permanent.
+        // Auth errors (public session vs logged-in), validation races,
+        // anything else: KEEP the op queued and retry on a later open.
+        // Dropping on transient errors silently destroyed offline
+        // formatting (observed: heading/code_block styles lost after
+        // navigation — replay hit not-authorized and discarded).
+        if (op.kind === "delete" && (msg.includes("not found") || msg.includes("no such"))) {
+          console.warn("[crdt] pending annotation delete target gone, dropping:", msg);
+        } else {
+          console.warn("[crdt] pending annotation replay deferred (will retry):", msg);
+          continue;
+        }
       }
       this.pendingAnnotationOps = this.pendingAnnotationOps.filter((e) => e.id !== op.id);
       await removePendingOp(op.id);

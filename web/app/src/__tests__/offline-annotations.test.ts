@@ -71,6 +71,25 @@ describe("annotation-queue (memory fallback)", () => {
   });
 });
 
+/** A live ws whose every request is REJECTED with an error frame
+ * (models the auth race: public session vs logged-in expectations). */
+function rejectingClient(workId: number, message: string): CrdtSyncClient {
+  const client = new CrdtSyncClient("ws://test", workId);
+  (client as any).connected = true;
+  (client as any).ws = {
+    readyState: WebSocket.OPEN,
+    send: (data: string) => {
+      const frame = JSON.parse(data);
+      if (frame.type === "request") {
+        queueMicrotask(() => {
+          (client as any).onMessage(JSON.stringify({ type: "error", id: frame.id, message }));
+        });
+      }
+    },
+  };
+  return client;
+}
+
 describe("CrdtSyncClient — offline annotations", () => {
   beforeEach(async () => {
     await clearPendingAnnotationOps();
@@ -132,6 +151,30 @@ describe("CrdtSyncClient — offline annotations", () => {
     const ops = await pendingAnnotationOps(42);
     expect(ops).toHaveLength(1);
     expect(ops[0]).toMatchObject({ kind: "delete", annotation_id: 55 });
+  });
+
+  it("replay KEEPS the op queued when the server rejects (auth race) — no silent loss", async () => {
+    const off = offlineClient();
+    await off.annotationCreate(42, 1002, "code_block", "", 3, 7);
+
+    const client = rejectingClient(42, "not authorized");
+    await (client as any).loadPendingAnnotations(42);
+    await client.replayPendingAnnotations();
+
+    const ops = await pendingAnnotationOps(42);
+    expect(ops).toHaveLength(1);
+    expect(ops[0]).toMatchObject({ kind: "create", annotation_id: 1002, char_start: 3, char_end: 7 });
+  });
+
+  it("replay drops ONLY delete-of-vanished annotations", async () => {
+    const off = offlineClient();
+    await off.annotationDelete(42, 555);
+
+    const client = rejectingClient(42, "annotation not found");
+    await (client as any).loadPendingAnnotations(42);
+    await client.replayPendingAnnotations();
+
+    expect(await pendingAnnotationOps(42)).toHaveLength(0);
   });
 
   it("reconnect drains the queue with idempotent annotation_create frames", async () => {
