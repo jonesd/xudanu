@@ -50,14 +50,26 @@ vi.mock("../api/crdt_sync", () => ({
     attributionQuery = vi.fn(async () => []);
     attributionLogStatus = vi.fn(async () => null);
 
-    switchWork = vi.fn(() => {
+    __workOpened: Array<(workId: number) => void> = [];
+    onWorkOpened = vi.fn((cb: (workId: number) => void) => {
+      (this as any).__workOpened.push(cb);
+      return () => {
+        (this as any).__workOpened = (this as any).__workOpened.filter((f: (id: number) => void) => f !== cb);
+      };
+    });
+    switchWork = vi.fn((workId: number) => {
       let resolve!: () => void;
       let reject!: (e: unknown) => void;
       const p = new Promise<void>((res, rej) => {
         resolve = res;
         reject = rej;
       });
-      (this as any).__resolveSwitch = resolve;
+      // Mirror the real client: the work-opened event fires at the
+      // end of a SUCCESSFUL open (inside switchWork), never on reject.
+      (this as any).__resolveSwitch = () => {
+        for (const f of (this as any).__workOpened) f(workId);
+        resolve();
+      };
       (this as any).__rejectSwitch = reject;
       return p;
     });

@@ -85,6 +85,7 @@ export class CrdtSyncClient {
   private contentMatchListeners = new Set<(match: ContentMatch) => void>();
   private compoundSourceListeners = new Set<(compoundWorkId: number, sourceWorkId: number) => void>();
   private identityListeners = new Set<IdentityListener>();
+  private workOpenedListeners = new Set<(workId: number) => void>();
   private connected = false;
   private disposed = false;
   private connecting = false;
@@ -395,6 +396,17 @@ export class CrdtSyncClient {
 
   onChangeHighlights(cb: (changes: ChangeHighlight[]) => void): () => void {
     return this.engine.onChangeHighlights(cb);
+  }
+
+  /** Fired at the true end of every successful tryOpenWork — both
+   * the initial connection open and switchWork re-opens. This is
+   * the moment per-work span data may load; switchWork's promise
+   * alone is wrong (the same-work early-return resolves before the
+   * session handshake has even completed — annotationList then ran
+   * against a half-born session and came back empty). */
+  onWorkOpened(cb: (workId: number) => void): () => void {
+    this.workOpenedListeners.add(cb);
+    return () => { this.workOpenedListeners.delete(cb); };
   }
 
   /** Fires once per visible text transition (local/remote/server)
@@ -2169,6 +2181,9 @@ export class CrdtSyncClient {
     // client-supplied ids); a fresh open while still offline is a
     // no-op inside replayPendingAnnotations.
     void this.replayPendingAnnotations();
+    if (!accessDenied) {
+      this.workOpenedListeners.forEach((cb) => cb(this.workBeId));
+    }
   }
 
   private switching = false;

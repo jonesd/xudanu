@@ -131,6 +131,10 @@ export function useCrdtSync(
    * The old path fired on the workBeId/switchingWork effect, whose
    * stale-closure ordering let annotation_list beat crdt_sync_open. */
   const postOpenRef = useRef<() => void>(() => {});
+  /** Live workBeId for listeners subscribed in the [wsUrl] effect
+   * (which intentionally does not re-run on work changes). */
+  const workBeIdRef = useRef<number | null>(null);
+  workBeIdRef.current = workBeId;
   useEffect(() => {
     if (!wsUrl) return;
 
@@ -195,6 +199,11 @@ export function useCrdtSync(
       setIdentityEpoch(identityEpochRef.current);
     });
     const unsubChanges = client.onChangeHighlights(setRecentChanges);
+    // Per-work span data loads when the client says the work truly
+    // opened (tryOpenWork completion — initial open AND switches).
+    const unsubWorkOpened = client.onWorkOpened((workId) => {
+      if (workId === (workBeIdRef.current ?? -1)) postOpenRef.current();
+    });
     // Optimistic overlay rebase: attribution spans and annotations
     // shift the instant text moves; the periodic server re-query
     // confirms/corrects. No-op while the lists are empty.
@@ -224,6 +233,7 @@ export function useCrdtSync(
       unsubMatch();
       unsubIdentity();
       unsubChanges();
+      unsubWorkOpened();
       unsubDelta();
       if (disconnectTimerRef.current) {
         clearTimeout(disconnectTimerRef.current);
@@ -271,10 +281,8 @@ export function useCrdtSync(
       client
         .switchWork(workBeId)
         .then(() => {
-          // Open resolved: the work's text is adopted. Only now may
-          // per-work span data load — spans arrive measured against
-          // the text that is actually on screen.
-          postOpenRef.current();
+          // Post-open refreshes fire via onWorkOpened (see the
+          // [wsUrl] subscription) — the TRUE end of tryOpenWork.
         })
         .catch((e: unknown) => {
           // A failed switch must never leave the user silently
