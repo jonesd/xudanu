@@ -231,10 +231,14 @@ fn security_files_with_archives(data_dir: &Path) -> Vec<PathBuf> {
     named.into_iter().map(|(_, p)| p).collect()
 }
 
+#[allow(dead_code)]
 /// A checkpoint boundary may sit mid-file (tail checkpoints taken at
 /// shutdown, with the file growing again on the next run). Re-attach to
 /// the signed head by locating the first line that chains from it, then
 /// verify the remainder. Returns (entries beyond the checkpoint, end head).
+/// Superseded by the FR-154 from-scratch walk (which recounts whole
+/// files and lets the covering checkpoint decide only whether to
+/// write); retained for verification tooling.
 fn advance_from_checkpoint(content: &str, cp_head: &str) -> Result<(u64, String), String> {
     use crate::server::transport::chained_log::ChainedLogWriter;
 
@@ -275,23 +279,6 @@ pub fn checkpoint_security_log(
         })
         .collect();
 
-    let (mut entries, mut prev) = match existing.last() {
-        Some(cp) => (cp.entries, cp.head_hash.clone()),
-        None => {
-            // No checkpoint yet. A missing seed is tolerable in two
-            // cases (fresh server: nothing logged yet; legacy server:
-            // logs predate the seed mechanism) — the chain simply
-            // anchors at empty and the first entry's own hash begins
-            // the verifiable span. Hard-failing here broke log
-            // checkpoints on upgraded deployments whose log files
-            // predate seeds (observed live on xudanu.com).
-            let seed = std::fs::read_to_string(data_dir.join("security.log.seed"))
-                .map(|s| s.trim().to_string())
-                .unwrap_or_default();
-            (0, seed)
-        }
-    };
-
     let files = security_files_with_archives(data_dir);
     if files.is_empty() {
         return Ok(Vec::new());
@@ -323,6 +310,26 @@ pub fn checkpoint_security_log(
         Ok(outcome)
     };
 
+    // FR-154 S1: walk the file set chronologically FROM SCRATCH (seed
+    // anchor), counting and verifying every file's chain. The
+    // checkpoints never serve as the resume point — they only decide
+    // whether a boundary still needs a written checkpoint. The old
+    // walk resumed (entries, prev) from the latest checkpoint and then
+    // re-compared running totals against each file's covering
+    // checkpoint, which double-counts covered files on every re-walk:
+    // the live dev store stalled permanently this way (53+ consecutive
+    // failures, manifest untouched two months, WAL-only durability).
+    // Drift (a covering checkpoint whose counts disagree with the
+    // from-scratch truth) self-heals: a fresh checkpoint is written at
+    // the true boundary, superseding the stale one by sequence. A
+    // broken chain still fails closed — verify_log is the integrity
+    // gate and the counts are merely derived bookkeeping.
+    let seed = std::fs::read_to_string(data_dir.join("security.log.seed"))
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+    let mut entries: u64 = 0;
+    let mut prev: String = seed;
+
     for (i, f) in files.iter().enumerate() {
         let is_tail = i == last_idx;
         if is_tail && !include_tail {
@@ -334,29 +341,26 @@ pub fn checkpoint_security_log(
             .to_string_lossy()
             .to_string();
         let content = std::fs::read_to_string(f).map_err(|e| format!("read {}: {}", name, e))?;
-        match covering.get(&name) {
-            Some(cp) => {
-                let (added, head) = advance_from_checkpoint(&content, &cp.head_hash)
-                    .map_err(|e| format!("{}: {}", name, e))?;
-                if entries != cp.entries {
-                    return Err(format!(
-                        "checkpoint bookkeeping mismatch for {}: expected {} entries, tracking {}",
-                        name, cp.entries, entries
-                    ));
-                }
-                entries += added;
-                prev = head;
-                if is_tail && entries > cp.entries {
-                    outcomes.push(write_cp(entries, &prev, name, &mut pending)?);
-                }
+        let (count, head) = ChainedLogWriter::<std::fs::File>::verify_log(&content, &prev)
+            .map_err(|e| format!("chain verify {} failed: {}", name, e))?;
+        entries += count as u64;
+        prev = head;
+        let covered = covering.get(&name);
+        let already_correct = covered
+            .map(|cp| cp.entries == entries && cp.head_hash == prev)
+            .unwrap_or(false);
+        if let Some(cp) = covered {
+            if !already_correct && cp.entries != entries {
+                tracing::warn!(
+                    "[log-checkpoint] healing bookkeeping for {}: covering checkpoint says {} entries, from-scratch walk counts {} — re-anchoring to verified chain",
+                    name,
+                    cp.entries,
+                    entries
+                );
             }
-            None => {
-                let (count, head) = ChainedLogWriter::<std::fs::File>::verify_log(&content, &prev)
-                    .map_err(|e| format!("chain verify {} failed: {}", name, e))?;
-                entries += count as u64;
-                prev = head;
-                outcomes.push(write_cp(entries, &prev, name, &mut pending)?);
-            }
+        }
+        if !already_correct {
+            outcomes.push(write_cp(entries, &prev, name, &mut pending)?);
         }
     }
     Ok(outcomes)
@@ -828,6 +832,75 @@ mod tests {
         assert!(
             verify.lines.iter().any(|l| l.contains("no seed")),
             "legacy warning expected: {:?}",
+            verify.lines
+        );
+    }
+
+    #[test]
+    fn checkpoint_heals_bookkeeping_mismatch_on_valid_chain() {
+        // FR-154 S4: the live incident. A covering checkpoint for a
+        // daily file claims a cumulative count that disagrees with the
+        // walk (an earlier-dated file carried 8 entries the checkpoint
+        // never saw). The old code hard-failed here forever — 53+
+        // consecutive checkpoint failures, manifest untouched for two
+        // months. With a VALID hash chain the mismatch is bookkeeping
+        // drift, not tampering: the checkpoint must self-heal by
+        // re-anchoring counts to the verified chain.
+        let dir = test_dir("heal-mismatch");
+        let kp = ServerKeyPair::generate("test");
+        let mut prev = String::new();
+
+        // An earlier-dated file the stale checkpoint predates: 8 lines,
+        // chaining from the empty seed head.
+        write_log(
+            &dir,
+            "security.log.2026-08-04",
+            &["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8"],
+            &mut prev,
+        );
+        // The covered file, chaining onward: 3 more lines.
+        write_log(&dir, "security.log.2026-08-05", &["b1", "b2", "b3"], &mut prev);
+
+        // The stale covering checkpoint: says the 08-05 boundary sits at
+        // 0 entries with a head that predates the 08-04 file entirely
+        // (written before 08-04 existed — the live incident shape).
+        let stale = sign_checkpoint(
+            &kp,
+            SECURITY_LOG,
+            1,
+            now_secs(),
+            0,
+            "",
+            &["security.log.2026-08-05".to_string()],
+        );
+        write_checkpoint_atomic(&dir, &stale).unwrap();
+
+        // Heal: must succeed, not error.
+        let outcomes = checkpoint_security_log(&dir, &kp, true)
+            .expect("bookkeeping drift on a valid chain must self-heal");
+        assert!(
+            !outcomes.is_empty(),
+            "healed walk writes re-anchored checkpoints"
+        );
+
+        // True totals: 8 + 3 = 11 entries across both files.
+        let last = outcomes.last().unwrap();
+        assert_eq!(last.entries, 11, "re-anchored to the verified chain");
+        assert!(last.files_covered.contains(&"security.log.2026-08-05".to_string()));
+
+        // Second run is clean: no mismatch, no new checkpoints, same totals.
+        let again = checkpoint_security_log(&dir, &kp, true)
+            .expect("post-heal walk must be clean");
+        let again_total = again.last().map(|o| o.entries).unwrap_or(11);
+        assert_eq!(again_total, 11, "stable after healing");
+
+        // And the whole store verifies: chain intact, checkpoints
+        // consistent (with the key history so signatures check).
+        let history = KeyHistory::new(&kp);
+        let verify = verify_security_log(&dir, Some(&history));
+        assert!(
+            verify.ok,
+            "chain verifies after heal: {:?}",
             verify.lines
         );
     }

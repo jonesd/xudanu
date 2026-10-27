@@ -1170,6 +1170,19 @@ impl OtreeCrdtManager {
             let edition = initial_edition
                 .cloned()
                 .unwrap_or_else(|| Edition::from_text_batched(""));
+            // FR-154 (annotation-loss root cause): re-attach parked
+            // annotations. close_sync_session moves a doc's
+            // annotations to orphaned_annotations when the last
+            // subscriber leaves (every work switch); this open path
+            // previously created the doc with empty annotations —
+            // stranding them invisibly (annotation_list reads doc
+            // state only) until the next full restart. Observed live
+            // as heading/code_block styling lost on every work
+            // switch while surviving reboots.
+            let annotations = self
+                .orphaned_annotations
+                .remove(&work_id)
+                .unwrap_or_default();
             self.docs.insert(
                 work_id,
                 OtreeWorkDoc {
@@ -1188,7 +1201,7 @@ impl OtreeCrdtManager {
                     federated_provenance: Vec::new(),
                     last_author_mapping: None,
                     cached_text: Mutex::new(None),
-                    annotations: Vec::new(),
+                    annotations,
                 },
             );
         }
@@ -3454,6 +3467,49 @@ mod tests {
         let ann = mgr.annotation_get(work_id, 1).unwrap().unwrap();
         assert_eq!(ann.char_start, 3);
         assert_eq!(ann.char_end, 8);
+    }
+
+    #[test]
+    fn test_annotation_survives_close_and_reopen_lifecycle() {
+        // The live bug (2026-10-26): annotations vanished after the
+        // last subscriber closed (work switch) and the work was
+        // re-opened. Reproduce the full lifecycle: open → annotate →
+        // close (last subscriber leaves → doc parked) → re-ensure →
+        // the annotations must still be there.
+        let mut mgr = OtreeCrdtManager::new(3);
+        let work_id: BeId = 1718;
+        let sid = make_session(7);
+
+        mgr.open_sync_session(work_id, sid, Some(&Edition::from_text("title\nssh line\n")));
+        mgr.annotation_create(work_id, 100, "heading".into(), "{\"level\":1}".into(), 0, 5, None, false)
+            .unwrap();
+        mgr.annotation_create(work_id, 101, "code_block".into(), "".into(), 6, 14, None, false)
+            .unwrap();
+        assert_eq!(mgr.annotation_list(work_id).unwrap().len(), 2);
+
+        // Last subscriber closes: doc is parked into orphaned_annotations.
+        mgr.close_sync_session(work_id, sid).unwrap();
+        assert!(!mgr.docs.contains_key(&work_id));
+
+        // All-annotations view (what annotation_list + checkpoint see)
+        // must include the parked entries.
+        let all = mgr.all_annotations();
+        assert!(
+            all.iter().any(|(w, anns)| *w == work_id && anns.len() == 2),
+            "parked annotations must be visible via all_annotations: {:?}",
+            all
+        );
+
+        // Work re-opens via the REAL crdt_sync_open path —
+        // open_sync_session previously created the doc with empty
+        // annotations, stranding the parked ones invisibly (the live
+        // bug: annotation_list read the empty doc while the parked
+        // entries waited for a full server restart).
+        mgr.open_sync_session(work_id, make_session(8), Some(&Edition::from_text("title\nssh line\n")));
+        let anns = mgr.annotation_list(work_id).unwrap();
+        assert_eq!(anns.len(), 2, "annotations must survive close+reopen");
+        let ids: Vec<u64> = anns.iter().map(|a| a.annotation_id).collect();
+        assert!(ids.contains(&100) && ids.contains(&101));
     }
 
     #[test]
