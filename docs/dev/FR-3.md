@@ -1,10 +1,25 @@
 # FR-3: Federation Activation
 
 - **ID:** FR-3
-- **Status:** Draft (not yet implemented)
-- **Date:** 2026-06-29
+- **Status:** Implemented — shipped and adversarially validated (see note below)
+- **Date:** 2026-06-29 · updated 2026-10-29
 - **Owner:** backend
 - **Depends on:** phases 14–19 (already merged — the federation *components*).
+
+> **Status update (2026-10-29):** the activation layer described below is
+> implemented and running — `--peer <addr>` (repeatable) activates the
+> outbound dialer, PeerPool, sync/heartbeat loop, and PBFT broadcast
+> (`src/server/transport/federation_active.rs`). The operator-facing
+> walkthrough is `docs/federation-activation.html`; day-to-day operations
+> live in `src-rust/FEDERATION-OPS.md`. A 4-node docker test bed
+> (`docker/docker-compose.yml`, reset via `docker/reset-federation.sh`)
+> validates the §9 acceptance criteria, and three suites exercise seals,
+> view change, crash recovery, and catch-up races:
+> `scripts/federation-governance-tests.sh`, `scripts/federation-fault-tests.sh`,
+> and the docker-based `scripts/federation-adversarial-tests.sh`.
+> Several §10 "future" items have since shipped as well: PBFT view
+> change, leader-failure recovery, checkpointing, and log GC. The rest
+> of this document is the original design spec, kept for rationale.
 
 ## 1. Overview
 

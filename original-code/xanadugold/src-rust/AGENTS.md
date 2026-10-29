@@ -30,7 +30,8 @@ frontend. The project is split across two trees:
   tumblers (`"alice.example.com".5.3.10.7`), BLAKE3 content hash verification,
   `CrossServerRef` persisted in `HyperRefPayload`, public content read API
   (`/api/public/work/{id}`), server directory, `/.well-known/xudanu-server.json`.
-- **FR-3 Cluster federation** (optional, behind `--enable-cluster`): outbound
+- **FR-3 Cluster federation** (active when `--peer <addr>` is passed,
+  repeatable): outbound
   dialer, PeerPool, periodic sync/heartbeat, PBFT broadcast — see
   `federation_active.rs`.
 - Collaborative editing: Xudanu's own **O-tree CRDT** (`server/otree_crdt.rs`)

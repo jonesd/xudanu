@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Federation Status — Xudanu</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+h1{font-size:36px;font-weight:800;color:#e6edf3;letter-spacing:-0.5px;margin-bottom:8px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+h2{font-size:26px;font-weight:700;color:#e6edf3;margin-top:56px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;color:#58a6ff;margin-top:32px;margin-bottom:12px}
+p{margin-bottom:14px}
+ul,ol{margin:0 0 16px 24px}
+li{margin-bottom:6px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.warn{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warn strong{color:#f85149}
+.accent-green{color:#3fb950}.accent-blue{color:#58a6ff}.accent-amber{color:#d29922}.accent-red{color:#f85149}
+.step{display:flex;gap:14px;align-items:flex-start;margin:10px 0}
+.step .n{flex-shrink:0;width:26px;height:26px;border-radius:50%;background:rgba(88,166,255,0.15);color:#58a6ff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;margin-top:2px}
+.step .b{flex:1;background:#161b22;border:1px solid #21262d;border-radius:8px;padding:10px 14px}
+.step .b strong{color:#e6edf3}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13px}
+th{background:#161b22;color:#58a6ff;font-weight:600;padding:8px 12px;text-align:left;border-bottom:1px solid #30363d}
+td{padding:8px 12px;border-bottom:1px solid #21262d;color:#c9d1d9}
+tr:hover td{background:rgba(110,118,129,0.06)}
+.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;letter-spacing:0.3px}
+.tag-ok{background:rgba(63,185,80,0.15);color:#3fb950}
+.tag-warn{background:rgba(210,153,34,0.15);color:#d29922}
+.tag-risk{background:rgba(248,81,73,0.15);color:#f85149}
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:16px 20px;margin:24px 0;font-size:13px}
+.toc-title{font-size:11px;font-weight:600;color:#8b949e;letter-spacing:1px;margin-bottom:8px;text-transform:uppercase}
+.toc a{display:block;padding:3px 0;color:#58a6ff;font-size:13px}
+</style>
+</head>
+<body>
+<div style="background:#161b22;border-bottom:1px solid #30363d;color:#8b949e;font-size:13px;padding:6px 16px;text-align:center">An independent interpretation of the released Udanax Gold source &middot; not Project Xanadu documentation &middot; <a href="provenance.html" style="color:#58a6ff;text-decoration:none">about this documentation</a></div>
+<div class="wrap">
+
+<h1>Federation Status</h1>
+<p class="subtitle">One page for where Xudanu's multi-server federation stands: what ships, how it was hardened, and what an adversarial fault battery proved. Updated 2026-10-29.</p>
+
+<div class="toc">
+<div class="toc-title">Contents</div>
+<a href="#s1">1. Component status</a>
+<a href="#s2">2. Hardening timeline</a>
+<a href="#s3">3. The adversarial fault battery</a>
+<a href="#s4">4. Two subtle bugs worth knowing</a>
+<a href="#s5">5. Run it yourself</a>
+</div>
+
+<h2 id="s1">1. Component status</h2>
+
+<p>FR-3 (federation activation) is implemented: passing <code>--peer &lt;addr&gt;</code> (repeatable)
+turns a server from a passive listener into an active federation node. The full
+design rationale is in <a href="dev/FR-3.html">the FR-3 spec</a>; the operator
+walkthrough is <a href="federation-activation.html">Federation Activation</a>.</p>
+
+<table>
+<tr><th>Layer</th><th>What it does</th><th>Status</th></tr>
+<tr><td>Transport &amp; handshake</td><td>Outbound dialer, PeerPool, mutual Ed25519/X25519 + ChaCha20-Poly1305 encrypted channels</td><td><span class="tag tag-ok">SHIPPED</span></td></tr>
+<tr><td>Membership</td><td>Web-of-trust join with endorsements, key epochs + expiry, offline recovery keys</td><td><span class="tag tag-ok">SHIPPED</span></td></tr>
+<tr><td>Data plane</td><td>BLAKE3-verified content replication; club-gated — peers read only publicly-referenced content</td><td><span class="tag tag-ok">SHIPPED</span></td></tr>
+<tr><td>Governance (PBFT)</td><td>Sealed batches with signed prepare/commit certificates, all-to-all vote relay, view change</td><td><span class="tag tag-ok">SHIPPED</span></td></tr>
+<tr><td>Catch-up / state transfer</td><td>Certificate-verified log-tail backfill on (re)connect and on gap detection (<code>GovernanceLogRequest</code>)</td><td><span class="tag tag-ok">SHIPPED</span></td></tr>
+<tr><td>Snapshot bulk state transfer</td><td>Full-state snapshot for a node pruned past the retention window</td><td><span class="tag tag-warn">PARTIAL</span></td></tr>
+<tr><td>Peer discovery</td><td>Static <code>--peer</code> lists; no gossip/DNS discovery</td><td><span class="tag tag-warn">STATIC</span></td></tr>
+</table>
+
+<div class="note"><strong>Deployment shape:</strong> 4 nodes is the minimum for BFT
+(f=1, quorum 3); 5 recommended operationally. 2&ndash;3 node clusters are refused
+at propose time &mdash; no BFT is possible below 3f+1.</div>
+
+<h2 id="s2">2. Hardening timeline</h2>
+
+<div class="step"><div class="n">1</div><div class="b"><strong>2026-09-20 &mdash; protocol review hardening.</strong> Seven findings fixed (S1&ndash;S4 safety, L1&ndash;L3 liveness): signed vote certificates on sealed batches, server-only vote casting, fork-proof view changes via prepared digests, commit-vote buffering, all-to-all vote relay, sealed-batch propagation, and leader-failure view change. <a href="dev/phase-19b-governance-bft.html">Protocol details &rarr;</a></div></div>
+
+<div class="step"><div class="n">2</div><div class="b"><strong>2026-10-28 &mdash; data-plane privacy (trust audit C1/C2).</strong> Four peer-facing paths (blob export, blob get, fingerprint fetch, transclusion query) served content the club model keeps private; all now gate on public reference. <a href="federation-trust-analysis.html">Trust analysis &rarr;</a></div></div>
+
+<div class="step"><div class="n">3</div><div class="b"><strong>2026-10-29 &mdash; liveness &amp; catch-up safety (adversarial round).</strong> Found and fixed the dual-restart round stall (reconnect replay) and the catch-up-race log hole (watermark follows the log, never the certificates). Validated by the fault battery below.</div></div>
+
+<h2 id="s3">3. The adversarial fault battery</h2>
+
+<p><code>scripts/federation-adversarial-tests.sh</code> strikes a live 4-node
+docker cluster on seeded schedules. Every scenario must end
+<strong>sealed-or-halted-safely</strong> (no unsealed execution), every struck
+node must <strong>heal</strong> (docker unpause / restart), the cluster must
+<strong>converge</strong> to one sequence, the governance lifecycle must
+<strong>unify</strong>, and &mdash; the check that earned its keep &mdash; sealed-log
+digests must be <strong>identical on every node</strong>: no fork, no hole.</p>
+
+<table>
+<tr><th>Scenario</th><th>Strike</th><th>What it proves</th></tr>
+<tr><td>A1 / A2 &middot; freeze leader / replica mid-round</td><td><code>docker pause</code> at a seeded delay after propose</td><td>Quorum seals without the victim; no execution below quorum</td></tr>
+<tr><td>A3 &middot; dual freeze (proposer + one more)</td><td>Two pauses mid-round</td><td>Governance halts safely below quorum, recovers on heal</td></tr>
+<tr><td>A4 &middot; crash leader mid-round</td><td>SIGKILL + restart</td><td>View change elects a new leader; round completes or is safely dropped</td></tr>
+<tr><td>A5 &middot; catch-up race</td><td>Kill after boot (log not yet checkpointed), restart into a racing propose</td><td>The restarted node backfills the missed seal in order &mdash; no hole, no fork</td></tr>
+<tr><td>A6 &middot; flapper</td><td>Repeated pause/unpause cycles</td><td>Mesh absorbs churn; convergence and digest equality hold</td></tr>
+</table>
+
+<p>Latest result: <span class="accent-green" style="font-weight:700">16/16 checks
+pass</span> (seed 20261028) on the docker test bed. The same protocol changes
+are covered by in-process mesh tests (3,797 library tests green).</p>
+
+<h2 id="s4">4. Two subtle bugs worth knowing</h2>
+
+<h3>The dual-restart stall (liveness)</h3>
+<p>After two nodes restart simultaneously, a fresh propose could stall forever:
+the pre-prepare raced the leader&rsquo;s re-established dials (one replica never
+received it) while the survivors&rsquo; reverse dials sat in reconnect backoff
+(their votes never reached the leader). Every node was below quorum, nothing
+was rejected, no timeout fired the view change. Fix: the transport
+<strong>replays the pending round</strong> &mdash; pre-prepare plus the node&rsquo;s
+own signed votes &mdash; on every outbound (re)connect and on the periodic sync
+tick.</p>
+
+<h3>The catch-up race hole (safety)</h3>
+<p>A node killed shortly after boot loses its in-memory governance log (sealed
+batches persist only at checkpoint). State transfer restores what peers can
+send &mdash; but if the quorum seals a round <em>while</em> the node restarts, the
+node misses that broadcast. The view change that follows used to advance its
+sequence counter from the certificates&rsquo; <code>highest_prepared</code>:
+the counter said 6 while the log ended at 5. The next round then sealed
+<em>over</em> the gap, and no <code>from_seq</code>-based catch-up can ever
+fetch a middle hole. Fix (the textbook PBFT watermark rule): <strong>the
+watermark follows the log, never the certificates</strong>. Every guard that
+sees seals beyond the local log &mdash; NewView certificates, sealed-batch
+broadcasts, log-tail gaps &mdash; replies with a <code>GovernanceLogRequest</code>
+and the node backfills the missing batches in order through the
+certificate-verified tail path.</p>
+
+<div class="warn"><strong>Why the no-fork digest check matters:</strong> node&nbsp;3
+reported <code>sequence=7</code> like everyone else &mdash; the hole at position 6
+was invisible to any counter-based health check. Only comparing full digest
+lists exposed it.</div>
+
+<h2 id="s5">5. Run it yourself</h2>
+
+<pre>cd docker
+./reset-federation.sh        # fresh 4-node cluster: wipe, re-pin genesis keys, health-gate
+
+cd ../original-code/xanadugold/src-rust
+./scripts/federation-adversarial-tests.sh 20261028 6   # strike it (seed, faults)
+./scripts/federation-governance-tests.sh              # native G-suite (lifecycle, expels, epochs)
+./scripts/federation-fault-tests.sh                   # fault injection (partition, byzantine)</pre>
+
+<p>Operations guide (recovery playbooks, monitoring, the post-boot WS
+starvation window): <code>src-rust/FEDERATION-OPS.md</code> in the repository.</p>
+
+<div class="footer">Xudanu federation status &middot; updated 2026-10-29 &middot; <a href="federation-activation.html">activation guide</a> &middot; <a href="federation-trust-analysis.html">trust analysis</a> &middot; <a href="dev/phase-19b-governance-bft.html">governance protocol</a></div>
+
+</div>
+</body>
+</html>
