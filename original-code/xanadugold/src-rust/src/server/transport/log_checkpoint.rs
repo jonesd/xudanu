@@ -859,7 +859,12 @@ mod tests {
             &mut prev,
         );
         // The covered file, chaining onward: 3 more lines.
-        write_log(&dir, "security.log.2026-08-05", &["b1", "b2", "b3"], &mut prev);
+        write_log(
+            &dir,
+            "security.log.2026-08-05",
+            &["b1", "b2", "b3"],
+            &mut prev,
+        );
 
         // The stale covering checkpoint: says the 08-05 boundary sits at
         // 0 entries with a head that predates the 08-04 file entirely
@@ -886,11 +891,12 @@ mod tests {
         // True totals: 8 + 3 = 11 entries across both files.
         let last = outcomes.last().unwrap();
         assert_eq!(last.entries, 11, "re-anchored to the verified chain");
-        assert!(last.files_covered.contains(&"security.log.2026-08-05".to_string()));
+        assert!(last
+            .files_covered
+            .contains(&"security.log.2026-08-05".to_string()));
 
         // Second run is clean: no mismatch, no new checkpoints, same totals.
-        let again = checkpoint_security_log(&dir, &kp, true)
-            .expect("post-heal walk must be clean");
+        let again = checkpoint_security_log(&dir, &kp, true).expect("post-heal walk must be clean");
         let again_total = again.last().map(|o| o.entries).unwrap_or(11);
         assert_eq!(again_total, 11, "stable after healing");
 
@@ -898,11 +904,7 @@ mod tests {
         // consistent (with the key history so signatures check).
         let history = KeyHistory::new(&kp);
         let verify = verify_security_log(&dir, Some(&history));
-        assert!(
-            verify.ok,
-            "chain verifies after heal: {:?}",
-            verify.lines
-        );
+        assert!(verify.ok, "chain verifies after heal: {:?}", verify.lines);
     }
 
     #[test]

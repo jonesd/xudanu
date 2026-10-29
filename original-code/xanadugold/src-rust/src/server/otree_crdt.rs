@@ -3481,10 +3481,28 @@ mod tests {
         let sid = make_session(7);
 
         mgr.open_sync_session(work_id, sid, Some(&Edition::from_text("title\nssh line\n")));
-        mgr.annotation_create(work_id, 100, "heading".into(), "{\"level\":1}".into(), 0, 5, None, false)
-            .unwrap();
-        mgr.annotation_create(work_id, 101, "code_block".into(), "".into(), 6, 14, None, false)
-            .unwrap();
+        mgr.annotation_create(
+            work_id,
+            100,
+            "heading".into(),
+            "{\"level\":1}".into(),
+            0,
+            5,
+            None,
+            false,
+        )
+        .unwrap();
+        mgr.annotation_create(
+            work_id,
+            101,
+            "code_block".into(),
+            "".into(),
+            6,
+            14,
+            None,
+            false,
+        )
+        .unwrap();
         assert_eq!(mgr.annotation_list(work_id).unwrap().len(), 2);
 
         // Last subscriber closes: doc is parked into orphaned_annotations.
@@ -3505,7 +3523,11 @@ mod tests {
         // annotations, stranding the parked ones invisibly (the live
         // bug: annotation_list read the empty doc while the parked
         // entries waited for a full server restart).
-        mgr.open_sync_session(work_id, make_session(8), Some(&Edition::from_text("title\nssh line\n")));
+        mgr.open_sync_session(
+            work_id,
+            make_session(8),
+            Some(&Edition::from_text("title\nssh line\n")),
+        );
         let anns = mgr.annotation_list(work_id).unwrap();
         assert_eq!(anns.len(), 2, "annotations must survive close+reopen");
         let ids: Vec<u64> = anns.iter().map(|a| a.annotation_id).collect();
