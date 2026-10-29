@@ -25860,14 +25860,17 @@ impl Server {
             .collect()
     }
 
-    pub fn federation_export_editions(&self) -> Vec<crate::server::federation::SyncEditionEntry> {
-        let server_id = self.federation_server_id();
-        let public_edition_ids: std::collections::HashSet<u64> = self
-            .works
+    fn federation_public_edition_ids(&self) -> std::collections::HashSet<BeId> {
+        self.works
             .iter()
             .filter(|(_, ws)| ws.work.read_club() == Some(self.system_clubs.public_club))
-            .flat_map(|(_, ws)| ws.work.revision_history().keys().map(|k| *k as u64))
-            .collect();
+            .flat_map(|(_, ws)| ws.work.revision_history().keys().map(|k| *k))
+            .collect()
+    }
+
+    pub fn federation_export_editions(&self) -> Vec<crate::server::federation::SyncEditionEntry> {
+        let server_id = self.federation_server_id();
+        let public_edition_ids = self.federation_public_edition_ids();
         self.standalone_editions
             .iter()
             .filter(|(edition_id, _)| {
@@ -26027,10 +26030,41 @@ impl Server {
         (imported, already_known)
     }
 
+    fn federation_public_blob_ids(&self) -> std::collections::HashSet<u64> {
+        // Only blobs referenced by content the federation plane exports
+        // (current editions of public works, exportable standalone
+        // editions) are themselves exportable — trust-analysis C1/C2:
+        // the blob store also holds private and unreferenced blobs.
+        let mut ids = std::collections::HashSet::new();
+        let mut collect = |edition: &Edition, ids: &mut std::collections::HashSet<u64>| {
+            for (_pos, carrier) in edition.iter() {
+                if let Some(hash) = carrier.element.as_blob_hash() {
+                    ids.insert(hash);
+                }
+            }
+        };
+        for (_, ws) in self.works.iter() {
+            if ws.work.read_club() == Some(self.system_clubs.public_club) {
+                collect(ws.work.current_edition(), &mut ids);
+            }
+        }
+        let public_edition_ids = self.federation_public_edition_ids();
+        for (edition_id, edition) in self.standalone_editions.iter() {
+            if public_edition_ids.contains(edition_id) {
+                collect(edition, &mut ids);
+            }
+        }
+        ids
+    }
+
     pub fn federation_export_blobs(&self) -> Vec<crate::server::federation::SyncBlobEntry> {
+        let public_blob_ids = self.federation_public_blob_ids();
         let hashes: Vec<[u8; 32]> = self.blob_store.all_hashes();
         hashes
             .into_iter()
+            .filter(|hash| {
+                public_blob_ids.contains(&crate::edition::blob_store::u64_from_hash(hash))
+            })
             .filter_map(|hash| {
                 let data = match self.blob_store.retrieve(&hash) {
                     Ok(d) => d,
@@ -26301,6 +26335,16 @@ impl Server {
 
     pub fn federation_get_blob(&self, content_hash_hex: &str) -> Option<(String, String)> {
         let hash = crate::edition::blob_store::hex_to_hash(content_hash_hex)?;
+        let blob_is_public = self
+            .federation_public_blob_ids()
+            .contains(&crate::edition::blob_store::u64_from_hash(&hash));
+        if !blob_is_public {
+            tracing::warn!(
+                hash = %content_hash_hex,
+                "federation BlobGet denied: blob is not referenced by public content"
+            );
+            return None;
+        }
         let data = self.blob_store.retrieve(&hash).ok()?;
         let meta = self.blob_store.get_meta(&hash)?;
         Some((
@@ -26315,6 +26359,9 @@ impl Server {
         direct_only: bool,
     ) -> Vec<crate::server::federation::FederatedTransclusionEntry> {
         let mut entries = Vec::new();
+        // The transclusion index spans private works too; only public
+        // content participates in federated queries (trust-analysis C1).
+        let public_edition_ids = self.federation_public_edition_ids();
 
         let local_results = self
             .backfollow
@@ -26325,8 +26372,31 @@ impl Server {
                 continue;
             }
             let (elem_type, local_id) = match element {
-                crate::edition::RangeElement::Edition { edition_id } => ("edition", edition_id.0),
-                crate::edition::RangeElement::Work { work_id } => ("work", work_id.0),
+                crate::edition::RangeElement::Edition { edition_id } => {
+                    if !public_edition_ids.contains(&edition_id.0) {
+                        tracing::warn!(
+                            edition_id = edition_id.0,
+                            "federation TranscludeQuery denied: edition is not public"
+                        );
+                        continue;
+                    }
+                    ("edition", edition_id.0)
+                }
+                crate::edition::RangeElement::Work { work_id } => {
+                    let is_public = self
+                        .works
+                        .get(&work_id.0)
+                        .map(|ws| ws.work.read_club() == Some(self.system_clubs.public_club))
+                        .unwrap_or(false);
+                    if !is_public {
+                        tracing::warn!(
+                            work_id = work_id.0,
+                            "federation TranscludeQuery denied: work is not public"
+                        );
+                        continue;
+                    }
+                    ("work", work_id.0)
+                }
                 _ => continue,
             };
             entries.push(crate::server::federation::FederatedTransclusionEntry {
@@ -26391,12 +26461,17 @@ impl Server {
                     }
                 }
             }
-            if let Ok(data) = self.blob_store.retrieve(&fp) {
-                if let Some(meta) = self.blob_store.get_meta(&fp) {
-                    return FederationFetchResponse::Blob(
-                        crate::edition::blob_store::base64_encode(&data),
-                        meta.mime_type.clone(),
-                    );
+            let blob_is_public = self
+                .federation_public_blob_ids()
+                .contains(&crate::edition::blob_store::u64_from_hash(&fp));
+            if blob_is_public {
+                if let Ok(data) = self.blob_store.retrieve(&fp) {
+                    if let Some(meta) = self.blob_store.get_meta(&fp) {
+                        return FederationFetchResponse::Blob(
+                            crate::edition::blob_store::base64_encode(&data),
+                            meta.mime_type.clone(),
+                        );
+                    }
                 }
             }
         }
@@ -33935,6 +34010,174 @@ mod tests {
             FederationFetchResponse::NotFound => {}
             other => panic!("expected NotFound, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn federation_export_blobs_filters_private_work_blobs() {
+        let (mut server, sid) = setup_logged_in_server();
+        let public_meta = server
+            .blob_store
+            .store(b"public image bytes", "image/png".into())
+            .unwrap();
+        let private_meta = server
+            .blob_store
+            .store(b"private image bytes", "image/png".into())
+            .unwrap();
+        let blob_element = |meta: &crate::edition::blob_store::BlobMeta| RangeElement::Blob {
+            content_hash: meta.hash_u64(),
+            mime_type: "image/png".into(),
+            byte_size: meta.byte_size,
+            width: None,
+            height: None,
+            caption: None,
+        };
+        server
+            .create_work(
+                sid,
+                Edition::from_text_elements(&[
+                    RangeElement::text("public work "),
+                    blob_element(&public_meta),
+                ]),
+            )
+            .unwrap();
+        let private_work = server
+            .create_work(
+                sid,
+                Edition::from_text_elements(&[
+                    RangeElement::text("private work "),
+                    blob_element(&private_meta),
+                ]),
+            )
+            .unwrap();
+        server
+            .works
+            .get_mut(&private_work)
+            .unwrap()
+            .work
+            .set_read_club(Some(server.system_clubs.empty_club));
+
+        let exported = server.federation_export_blobs();
+        assert_eq!(exported.len(), 1, "only the public work's blob exports");
+        assert_eq!(
+            exported[0].content_hash_hex,
+            crate::edition::blob_store::hash_to_hex(&public_meta.content_hash)
+        );
+    }
+
+    #[test]
+    fn federation_get_blob_requires_public_reference() {
+        let (mut server, sid) = setup_logged_in_server();
+        let meta = server
+            .blob_store
+            .store(b"orphan blob bytes", "application/octet-stream".into())
+            .unwrap();
+        let hex = crate::edition::blob_store::hash_to_hex(&meta.content_hash);
+        assert!(
+            server.federation_get_blob(&hex).is_none(),
+            "unreferenced blob must not be served to peers"
+        );
+        server
+            .create_work(
+                sid,
+                Edition::from_text_elements(&[
+                    RangeElement::text("adopts the blob "),
+                    RangeElement::Blob {
+                        content_hash: meta.hash_u64(),
+                        mime_type: "application/octet-stream".into(),
+                        byte_size: meta.byte_size,
+                        width: None,
+                        height: None,
+                        caption: None,
+                    },
+                ]),
+            )
+            .unwrap();
+        assert!(
+            server.federation_get_blob(&hex).is_some(),
+            "blob referenced by a public work must be served"
+        );
+    }
+
+    #[test]
+    fn federation_fetch_by_fingerprint_denies_private_blob() {
+        let (mut server, sid) = setup_logged_in_server();
+        let orphan = server
+            .blob_store
+            .store(b"never referenced bytes", "image/png".into())
+            .unwrap();
+        let orphan_hex = crate::edition::blob_store::hash_to_hex(&orphan.content_hash);
+        match server.federation_fetch_by_fingerprint(&orphan_hex) {
+            FederationFetchResponse::NotFound => {}
+            other => panic!("expected NotFound for unreferenced blob, got {:?}", other),
+        }
+        let referenced = server
+            .blob_store
+            .store(b"referenced blob bytes", "image/png".into())
+            .unwrap();
+        server
+            .create_work(
+                sid,
+                Edition::from_text_elements(&[
+                    RangeElement::text("public container "),
+                    RangeElement::Blob {
+                        content_hash: referenced.hash_u64(),
+                        mime_type: "image/png".into(),
+                        byte_size: referenced.byte_size,
+                        width: None,
+                        height: None,
+                        caption: None,
+                    },
+                ]),
+            )
+            .unwrap();
+        let hex = crate::edition::blob_store::hash_to_hex(&referenced.content_hash);
+        match server.federation_fetch_by_fingerprint(&hex) {
+            FederationFetchResponse::Blob(_, mime) => assert_eq!(mime, "image/png"),
+            other => panic!(
+                "expected Blob for publicly referenced blob, got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn federation_transclude_query_excludes_private_works() {
+        let (mut server, sid) = setup_logged_in_server();
+        let marker = RangeElement::text("shared-marker-run");
+        let fp = marker.content_fingerprint();
+        let key: String = fp.iter().map(|b| format!("{:02x}", b)).collect();
+        let public_work = server
+            .create_work(
+                sid,
+                Edition::from_text_elements(&[
+                    RangeElement::text("alpha "),
+                    RangeElement::text("shared-marker-run"),
+                ]),
+            )
+            .unwrap();
+        let private_work = server
+            .create_work(
+                sid,
+                Edition::from_text_elements(&[
+                    RangeElement::text("beta "),
+                    RangeElement::text("shared-marker-run"),
+                ]),
+            )
+            .unwrap();
+        server
+            .works
+            .get_mut(&private_work)
+            .unwrap()
+            .work
+            .set_read_club(Some(server.system_clubs.empty_club));
+
+        let entries = server.federation_query_local_transclusion(&key, false);
+        assert_eq!(entries.len(), 1, "private work must not appear in results");
+        assert_eq!(entries[0].local_id, public_work);
+        assert!(matches!(
+            entries[0].element_type,
+            crate::server::federation::RemoteElementType::Work
+        ));
     }
 
     #[test]
