@@ -90,14 +90,39 @@ governance-level faults:
 - **G3** leader + one replica down → governance halts SAFELY
   (sequence frozen, survivors healthy); on return, both catch up
 
-**Known open bug (caught by G3, unfixed):** after a dual restart, a
-fresh propose's round stalls silently — all nodes are caught up and
-connected, the pre-prepare is accepted, but the round never completes
-(no rejection logged). Reproduce: run the suite; see
-`G3: node-N did not seal post-recovery`. Suspects: vote propagation
-on re-established duplicate connections. G1/G2 and all in-process
-suites are green; investigate with log level debug on
-`xudanu::server::transport::federation_handler`.
+**Fixed (was caught by G3):** after a dual restart, a fresh propose's
+round stalled silently — the pre-prepare raced the leader's
+re-established dials (one replica never received it) while the
+survivors' reverse dials were still in reconnect backoff (their
+prepare votes never reached the leader), leaving every node below
+quorum with nothing rejected; a follow-up view change then dropped
+the transaction. Fix: the transport now replays the pending round
+(pre-prepare + the node's own signed votes) on every outbound
+(re)connect and on the periodic sync tick, and re-delivery of an
+identical pre-prepare is idempotent. Regression coverage:
+`mesh_dual_restart_stall_recovers_via_reconnect_replay` plus the
+docker-based adversarial suite
+(`scripts/federation-adversarial-tests.sh` — pause-freezes, mid-round
+strikes, dual freeze, catch-up races, flapping).
+
+**Fixed (caught by the adversarial suite's catch-up race, A5):** a
+node crashed shortly after boot lost its in-memory governance log
+(sealed batches persist only at checkpoint); state transfer restored
+the tail it knew about, but a racing round sealed on the quorum
+without it. The view change that followed then advanced the node's
+sequence counter from the certificates' `highest_prepared` —
+counting its log ahead of itself — so the NEXT round sealed over a
+permanent hole (log `[b1..b5, b7]`) that no `from_seq`-based catch-up
+can ever re-fetch, silently (the late sealed broadcast was dropped by
+the `<=` dedup). Fix (the textbook PBFT watermark rule): the
+watermark follows the LOG, never the certificates. `apply_new_view`
+no longer advances the sequence counter; every guard that sees seals
+beyond our log (NewView certificates, sealed-batch broadcasts,
+log-tail gaps) now replies with a `GovernanceLogRequest` so the node
+backfills the missing batches in order through the certificate-
+verified tail path. Regression coverage:
+`mesh_newview_certs_backfill_instead_of_counting_ahead` and
+`mesh_sealed_broadcast_gap_backfills_in_order`.
 
 **Network shaping (G4):** pf/dummynet partition tests need
 passwordless sudo and are skipped when unavailable; the script prints
@@ -155,6 +180,20 @@ the operational canary:
 | <0 | governance halted (safe, not live) | renew/expel to restore pool |
 
 `federation.sh diagnose` automates these checks plus log scanning.
+
+### Right after boot: brief WS starvation during initial sync
+
+A freshly booted cluster runs an initial federation sweep (membership
+OR-set convergence plus a full works sync over every peer
+connection). While it runs, client WebSocket requests can starve
+behind the server lock for a minute or more — WS logins stall or
+time out even though `GET /health` answers normally. Not a fault:
+gate automation on the HTTP `governance_lifecycle` signal first,
+then retry WS calls until they answer (the adversarial suite's
+preflight does exactly this). Persistent WS starvation on a node
+that has been up for hours is a different problem — suspect lock
+contention and investigate; the follow-up is finer lock granularity
+around federation sync.
 
 ## Recovery playbooks
 

@@ -77,9 +77,11 @@ services:
       - "--peer"
       - "node4:8080"
       # Genesis trust seeds: the other nodes' Ed25519 verifying keys
-      # (stable while the named volumes persist — regenerate with
-      # `docker logs docker-nodeN-1 | grep "verifying key"` after a
-      # volume wipe). Seeding breaks the endorsement bootstrap's
+      # (stable while the named volumes persist). After a volume wipe
+      # the keys change and this file must be regenerated — run
+      # ./reset-federation.sh, which boots with empty pins, harvests
+      # the fresh keys from /data/key_history.json, rewrites this
+      # file, and restarts the pinned mesh. Seeding breaks the endorsement bootstrap's
       # empty-pool chicken-and-egg: with zero members, nobody can
       # endorse the first joiner. CLI seeds register at every boot,
       # so seeded trust survives restarts; membership learned via
@@ -93,6 +95,8 @@ services:
 
   node2:
     <<: *node
+    environment:
+      - XUDANU_ADMIN_PASSPHRASE=${NODE2_ADMIN_PASSPHRASE:-}
     ports:
       - "127.0.0.1:8082:8080"
     volumes:
@@ -130,6 +134,8 @@ services:
 
   node3:
     <<: *node
+    environment:
+      - XUDANU_ADMIN_PASSPHRASE=${NODE3_ADMIN_PASSPHRASE:-}
     ports:
       - "127.0.0.1:8083:8080"
     volumes:
@@ -167,6 +173,8 @@ services:
 
   node4:
     <<: *node
+    environment:
+      - XUDANU_ADMIN_PASSPHRASE=${NODE4_ADMIN_PASSPHRASE:-}
     ports:
       - "127.0.0.1:8084:8080"
     volumes:
