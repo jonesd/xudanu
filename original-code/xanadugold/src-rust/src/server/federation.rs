@@ -2642,7 +2642,15 @@ impl GovernanceState {
         proposal: &GovernanceProposal,
         members: &[String],
     ) -> Result<(), String> {
-        if self.pending_round.is_some() {
+        if let Some(round) = &self.pending_round {
+            // Re-delivery of the pre-prepare this round already holds
+            // (reconnect replay): accept the identical proposal so the
+            // receiver can re-emit its own vote; anything conflicting
+            // — including the same content under a different proposer
+            // — remains a protocol violation.
+            if round.proposal == *proposal {
+                return Ok(());
+            }
             return Err("a round is already in progress".into());
         }
         if proposal.view_number != self.current_view {
@@ -3059,6 +3067,21 @@ impl GovernanceState {
             .map(|(seq, d)| (*seq, d.clone()))
     }
 
+    /// Signed votes accumulated for the pending round — the reconnect
+    /// replay set (pre-prepare travels separately via
+    /// `pending_round().proposal`). Re-delivery is safe: recipients
+    /// dedup by voter and verify signatures.
+    pub fn pending_round_votes(&self) -> Vec<PbftVote> {
+        match self.pending_round.as_ref() {
+            Some(round) => {
+                let mut votes = round.signed_prepare_votes.clone();
+                votes.extend(round.signed_commit_votes.iter().cloned());
+                votes
+            }
+            None => Vec::new(),
+        }
+    }
+
     pub fn prepared_digest(&self, sequence_number: u64) -> Option<&String> {
         self.prepared_digests.get(&sequence_number)
     }
@@ -3123,9 +3146,9 @@ impl GovernanceState {
     /// prepared certificate it carries. The sequence watermark never
     /// moves backward and prepared digests block conflicting
     /// re-proposals — this is the anti-fork core of view change.
-    pub fn apply_new_view(&mut self, new_view: &NewViewMessage) {
+    pub fn apply_new_view(&mut self, new_view: &NewViewMessage) -> Option<u64> {
         if new_view.view_number <= self.current_view {
-            return;
+            return None;
         }
         // Structural validation BEFORE mutating: every certificate must
         // target exactly this view (cross-view replay inflation), and
@@ -3138,21 +3161,28 @@ impl GovernanceState {
                     cert_target = vc.new_view,
                     "NewView refused: certificate targets a different view"
                 );
-                return;
+                return None;
             }
             distinct.insert(vc.server_id.as_str());
         }
         if distinct.len() != new_view.view_changes.len() {
             tracing::warn!("NewView refused: duplicate view-change senders");
-            return;
+            return None;
         }
         self.current_view = new_view.view_number;
         self.current_view_entered_at = now_secs();
         self.pending_round = None;
+        // The watermark follows the LOG, not the certificates: certs
+        // may report seals this node never ingested (it restarted into
+        // a racing round and the quorum sealed without it). Counting
+        // the sequence ahead here would let the NEXT round seal over a
+        // hole no tail request can re-fetch. Record the prepared
+        // digest (fork protection) and tell the caller to backfill.
+        let mut backfill_from: Option<u64> = None;
         for vc in &new_view.view_changes {
             if let Some((seq, digest)) = &vc.highest_prepared {
                 if seq > &self.current_sequence {
-                    self.current_sequence = *seq;
+                    backfill_from.get_or_insert(self.current_sequence + 1);
                 }
                 let existing = self
                     .prepared_digests
@@ -3174,6 +3204,7 @@ impl GovernanceState {
                 }
             }
         }
+        backfill_from
     }
 
     /// Does ANY governance condition demand a view change right now?
@@ -5781,10 +5812,22 @@ mod tests {
             "non-leader proposer rejected"
         );
 
-        // Second pre-prepare while a round is pending.
+        // Identical re-delivery while the round is pending (reconnect
+        // replay) is accepted so the receiver can re-emit its own vote.
         assert!(
-            gov.receive_pre_prepare(&proposal, &members).is_err(),
-            "concurrent round rejected"
+            gov.receive_pre_prepare(&proposal, &members).is_ok(),
+            "identical re-delivery accepted for reconnect replay"
+        );
+
+        // A conflicting proposal while a round is pending is rejected.
+        let mut conflicting = proposal.clone();
+        conflicting.transactions = vec![GovernanceTx::Expel {
+            server_id: "srv-d".to_string(),
+            reason: "conflicting".to_string(),
+        }];
+        assert!(
+            gov.receive_pre_prepare(&conflicting, &members).is_err(),
+            "conflicting concurrent round rejected"
         );
         let _ = keys;
     }
@@ -5821,7 +5864,7 @@ mod tests {
         // straggler's view via receive_pre_prepare at seq 1 instead:
         // prepared digest exists → rejected.
         let mut straggler = GovernanceState::new(4);
-        straggler.apply_new_view(&NewViewMessage {
+        let backfill = straggler.apply_new_view(&NewViewMessage {
             view_number: 1,
             view_changes: vec![ViewChangeMessage {
                 new_view: 1,
@@ -5833,9 +5876,14 @@ mod tests {
             signature: String::new(),
         });
         assert_eq!(
+            backfill,
+            Some(1),
+            "certificates ahead of the log request a backfill, not a jump"
+        );
+        assert_eq!(
             straggler.current_sequence(),
-            1,
-            "watermark carried by view change"
+            0,
+            "watermark follows the log — the missing tail is fetched, not counted"
         );
         assert!(
             straggler

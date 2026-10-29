@@ -27238,6 +27238,10 @@ impl Server {
             .map(|r| r.proposal.clone())
     }
 
+    pub fn governance_pending_round_votes(&self) -> Vec<crate::server::federation::PbftVote> {
+        self.federation.governance().pending_round_votes()
+    }
+
     /// Is the current governance round stalled past the timeout?
     pub fn governance_round_timed_out(&self, timeout_secs: u64) -> bool {
         self.federation.governance().round_timed_out(
@@ -27307,11 +27311,16 @@ impl Server {
 
     /// Process a view-change message: verify signature against the
     /// sender's member key, store it, and — when this server is the
-    /// new leader and quorum accumulated — assemble the NewView.
+    /// new leader and quorum accumulated — assemble the NewView. The
+    /// second element is the assembler's own backfill point when the
+    /// certificates report seals its log does not hold.
     pub fn governance_receive_view_change(
         &mut self,
         msg: &crate::server::federation::ViewChangeMessage,
-    ) -> Option<crate::server::federation::NewViewMessage> {
+    ) -> (
+        Option<crate::server::federation::NewViewMessage>,
+        Option<u64>,
+    ) {
         // FR-75 §3: consensus membership is the VALIDATOR set
         // (governance-admitted), not the directory.
         let members: Vec<String> = self.governance_validator_ids();
@@ -27321,7 +27330,7 @@ impl Server {
             .governance_mut()
             .set_cluster_size(members.len().max(1));
         if !members.contains(&msg.server_id) {
-            return None;
+            return (None, None);
         }
         let my_id = self.federation_server_id();
         if msg.server_id != my_id {
@@ -27346,7 +27355,7 @@ impl Server {
                     sender = %msg.server_id,
                     "view-change message rejected: invalid signature or expired epoch"
                 );
-                return None;
+                return (None, None);
             }
         }
         let mut assembled = self
@@ -27356,22 +27365,28 @@ impl Server {
         // The leader signs the NewView it assembles AND enters the new
         // view itself (it is a member of it) — previously the assembler
         // broadcast the NewView but stayed in the old view forever.
+        let mut assembler_backfill = None;
         if let Some(nv) = &mut assembled {
             nv.signature = crate::server::federation::vote_hex_sig(
                 &self.server_keypair.signing_key,
                 &nv.payload(),
             );
-            self.federation.governance_mut().apply_new_view(nv);
+            // The assembler may itself lag the certificates it
+            // collected (it restarted while the quorum sealed): apply
+            // surfaces the backfill so it can fetch the missing tail.
+            assembler_backfill = self.federation.governance_mut().apply_new_view(nv);
         }
-        assembled
+        (assembled, assembler_backfill)
     }
 
     /// Apply a NewView announcement after verifying its embedded
-    /// view-change certificates (2f+1 valid signatures).
+    /// view-change certificates (2f+1 valid signatures). Returns the
+    /// sequence to backfill from when the certificates report seals
+    /// beyond our log (the caller requests the missing tail).
     pub fn governance_apply_new_view(
         &mut self,
         new_view: &crate::server::federation::NewViewMessage,
-    ) {
+    ) -> Option<u64> {
         // FR-75 §3: consensus membership is the VALIDATOR set
         // (governance-admitted), not the directory.
         let members: Vec<String> = self.governance_validator_ids();
@@ -27392,7 +27407,7 @@ impl Server {
                 view = new_view.view_number,
                 "NewView rejected: assembler is not the leader of the announced view"
             );
-            return;
+            return None;
         }
         let keys = self.governance_member_keys_at(self.next_governance_seq());
         // Assembler signature over the NewView payload.
@@ -27407,7 +27422,7 @@ impl Server {
                 assembler = %new_view.assembler_id,
                 "NewView rejected: invalid assembler signature"
             );
-            return;
+            return None;
         }
         let current_seq = self.federation.governance().current_sequence();
         let valid = new_view
@@ -27436,13 +27451,14 @@ impl Server {
                 needed = self.federation.governance().quorum_size(),
                 "NewView rejected: insufficient valid view-change certificates"
             );
-            return;
+            return None;
         }
-        self.federation.governance_mut().apply_new_view(new_view);
+        let backfill_from = self.federation.governance_mut().apply_new_view(new_view);
         tracing::info!(
             view = new_view.view_number,
             "governance view advanced via view change"
         );
+        backfill_from
     }
 
     /// Cast this server's own signed vote (Prepare or Commit) into the
@@ -27651,18 +27667,34 @@ impl Server {
             if batch.sequence_number <= self.federation.governance().current_sequence() {
                 continue; // already applied
             }
-            self.governance_ingest_sealed_batch(batch);
+            // A middle gap in the peer's tail stops ingestion here;
+            // the sealed-batch watermark guard reports where the hole
+            // starts and the next sync re-requests from that point.
+            if self.governance_ingest_sealed_batch(batch).is_some() {
+                break;
+            }
         }
     }
 
     /// Ingest a verified sealed batch from the network: execute the
     /// transactions and advance the governance log (replica path —
     /// review finding L2: replicas previously never learned sealed
-    /// batches).
+    /// batches). A batch beyond our log watermark is REFUSED and the
+    /// missing sequence returned: ingesting it would punch a hole no
+    /// tail request can re-fetch (the caller backfills in order).
     pub fn governance_ingest_sealed_batch(
         &mut self,
         batch: crate::server::federation::SealedBatch,
-    ) {
+    ) -> Option<u64> {
+        let my_seq = self.federation.governance().current_sequence();
+        if batch.sequence_number > my_seq + 1 {
+            tracing::warn!(
+                my_seq,
+                seq = batch.sequence_number,
+                "sealed batch beyond our log watermark — requesting state transfer"
+            );
+            return Some(my_seq + 1);
+        }
         // FR-75 §5: sync the quorum basis to the batch's sequence
         // BEFORE verifying — a fresh replica's cluster_size would
         // otherwise default to 1 and accept 1-cert "quorums".
@@ -27672,20 +27704,21 @@ impl Server {
         self.federation.governance_mut().set_cluster_size(admitted);
         if let Err(reason) = self.governance_verify_sealed(&batch) {
             tracing::warn!(seq = batch.sequence_number, %reason, "rejected sealed batch: invalid certificates");
-            return;
+            return None;
         }
         if self
             .federation
             .governance()
             .is_applied(batch.sequence_number)
         {
-            return;
+            return None;
         }
         let sealing_seq = batch.sequence_number;
         for tx in &batch.transactions {
             self.governance_execute_tx_at(tx, sealing_seq);
         }
         self.federation.governance_mut().ingest_sealed(batch);
+        None
     }
 
     pub fn governance_seal_round(&mut self) -> Option<crate::server::federation::SealedBatch> {

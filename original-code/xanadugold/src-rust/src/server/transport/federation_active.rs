@@ -358,6 +358,13 @@ async fn run_outbound_connection(
         .await;
     }
 
+    // Pending-round replay (G3 fix): governance broadcasts are
+    // fire-and-forget over outbound connections — a frame sent while
+    // this dial was down is gone for that peer. Re-deliver the
+    // in-flight round (pre-prepare + accumulated signed votes) so a
+    // restart/reconnect cannot strand a round below quorum.
+    send_pending_round_sync(&mut ws_sender, &state, &mut encrypt_cipher, &peer_server_id).await;
+
     let mut gov_rx = state.governance_tx.subscribe();
 
     let mut heartbeat_interval = tokio::time::interval(Duration::from_secs(30));
@@ -497,7 +504,7 @@ async fn run_outbound_connection(
                         // broadcast it to every peer.
                         let msg = srv
                             .governance_make_view_change(GOVERNANCE_ROUND_TIMEOUT_SECS);
-                        let new_view = srv.governance_receive_view_change(&msg);
+                        let (new_view, _) = srv.governance_receive_view_change(&msg);
                         (Some(msg), new_view)
                     } else {
                         (None, None)
@@ -523,6 +530,10 @@ async fn run_outbound_connection(
                 for f in sync_frames {
                     send_encrypted(&mut ws_sender, &f, &mut encrypt_cipher).await;
                 }
+                // Periodic replay while a round is pending: catches any
+                // peer whose connection was re-established mid-round
+                // after the on-connect replay (convergence backstop).
+                send_pending_round_sync(&mut ws_sender, &state, &mut encrypt_cipher, &peer_server_id).await;
             }
         }
     }
@@ -535,6 +546,51 @@ async fn run_outbound_connection(
         "Federation: outbound connection closed with server {}",
         peer_server_id
     );
+}
+
+async fn send_pending_round_sync(
+    ws_sender: &mut futures_util::stream::SplitSink<PeerStream, WsMessage>,
+    state: &SharedState,
+    encrypt_cipher: &mut crate::crypto::aead::SessionCipher,
+    peer_server_id: &str,
+) {
+    let (my_id, proposal, votes) = state.server.with_server(|srv| {
+        (
+            srv.federation_server_id(),
+            srv.governance_pending_round_proposal(),
+            srv.governance_pending_round_votes(),
+        )
+    });
+    let Some(proposal) = proposal else {
+        return;
+    };
+    // Own votes only: the frame handler binds vote.voter_id to the
+    // authenticated peer, so relaying third-party votes would be
+    // rejected on arrival. A live voter replays its own vote; a dead
+    // voter's evidence reaches laggards via sealed-batch state
+    // transfer.
+    let votes: Vec<_> = votes.into_iter().filter(|v| v.voter_id == my_id).collect();
+    tracing::info!(
+        peer = %peer_server_id,
+        view = proposal.view_number,
+        seq = proposal.sequence_number,
+        votes = votes.len(),
+        "Governance: replaying pending round to peer"
+    );
+    send_encrypted(
+        ws_sender,
+        &FederationFrame::GovernancePrePrepare { proposal },
+        encrypt_cipher,
+    )
+    .await;
+    for vote in votes {
+        let frame = if matches!(vote.phase, crate::server::federation::PbftPhase::Commit) {
+            FederationFrame::GovernanceCommitVote { vote }
+        } else {
+            FederationFrame::GovernancePrepareVote { vote }
+        };
+        send_encrypted(ws_sender, &frame, encrypt_cipher).await;
+    }
 }
 
 async fn build_sync_frames(state: &SharedState) -> Vec<FederationFrame> {
