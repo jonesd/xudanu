@@ -6,6 +6,48 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.21.0] — 2026-10-30
+
+The **opt-ins** release: license posture becomes a first-class, inspectable fact — what this installation chose, and what it declined — alongside the editor, offline-editing, and durability work that landed since v1.20.0.
+
+### License posture (FR-156)
+- **License & Opt-ins tab** on the admin screen: what THIS installation opted into, and what it declined. Both states are always listed — absence of surprise is information too
+- One registry (`src/server/license.rs`), three renderings: `admin_license_posture` endpoint (op `0x0f2c`, admin-gated), the boot log line (`license posture: …`), and `docs/dev/FR-156-admin-license-posture.md`
+- **Mirror, not a switch**: the panel confirms choices; changing an opt-in stays in build/config — the deliberate act. A web regression test pins that no state-changing control ever renders
+- First entry: `heif` — MIT libheif-rs bindings link the LGPL-3.0-or-later libheif C library; state computed by `cfg!` so each build reports its own posture
+- Corrected the stale GPL story in `Cargo.toml`: `epub-parser` is MIT and standard in the server feature; the historical `epub-2.x` GPL path is long gone
+- Fixed: the dashboard crashed to a blank screen when `/health` or `admin_clubs_list` omitted a field (unguarded `toLocaleString` on wire data)
+
+### Editor (FR-150)
+- Lexical authoring surface merged **behind a sticky flag** (`?editor=lexical`); classic remains the default until the flag flips
+- One-in-flight delta queue: concurrent `work_revise_delta` raced on the server and produced mirrored text (the iOS bug)
+- Caret-preserving rebuilds (only on genuine text change) + echo guard — no more caret jumps between paragraphs
+- Rich text: `#`/`##`/`###` heading shortcuts with round-trip-safe markers; format-bar ops render through server annotations
+
+### Offline editing
+- Type without a server connection; edits persist to IndexedDB and replay on reconnect
+- Optimistic overlay rebase; offline annotation replay no longer drops ops on transient errors
+- `crdt_sync` decomposed (EditSyncEngine + protocol + position-transform)
+
+### Durability & data plane (FR-154)
+- Checkpoint bookkeeping self-heals; checkpoint health visible in `/health`
+- Annotations no longer lost on work switch; per-work data loads on the work-OPENED event
+- Federation: blob and transclusion data plane respects `read_club` (#224)
+- Work list pagination: no more silent 1,000-work truncation
+
+### Engine (FR-148)
+- Verified document viewer: fetch → wasm blake3 gate → render; tampered/unverifiable content fails closed, never renders as text
+- Engine measurement harness with CI-asserted budgets (blake3 600MB/s, unframe 3.4GB/s, 200-span materialize 0.58ms)
+
+### Mobile
+- Doc header collapses on scroll; panes get a draggable divider (touch + mouse); selection/format toolbars and welcome page tailored for phone screens
+
+### Dependencies & docs
+- zip 2→9 (dev), rustls 0.23.46, rustls-webpki 0.103.16, webpki-roots 1.0.11 (#225); vite 8.3.5, vitest 4.1.12 + undici 7.30.1 — Dependabot alerts closed
+- Essays: 001 — dark-line coverage forensics on the PBFT core (#226); FR-152 recovery guide, FR-153 id-formatting convention
+
+---
+
 ## [v1.20.0] — 2026-10-20
 
 The **verified network** release: cross-server exchanges are now authenticated end to end, the federation test bed runs a genesis-pinned BFT mesh, network search is bloom-routed and signature-verified, and the engine compiles for the browser (wasm) — the foundation of the mobile track.
