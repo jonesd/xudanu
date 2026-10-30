@@ -14,10 +14,15 @@
 // Requires the server to run with XUDANU_TRANSLATE_PROVIDER_URL
 // pointing at a LibreTranslate-compatible engine (de<->en loaded).
 //
-// Usage: node scripts/fr155-lang-demo.mjs [base-url]  (default http://127.0.0.1:8090)
+// Usage: node scripts/fr155-lang-demo.mjs [base-url] [target-lang]
+//   base-url default http://127.0.0.1:8090; target-lang default en
+//   (en seeds a German document de->en; fr seeds an English
+//   document en->fr; anything else seeds German and requests that
+//   target — works when the engine serves the pair).
 import WebSocket from "ws";
 
 const base = process.argv[2] ?? "http://127.0.0.1:8090";
+const target = process.argv[3] ?? "en";
 const wsUrl = `${base.replace(/^http/, "ws")}/xudanu?format=json`;
 const ws = new WebSocket(wsUrl, { headers: { origin: base } });
 
@@ -51,6 +56,17 @@ Durch diese hohle Gasse muss er kommen, es führt kein andrer Weg nach Küssnach
 
 Gedanken ohne Inhalt sind leer, Anschauungen ohne Begriffe sind blind.`;
 
+const english = `It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.
+
+Call me Ishmael.
+
+To be, or not to be, that is the question.`;
+
+const doc =
+  target === "fr"
+    ? { text: english, lang: "en" }
+    : { text: german, lang: "de" };
+
 const p95 = (xs) => {
   const s = [...xs].sort((a, b) => a - b);
   return s[Math.min(s.length - 1, Math.floor(0.95 * s.length))];
@@ -68,22 +84,22 @@ async function main() {
   await request("session_connect");
   await request("session_login_public");
 
-  const w = value(await request("work_create", { edition: { text: german } }));
+  const w = value(await request("work_create", { edition: { text: doc.text } }));
   const workId = typeof w === "number" ? w : w?.work_id;
-  console.log(`seeded german work ${workId} (${german.length} chars)`);
+  console.log(`seeded ${doc.lang} work ${workId} (${doc.text.length} chars)`);
 
   // Document-default language declaration: kind "language", empty
-  // char range, payload {"lang":"de"} — declared, never detected.
+  // char range, payload {"lang": doc.lang} — declared, never detected.
   await request("annotation_create", {
     work_id: workId,
     annotation_id: 1,
     kind: "language",
-    payload: JSON.stringify({ lang: "de" }),
+    payload: JSON.stringify({ lang: doc.lang }),
     char_start: 0,
     char_end: 0,
     is_private: false,
   });
-  console.log("declared document language: de");
+  console.log(`declared document language: ${doc.lang}`);
 
   const hex = workId.toString(16).padStart(4, "0");
   const url = `${base}/api/public/work/${hex}`;
@@ -93,9 +109,9 @@ async function main() {
   console.log(`    text head: ${JSON.stringify(plain.body.text.slice(0, 40))}`);
   console.log(`    hash: ${plain.body.content_hash_blake3.slice(0, 16)}…`);
 
-  const miss = await timedGet(`${url}?lang=en`);
+  const miss = await timedGet(`${url}?lang=${target}`);
   const t = miss.body.translation ?? {};
-  console.log(`\n[2] ?lang=en (cold): ${miss.ms.toFixed(0)}ms`);
+  console.log(`\n[2] ?lang=${target} (cold): ${miss.ms.toFixed(0)}ms`);
   console.log(`    header x-xudanu-translation: ${miss.resp.headers.get("x-xudanu-translation")}`);
   console.log(`    text head: ${JSON.stringify(miss.body.text.slice(0, 40))}`);
   console.log(`    original hash preserved: ${miss.body.original_content_hash_blake3 === plain.body.content_hash_blake3}`);
@@ -104,9 +120,9 @@ async function main() {
   const r0 = (t.renditions ?? [])[0] ?? {};
   console.log(`    PROV: entity=${String(r0.rendition_hash).slice(0, 12)}… wasDerivedFrom=${String(r0.source_hash).slice(0, 12)}… wasGeneratedBy=${r0.prov?.wasGeneratedBy} grade=${r0.prov?.quality_grade}`);
 
-  const hit = await timedGet(`${url}?lang=en`);
+  const hit = await timedGet(`${url}?lang=${target}`);
   const th = hit.body.translation ?? {};
-  console.log(`\n[3] ?lang=en (warm): ${hit.ms.toFixed(0)}ms`);
+  console.log(`\n[3] ?lang=${target} (warm): ${hit.ms.toFixed(0)}ms`);
   console.log(`    cache_hits=${th.cache_hits} provider_calls=${th.provider_calls} (must be 0)`);
   console.log(`    byte-identical text: ${hit.body.text === miss.body.text}`);
 
@@ -115,7 +131,7 @@ async function main() {
   const langRuns = [];
   for (let i = 0; i < 20; i++) {
     plainRuns.push((await timedGet(url)).ms);
-    langRuns.push((await timedGet(`${url}?lang=en`)).ms);
+    langRuns.push((await timedGet(`${url}?lang=${target}`)).ms);
   }
   const pP = p95(plainRuns), pL = p95(langRuns);
   const mP = plainRuns.reduce((a, b) => a + b, 0) / plainRuns.length;
