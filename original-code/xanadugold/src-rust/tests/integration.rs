@@ -15921,6 +15921,14 @@ async fn fr155_public_read_with_lang_is_byte_identical_without_provider() {
         )
         .unwrap();
 
+    // FR-155: translation units are coalesced lines, not O-tree
+    // per-character carriers — translating single letters is
+    // garbage-in-garbage-out.
+    let spans = server.edition_text_spans(work_id);
+    assert_eq!(spans.len(), 1, "a single line must coalesce to one span");
+    assert_eq!(spans[0].text, "Es irrt der Mensch, solang er strebt.");
+    assert_eq!(spans[0].char_start, 0);
+
     let state = AppState::new(server).shared();
     let app = build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

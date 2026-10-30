@@ -498,10 +498,14 @@ pub struct TranslatedRead {
 }
 
 /// Build the translated document text plus its provenance block.
-/// Pure with respect to the server: spans, annotations, and the
-/// provider are handed in; the only side effects are the rendition
-/// cache and the provider call. Runs under `spawn_blocking`.
+/// Pure with respect to the server: the original rendered text,
+/// spans, annotations, and the provider are handed in; the only
+/// side effects are the rendition cache and the provider call.
+/// Runs under `spawn_blocking`. Gaps between spans (newlines and
+/// other layout) are copied verbatim from the original so the
+/// translated document keeps its shape.
 pub fn assemble_translated_read<P: RenditionProvider>(
+    original_text: &str,
     spans: &[TextSpanView],
     annotations: &[(String, String, usize, usize)],
     target_lang: &str,
@@ -599,10 +603,16 @@ pub fn assemble_translated_read<P: RenditionProvider>(
         }
     }
 
-    let mut text = String::with_capacity(spans.iter().map(|s| s.text.len()).sum());
+    let original_chars: Vec<char> = original_text.chars().collect();
+    let mut text = String::with_capacity(original_text.len());
     let mut rendition_json = Vec::new();
     let mut translated = 0usize;
+    let mut last_end = 0usize;
     for (span, entry) in spans.iter().zip(renditions.iter()) {
+        let gap_end = span.char_start.min(original_chars.len());
+        if last_end < gap_end {
+            text.extend(&original_chars[last_end..gap_end]);
+        }
         match entry {
             Some(e) => {
                 translated += 1;
@@ -627,6 +637,10 @@ pub fn assemble_translated_read<P: RenditionProvider>(
             }
             None => text.push_str(&span.text),
         }
+        last_end = span.char_end.min(original_chars.len());
+    }
+    if last_end < original_chars.len() {
+        text.extend(&original_chars[last_end..]);
     }
 
     let mut block = serde_json::json!({
@@ -803,7 +817,8 @@ mod tests {
             fail: false,
         };
 
-        let first = assemble_translated_read(&spans, &annotations, "en", &provider);
+        let original = "eins zwei ";
+        let first = assemble_translated_read(original, &spans, &annotations, "en", &provider);
         assert_eq!(first.provider_calls, 1, "one batch, one call");
         assert_eq!(
             first.text, "[de->en] eins [de->en] zwei ",
@@ -812,12 +827,42 @@ mod tests {
         assert_eq!(first.block["spans_translated"], 2);
         assert_eq!(first.block["cache_hits"], 0);
 
-        let second = assemble_translated_read(&spans, &annotations, "en", &provider);
+        let second = assemble_translated_read(original, &spans, &annotations, "en", &provider);
         assert_eq!(second.provider_calls, 0, "second read is all cache hit");
         assert_eq!(second.block["cache_hits"], 2);
         assert_eq!(
             second.text, first.text,
             "same tuple yields byte-identical renditions"
+        );
+    }
+
+    #[test]
+    fn translated_read_preserves_layout_gaps() {
+        cache_clear_for_tests();
+        // Two line-spans separated by a blank line; the gap must
+        // survive translation verbatim.
+        let original = "Es irrt der Mensch.\n\nDurch die Gasse.";
+        let spans = vec![
+            TextSpanView {
+                char_start: 0,
+                char_end: 19,
+                text: "Es irrt der Mensch.".into(),
+            },
+            TextSpanView {
+                char_start: 21,
+                char_end: 37,
+                text: "Durch die Gasse.".into(),
+            },
+        ];
+        let annotations = vec![ann("language", "de", 0, 0)];
+        let provider = FakeProvider {
+            calls: AtomicUsize::new(0),
+            fail: false,
+        };
+        let out = assemble_translated_read(original, &spans, &annotations, "en", &provider);
+        assert_eq!(
+            out.text, "[de->en] Es irrt der Mensch.\n\n[de->en] Durch die Gasse.",
+            "separators between spans pass through unchanged"
         );
     }
 
@@ -841,7 +886,7 @@ mod tests {
             calls: AtomicUsize::new(0),
             fail: false,
         };
-        let out = assemble_translated_read(&spans, &annotations, "en", &provider);
+        let out = assemble_translated_read("eins????", &spans, &annotations, "en", &provider);
         assert_eq!(out.provider_calls, 1, "only the German span is fetched");
         assert_eq!(out.block["spans_same_language"], 1);
         assert_eq!(out.block["spans_undeclared"], 0);
@@ -861,7 +906,7 @@ mod tests {
             calls: AtomicUsize::new(0),
             fail: true,
         };
-        let out = assemble_translated_read(&spans, &annotations, "en", &provider);
+        let out = assemble_translated_read("eins", &spans, &annotations, "en", &provider);
         assert_eq!(out.text, "eins", "read serves the original, never fails");
         assert!(out.block["errors"].is_array());
     }

@@ -9630,27 +9630,74 @@ impl Server {
 
     /// FR-155: text spans of a work's current edition with char
     /// offsets in the rendered text — the unit of lazy translation
-    /// on the read path.
+    /// on the read path. The O-tree stores one carrier per
+    /// character, so contiguous text is coalesced into line-sized
+    /// translation units (non-text elements break a run); a
+    /// per-character batch would ask the engine to translate
+    /// letters.
     pub fn edition_text_spans(
         &self,
         work_be_id: BeId,
     ) -> Vec<crate::server::translate::TextSpanView> {
+        fn push_span(
+            spans: &mut Vec<crate::server::translate::TextSpanView>,
+            buf: &mut String,
+            start: usize,
+            end: usize,
+        ) {
+            if !buf.is_empty() {
+                spans.push(crate::server::translate::TextSpanView {
+                    char_start: start,
+                    char_end: end,
+                    text: std::mem::take(buf),
+                });
+            }
+        }
+
         let Some(ws) = self.works.get(&work_be_id) else {
             return Vec::new();
         };
         let edition = ws.work.current_edition();
-        let mut spans = Vec::new();
+
+        // Pass 1: coalesce consecutive text carriers into runs,
+        // recording each run's starting char offset.
+        let mut runs: Vec<(usize, String)> = Vec::new();
+        let mut active = false;
         let mut offset = 0usize;
         for (_, carrier) in edition.cached_entries() {
             let len = carrier.char_len();
             if let Some(text) = carrier.element.as_text() {
-                spans.push(crate::server::translate::TextSpanView {
-                    char_start: offset,
-                    char_end: offset + len,
-                    text: text.to_string(),
-                });
+                if active {
+                    runs.last_mut()
+                        .expect("active run implies a pushed run")
+                        .1
+                        .push_str(text);
+                } else {
+                    runs.push((offset, text.to_string()));
+                    active = true;
+                }
+            } else {
+                active = false;
             }
             offset += len;
+        }
+
+        // Pass 2: split runs on line boundaries into spans.
+        let mut spans = Vec::new();
+        for (run_start, run_text) in runs {
+            let mut span_start = run_start;
+            let mut buf = String::new();
+            let mut char_pos = run_start;
+            for ch in run_text.chars() {
+                if ch == '\n' {
+                    push_span(&mut spans, &mut buf, span_start, char_pos);
+                    span_start = char_pos + 1;
+                } else {
+                    buf.push(ch);
+                }
+                char_pos += 1;
+            }
+            push_span(&mut spans, &mut buf, span_start, char_pos);
         }
         spans
     }

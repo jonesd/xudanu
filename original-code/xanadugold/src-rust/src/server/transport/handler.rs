@@ -476,12 +476,14 @@ async fn public_work_translated(
             srv.edition_text_spans(work_id),
         ))
     })?;
+    let original_text = base["text"].as_str().unwrap_or_default().to_string();
 
     let assembly_target = target_lang.clone();
     let assembly_spans = spans;
     let assembly_annotations = annotations;
     let assembled = tokio::task::spawn_blocking(move || {
         crate::server::translate::assemble_translated_read(
+            &original_text,
             &assembly_spans,
             &assembly_annotations,
             &assembly_target,
