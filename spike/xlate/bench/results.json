@@ -1,0 +1,239 @@
+{
+  "results": [
+    {
+      "id": "goethe-aphorism",
+      "label": "Goethe, Faust I — 5 words",
+      "kind": "public-domain",
+      "de": "Es irrt der Mensch, solang er strebt.",
+      "engines": {
+        "argos": {
+          "text": "Man is wrong as long as he strives.",
+          "ms1": 254,
+          "ms2": 3
+        },
+        "nllb": {
+          "text": "Man is wrong as long as he strives.",
+          "ms1": 669,
+          "ms2": 708
+        }
+      }
+    },
+    {
+      "id": "faust-demo-span",
+      "label": "Faust I+II — the demo span, 2 sentences",
+      "kind": "public-domain",
+      "de": "Es irrt der Mensch, solang er strebt. Wer immer strebend sich bemüht, den können wir erlösen.",
+      "engines": {
+        "argos": {
+          "text": "Man is wrong as long as he strives. Whoever strives, we can save him.",
+          "ms1": 373,
+          "ms2": 3
+        },
+        "nllb": {
+          "text": "Man is wrong as long as he strives. Whoever strives hard, we can rescue.",
+          "ms1": 1299,
+          "ms2": 1391
+        }
+      }
+    },
+    {
+      "id": "schiller-tell",
+      "label": "Schiller, Wilhelm Tell — 1 sentence",
+      "kind": "public-domain",
+      "de": "Durch diese hohle Gasse muss er kommen, es führt kein andrer Weg nach Küssnacht.",
+      "engines": {
+        "argos": {
+          "text": "He must come through this hollow alley; there is no other way to Küssnacht.",
+          "ms1": 415,
+          "ms2": 3
+        },
+        "nllb": {
+          "text": "He has to go through this hollow alley, there's no other way to Kiss Night.",
+          "ms1": 1243,
+          "ms2": 1264
+        }
+      }
+    },
+    {
+      "id": "kant-krv",
+      "label": "Kant, Kritik der reinen Vernunft — philosophy, hard",
+      "kind": "public-domain",
+      "de": "Gedanken ohne Inhalt sind leer, Anschauungen ohne Begriffe sind blind.",
+      "engines": {
+        "argos": {
+          "text": "Thoughts without content are empty, views without concepts are blind.",
+          "ms1": 235,
+          "ms2": 4
+        },
+        "nllb": {
+          "text": "Thoughts without content are empty, perceptions without concepts are blind.",
+          "ms1": 831,
+          "ms2": 914
+        }
+      }
+    },
+    {
+      "id": "fontane-effi",
+      "label": "Fontane, Effi Briest — narrative, long sentence",
+      "kind": "public-domain",
+      "de": "In den letzten Novembertagen des Jahres 1859, eines Nachmittags, den man noch zum Fahrradfahren hätte benutzen können, ging in Berlin, in der alten Keithstraße, ein Herr von mittlerer Größe und militärischem Aussehen von der Treppe eines Vorderhauses hinab auf die Straße.",
+      "engines": {
+        "argos": {
+          "text": "In the last days of November 1859, an afternoon which could still have been used for cycling, a gentleman of medium size and military appearance walked down the stairs of a front house in Berlin, in the old Keithstraße.",
+          "ms1": 672,
+          "ms2": 4
+        },
+        "nllb": {
+          "text": "In the last days of November 1859, an afternoon that could still have been used for cycling, a gentleman of medium size and military appearance went down the stairs of a front house on the street in Berlin, in the old Keithstraße.",
+          "ms1": 2909,
+          "ms2": 3084
+        }
+      }
+    },
+    {
+      "id": "kafka-verwandlung",
+      "label": "Kafka, Die Verwandlung — famous opening",
+      "kind": "public-domain",
+      "de": "Als Gregor Samsa eines Morgens aus unruhigen Träumen erwachte, fand er sich in seinem Bett zu einem ungeheueren Ungeziefer verwandelt.",
+      "engines": {
+        "argos": {
+          "text": "When Gregor Samsa woke up one morning from troubled dreams, he found himself transformed into a monstrous vermin in his bed.",
+          "ms1": 460,
+          "ms2": 3
+        },
+        "nllb": {
+          "text": "When Gregor Samsa woke up one morning from restless dreams, he found himself in his bed transformed into an enormous insect.",
+          "ms1": 1786,
+          "ms2": 1593
+        }
+      }
+    },
+    {
+      "id": "rilke-panther",
+      "label": "Rilke, Der Panther — verse line",
+      "kind": "public-domain",
+      "de": "Der Panther im Jardin des Plantes, Paris: sein Blick ist vom Vorübergehn der Stäbe so müd geworden, dass er nichts mehr hält.",
+      "engines": {
+        "argos": {
+          "text": "The Panther in the Jardin des Plantes, Paris: his gaze has become so tired from the passing of the staffs that he no longer holds anything.",
+          "ms1": 640,
+          "ms2": 4
+        },
+        "nllb": {
+          "text": "The Panther in the Jardin des Plantes, Paris: his gaze is so tired of the passing of the rods that he holds nothing.",
+          "ms1": 2292,
+          "ms2": 2305
+        }
+      }
+    },
+    {
+      "id": "heine-harz",
+      "label": "Heine, Die Harzreise — travel prose",
+      "kind": "public-domain",
+      "de": "Das ist ja die alte Geschichte: erst glaubt man nicht, dann hofft man, und endlich hat man verloren.",
+      "engines": {
+        "argos": {
+          "text": "This is the old story: first you don’t believe, then you hope, and finally you have lost.",
+          "ms1": 413,
+          "ms2": 3
+        },
+        "nllb": {
+          "text": "That's the old story. First you don't believe, then you hope, and finally you lose.",
+          "ms1": 1718,
+          "ms2": 1361
+        }
+      }
+    },
+    {
+      "id": "synth-technical",
+      "label": "SYNTHETIC — technical instruction",
+      "kind": "synthetic",
+      "de": "Nach der Installation muss der Schlüssel des Serversignaturzertifikats in das Verzeichnis /etc/xudanu/keys kopiert und die Zugriffsrechte auf 0600 gesetzt werden.",
+      "engines": {
+        "argos": {
+          "text": "After installation, the key of the server signature certificate must be copied to the /etc/xudanu/keys directory and the access rights set to 0600.",
+          "ms1": 430,
+          "ms2": 3
+        },
+        "nllb": {
+          "text": "After installation, the server signature certificate key must be copied to the /etc/xudanu/keys directory and the access rights must be set to 0600.",
+          "ms1": 2112,
+          "ms2": 2177
+        }
+      }
+    },
+    {
+      "id": "synth-federation",
+      "label": "SYNTHETIC — domain prose (federation)",
+      "kind": "synthetic",
+      "de": "Ein Rund wird erst versiegelt, wenn der Leiter Stimmen von der Zwei-Drittel-Mehrheit der aktiven Mitglieder gesammelt hat; danach wird das Ergebnis an alle Replikate weitergeleitet.",
+      "engines": {
+        "argos": {
+          "text": "A round is not sealed until the leader has collected votes from the two-thirds majority of active members; The result is then forwarded to all replicates.",
+          "ms1": 550,
+          "ms2": 4
+        },
+        "nllb": {
+          "text": "A round is not sealed until the leader has collected a two-thirds majority of the votes of the active members, after which the result is forwarded to all replicates.",
+          "ms1": 2315,
+          "ms2": 2375
+        }
+      }
+    },
+    {
+      "id": "synth-numbers",
+      "label": "SYNTHETIC — numbers + proper nouns",
+      "kind": "synthetic",
+      "de": "Der Server srv-a hat seit dem 14. März 3.742 Anfragen von 18 verschiedenen Peers beantwortet, davon 112 mit Fehlercode 429.",
+      "engines": {
+        "argos": {
+          "text": "The server srv-a has been running since 14. 3,742 requests answered by 18 different peers, 112 of them with error code 429.",
+          "ms1": 503,
+          "ms2": 3
+        },
+        "nllb": {
+          "text": "Since 14 March, the server srv-a has responded to 3,742 requests from 18 different peers, 112 of which have an error code of 429.",
+          "ms1": 1818,
+          "ms2": 2088
+        }
+      }
+    },
+    {
+      "id": "synth-long-para",
+      "label": "SYNTHETIC — long paragraph, ~80 words",
+      "kind": "synthetic",
+      "de": "Die Geschichtsschreibung des neunzehnten Jahrhunderts hat lange geglaubt, dass der Fortschritt eine gerade Linie sei. Aber wer die Briefe der Beteiligten liest, bemerkt schnell, dass fast jede Entscheidung unter Zeitdruck getroffen wurde, dass die Akteure oft nicht wussten, welche Folgen ihre Handlungen haben würden, und dass der spätere Sieger meist nicht der war, der am besten geplant hatte, sondern der, der am schnellsten aus Fehlern lernte. So gesehen ist jede große Erfindung auch ein Bericht über das Scheitern der Alternativen.",
+      "engines": {
+        "argos": {
+          "text": "The historiography of the nineteenth century has long believed that progress is a straight line. But those who read the letters of the participants quickly realize that almost every decision was made under time pressure, that the actors often did not know what consequences their actions would have, and that the later winner was usually not the one who had planned best, but the one who learned the fastest from mistakes. In this sense, every great invention is also a report on the failure of alternatives.",
+          "ms1": 1223,
+          "ms2": 4
+        },
+        "nllb": {
+          "text": "Nineteenth-century historians have long believed that progress was a straight line. But if you read the letters of those involved, you quickly notice that almost every decision was made under time pressure, that the actors often didn't know what the consequences of their actions would be, and that the subsequent winner was usually not the one who had the best plans, but the one who learned the fastest from mistakes.",
+          "ms1": 5221,
+          "ms2": 5650
+        }
+      }
+    }
+  ],
+  "stats": {
+    "argos": {
+      "p50": 430,
+      "p95": 672,
+      "min": 235,
+      "max": 1223
+    },
+    "nllb": {
+      "p50": 1786,
+      "p95": 2909,
+      "min": 669,
+      "max": 5221
+    }
+  },
+  "mem": {
+    "xlate-spike": "987.5MiB / 12.89GiB",
+    "xlate-nllb": "1.031GiB / 12.89GiB"
+  },
+  "generated": "2026-10-30 11:22:40"
+}

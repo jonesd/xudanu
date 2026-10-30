@@ -1,0 +1,74 @@
+[
+  {
+    "id": "goethe-aphorism",
+    "label": "Goethe, Faust I — 5 words",
+    "kind": "public-domain",
+    "de": "Es irrt der Mensch, solang er strebt."
+  },
+  {
+    "id": "faust-demo-span",
+    "label": "Faust I+II — the demo span, 2 sentences",
+    "kind": "public-domain",
+    "de": "Es irrt der Mensch, solang er strebt. Wer immer strebend sich bemüht, den können wir erlösen."
+  },
+  {
+    "id": "schiller-tell",
+    "label": "Schiller, Wilhelm Tell — 1 sentence",
+    "kind": "public-domain",
+    "de": "Durch diese hohle Gasse muss er kommen, es führt kein andrer Weg nach Küssnacht."
+  },
+  {
+    "id": "kant-krv",
+    "label": "Kant, Kritik der reinen Vernunft — philosophy, hard",
+    "kind": "public-domain",
+    "de": "Gedanken ohne Inhalt sind leer, Anschauungen ohne Begriffe sind blind."
+  },
+  {
+    "id": "fontane-effi",
+    "label": "Fontane, Effi Briest — narrative, long sentence",
+    "kind": "public-domain",
+    "de": "In den letzten Novembertagen des Jahres 1859, eines Nachmittags, den man noch zum Fahrradfahren hätte benutzen können, ging in Berlin, in der alten Keithstraße, ein Herr von mittlerer Größe und militärischem Aussehen von der Treppe eines Vorderhauses hinab auf die Straße."
+  },
+  {
+    "id": "kafka-verwandlung",
+    "label": "Kafka, Die Verwandlung — famous opening",
+    "kind": "public-domain",
+    "de": "Als Gregor Samsa eines Morgens aus unruhigen Träumen erwachte, fand er sich in seinem Bett zu einem ungeheueren Ungeziefer verwandelt."
+  },
+  {
+    "id": "rilke-panther",
+    "label": "Rilke, Der Panther — verse line",
+    "kind": "public-domain",
+    "de": "Der Panther im Jardin des Plantes, Paris: sein Blick ist vom Vorübergehn der Stäbe so müd geworden, dass er nichts mehr hält."
+  },
+  {
+    "id": "heine-harz",
+    "label": "Heine, Die Harzreise — travel prose",
+    "kind": "public-domain",
+    "de": "Das ist ja die alte Geschichte: erst glaubt man nicht, dann hofft man, und endlich hat man verloren."
+  },
+  {
+    "id": "synth-technical",
+    "label": "SYNTHETIC — technical instruction",
+    "kind": "synthetic",
+    "de": "Nach der Installation muss der Schlüssel des Serversignaturzertifikats in das Verzeichnis /etc/xudanu/keys kopiert und die Zugriffsrechte auf 0600 gesetzt werden."
+  },
+  {
+    "id": "synth-federation",
+    "label": "SYNTHETIC — domain prose (federation)",
+    "kind": "synthetic",
+    "de": "Ein Rund wird erst versiegelt, wenn der Leiter Stimmen von der Zwei-Drittel-Mehrheit der aktiven Mitglieder gesammelt hat; danach wird das Ergebnis an alle Replikate weitergeleitet."
+  },
+  {
+    "id": "synth-numbers",
+    "label": "SYNTHETIC — numbers + proper nouns",
+    "kind": "synthetic",
+    "de": "Der Server srv-a hat seit dem 14. März 3.742 Anfragen von 18 verschiedenen Peers beantwortet, davon 112 mit Fehlercode 429."
+  },
+  {
+    "id": "synth-long-para",
+    "label": "SYNTHETIC — long paragraph, ~80 words",
+    "kind": "synthetic",
+    "de": "Die Geschichtsschreibung des neunzehnten Jahrhunderts hat lange geglaubt, dass der Fortschritt eine gerade Linie sei. Aber wer die Briefe der Beteiligten liest, bemerkt schnell, dass fast jede Entscheidung unter Zeitdruck getroffen wurde, dass die Akteure oft nicht wussten, welche Folgen ihre Handlungen haben würden, und dass der spätere Sieger meist nicht der war, der am besten geplant hatte, sondern der, der am schnellsten aus Fehlern lernte. So gesehen ist jede große Erfindung auch ein Bericht über das Scheitern der Alternativen."
+  }
+]
