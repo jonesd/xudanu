@@ -103,13 +103,24 @@ lifecycle with identical digests cluster-wide.
 
 ## Test coverage
 
-- 46 governance state tests: digests, signature binding (every field
+- 57 governance state tests: digests, signature binding (every field
   tamper-detected), equivocation across digests, certificate
   forgery (tampered content / stripped sigs / unregistered keys),
-  buffered-commit replay, pre-prepare validation, fork protection,
-  view-change quorum + watermark carry, timeout/touch, log pruning,
-  ingest idempotence, cluster policy (2–3 refused), single-server
-  mode, escalation freshness.
+  buffered-commit replay, pre-prepare validation (view/seq/leader
+  rejections on a fresh replica; identical re-proposal accepted for
+  straggler rejoin), fork protection, view-change quorum + watermark
+  carry, timeout/touch, log pruning, ingest idempotence, cluster
+  policy (2–3 refused), single-server mode, escalation freshness,
+  commit-phase rejection arms (unsigned in BFT mode, wrong view,
+  wrong digest, equivocation flip flagged for suspension), the
+  certificate race (a late leader prepare completes the seal after
+  commit quorum), full S4 replay (buffered commits seal the round at
+  the prepare-quorum transition), propose-time refusals (policy,
+  round-in-flight, fork guard), byzantine NewView rejection matrix
+  (cross-view certificates, duplicate senders, conflicting prepared
+  digests — first digest wins), and vote-signature validation arms
+  (unsigned, malformed key hex, non-canonical curve point, malformed
+  signature hex).
 - **In-process mesh harness** (`governance_mesh` tests): N real
   servers driving the REAL protocol code (`handle_governance_frame`
   — the same orchestration the live ws loop uses) with partition /
@@ -126,6 +137,21 @@ lifecycle with identical digests cluster-wide.
   catch-up.
 - Coverage: **PBFT core block at 90% line coverage** (was 74%
   pre-harness); the ws orchestration layer went 6% → 25%.
+- 2026-10-29 coverage round (lib + integration measurement):
+  the consensus state machine itself — propose, pre-prepare,
+  prepare, commit, seal, verify, view-change, equivocation,
+  backfill — has **zero dark lines** in `federation.rs`
+  (85.2% lines overall; the remaining dark mass is the FR-75
+  verification-bundle/PROV export surface). The distinct
+  signed-prepare quorum count is now computed in ONE place
+  (`signed_prepare_voters`; previously triplicated with one dead
+  copy). `federation_active.rs` at 82.9% lines, including two new
+  integration tests: dead-port dial failure backs off without
+  harming server health, and a pending round opened before a peer
+  connects replays to it (G3) with the replica voting back.
+  `scripts/coverage.sh` now includes the integration suite in its
+  engine pass (was lib-only — it silently under-measured the
+  federation transport).
 - Security scans: cargo-audit clean after rustls 0.23.43 → 0.23.45
   (RUSTSEC-2026-0285); cargo-deny license failures are pre-existing
   (deny.toml allow-list too narrow — separate maintenance task).
