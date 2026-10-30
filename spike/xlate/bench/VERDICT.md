@@ -255,7 +255,10 @@ required; engine identity rides every PROV edge).
 opt-in.**
 
 Owner verdict (summary form): Argos preferred on nearly all pairs;
-NLLB somewhat better on one or two technical spans.
+NLLB somewhat better on one or two technical spans. The owner then
+ratified the assistant's detailed pass below as the tally of record
+("If you have more rounded view of the pairings then we can go with
+that").
 
 Assistant read (recorded for the diff): NLLB edges more spans than
 the owner credited — rilke ("rods" vs "staffs"), kant ("perceptions"
@@ -269,8 +272,28 @@ loudly garbled. Visible failure warns the reader; invisible failure
 deceives them. For gisting-grade renditions, the loud failure is the
 safer default.
 
-Tally (by summary + read): ≈2/12 misleads each — under the ⅓
-threshold. **Argos renditions may auto-render; NLLB (opt-in) renders
+Tally of record (owner-ratified detailed pass, 2026-10-30):
+
+| # | span | argos | nllb | the call |
+|---|---|---|---|---|
+| 1 | goethe-aphorism | g | g | identical output |
+| 2 | faust-demo-span | g | g | tie; both flatten *erlösen* (redeem) |
+| 3 | schiller-tell | g | **m** | NLLB: Küssnacht → "Kiss Night" — invented place |
+| 4 | kant-krv | g | g | NLLB edge: "perceptions" > "views" for *Anschauungen* |
+| 5 | fontane-effi | g | g | NLLB edge: Argos drops *"auf die Straße"* |
+| 6 | kafka-verwandlung | g | g | Argos edge: "monstrous vermin" is canonical |
+| 7 | rilke-panther | **m** | g | Argos: *Stäbe* → "staffs" — cage-bars image lost; NLLB "rods" |
+| 8 | heine-harz | g | g | NLLB edge: "finally you lose" is more natural |
+| 9 | synth-technical | g | g | NLLB edge: tighter technical register |
+| 10 | synth-federation | g | g | NLLB edge: Argos semicolon splice |
+| 11 | synth-numbers | **m** | g | Argos garbles ("has been running since 14.") |
+| 12 | synth-long-para | g | **f** | NLLB silently drops the final sentence |
+
+**Argos: 10 g / 2 m / 0 f. NLLB: 10 g / 1 m / 1 f.** Mislead rates
+tie at 2/12 = 17% — under the ⅓ threshold. Honest headline: NLLB
+edges more spans (6 to 3) and does NOT lose on headline quality;
+Argos wins on failure character, owner preference, latency, and
+license. **Argos renditions may auto-render; NLLB (opt-in) renders
 long spans click-to-reveal** (silent truncation is its known failure
 class).
 
