@@ -35,7 +35,7 @@ pub enum OptInState {
     Available,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct LicenseEntry {
     /// Stable identifier. Never rename: admins and docs cite it.
     pub id: &'static str,
@@ -57,12 +57,11 @@ pub struct LicenseEntry {
     pub state: OptInState,
 }
 
-/// The registry. `state` is computed by `cfg!` at compile time, so
-/// each build reports its own posture.
-///
-/// NOTE for future entries: a new row lands here only when the
-/// opt-in is real in the product (translation engines join when
-/// FR-155 Stage 2 ships — not before).
+/// The registry. Build-feature rows are static: `state` is computed
+/// by `cfg!` at compile time, so each build reports its own posture.
+/// Runtime-config rows (FR-155 translation) are appended by
+/// `posture()` because their state derives from operator
+/// environment, not the build.
 static REGISTRY: [LicenseEntry; 1] = [LicenseEntry {
     id: "heif",
     name: "HEIF/HEIC image decode",
@@ -86,13 +85,42 @@ code. Core xudanu stays Apache-2.0 / GPL-free either way.",
 }];
 
 /// The full posture: every known opt-in, both states, this build.
-pub fn posture() -> &'static [LicenseEntry] {
-    &REGISTRY
+pub fn posture() -> Vec<LicenseEntry> {
+    let mut entries = REGISTRY.to_vec();
+    entries.push(translation_entry());
+    entries
+}
+
+/// FR-155: machine-translation renditions. The opt-in is the
+/// operator setting `XUDANU_TRANSLATE_PROVIDER_URL` to point at a
+/// LibreTranslate-compatible engine they run themselves — the
+/// operator is the direct licensee of whatever engine weights that
+/// deployment carries (Argos/Opus-MT CC-BY by default; NLLB
+/// CC-BY-NC 4.0 requires fetching the weights yourself).
+fn translation_entry() -> LicenseEntry {
+    let state = if crate::server::translate::translate_enabled() {
+        OptInState::Enabled
+    } else {
+        OptInState::Available
+    };
+    LicenseEntry {
+        id: "translate",
+        name: "Machine translation renditions (read-side)",
+        license: "CC-BY (Argos/Opus-MT models) or CC-BY-NC 4.0 (NLLB — operator-fetched weights)",
+        blast_radius: "Lazily renders machine-gisting renditions of public works via an \
+external translation engine the operator configures. Renditions are labeled \
+machine-gisting, never substitutes for the original; provider and model identity \
+ride every translation provenance edge.",
+        terms_url: "https://creativecommons.org/licenses/by/4.0/",
+        source: OptInSource::RuntimeConfig,
+        feature: None,
+        state,
+    }
 }
 
 /// Admin-endpoint rendering: {"entries": [...]}.
 pub fn posture_json() -> serde_json::Value {
-    let entries: Vec<serde_json::Value> = REGISTRY
+    let entries: Vec<serde_json::Value> = posture()
         .iter()
         .map(|e| serde_json::to_value(e).expect("LicenseEntry is plain data"))
         .collect();
@@ -102,7 +130,7 @@ pub fn posture_json() -> serde_json::Value {
 /// Startup-log rendering: one line naming every opt-in and its
 /// state in this build.
 pub fn startup_line() -> String {
-    let parts: Vec<String> = REGISTRY
+    let parts: Vec<String> = posture()
         .iter()
         .map(|e| match e.state {
             OptInState::Enabled => format!("{}=enabled({})", e.id, e.license),
@@ -126,10 +154,8 @@ mod tests {
         // must see the absences, not just the activations. On a
         // default build (no heif feature) the heif row IS that
         // absence, listed as Available.
-        let heif = posture()
-            .iter()
-            .find(|e| e.id == "heif")
-            .expect("heif entry");
+        let entries = posture();
+        let heif = entries.iter().find(|e| e.id == "heif").expect("heif entry");
         let heif_compiled = cfg!(any(feature = "libheif-rs", feature = "heif-rs"));
         assert_eq!(
             heif.state == OptInState::Enabled,
@@ -192,6 +218,27 @@ mod tests {
         let line = startup_line();
         for e in posture() {
             assert!(line.contains(e.id), "startup line omits {}", e.id);
+        }
+    }
+
+    #[test]
+    fn translate_entry_mirrors_runtime_config() {
+        // FR-155: the registry row is a mirror, not a switch — its
+        // state must track the operator's env configuration exactly.
+        let entries = posture();
+        let translate = entries
+            .iter()
+            .find(|e| e.id == "translate")
+            .expect("translate entry");
+        assert_eq!(translate.source, OptInSource::RuntimeConfig);
+        assert!(translate.feature.is_none());
+        assert_eq!(
+            translate.state == OptInState::Enabled,
+            crate::server::translate::translate_enabled(),
+            "registry state must match what the read path actually gates on"
+        );
+        if !crate::server::translate::translate_enabled() {
+            assert_eq!(translate.state, OptInState::Available);
         }
     }
 }

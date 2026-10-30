@@ -31,6 +31,8 @@ pub mod mcp_ws;
 pub mod otree_crdt;
 #[cfg(feature = "server")]
 pub mod rate_limiter;
+#[cfg(feature = "server")]
+pub mod translate;
 
 pub mod daily_history;
 pub mod forensics;

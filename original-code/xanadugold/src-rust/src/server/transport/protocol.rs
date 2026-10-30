@@ -474,6 +474,7 @@ pub enum OperationCode {
     AdminRevokeAdmin,
     AdminNetworkStatus,
     AdminLicensePosture,
+    TranslateCapabilities,
     AdminServerProbe,
     #[cfg(feature = "serde")]
     CrossServerResolve,
@@ -875,6 +876,7 @@ impl OperationCode {
         (0x0f2a, OperationCode::LlmProposeConnections),
         (0x0f2b, OperationCode::LinkSetRespondsTo),
         (0x0f2c, OperationCode::AdminLicensePosture),
+        (0x0f2d, OperationCode::TranslateCapabilities),
         (0x0f17, OperationCode::AdminClubsList),
         (0x0f18, OperationCode::AdminGrantAdmin),
         (0x0f19, OperationCode::AdminRevokeAdmin),
@@ -2260,6 +2262,7 @@ pub enum WireRequest {
     AdminNetworkStatus,
     #[cfg(feature = "serde")]
     AdminLicensePosture,
+    TranslateCapabilities,
     #[cfg(feature = "serde")]
     AdminServerProbe {
         server_key: String,
@@ -2357,6 +2360,7 @@ impl WireRequest {
             self,
             Self::SessionConnect
                 | Self::WorkGetEdition { .. }
+                | Self::TranslateCapabilities
                 | Self::WorkIsGrabbed { .. }
                 | Self::WorkGrabber { .. }
                 | Self::WorkGrabWaiters { .. }
@@ -5355,7 +5359,7 @@ mod lattice_shadow_wire_tests {
         let next = OperationCode::next_free_code(0x0f00, 0x0fff)
             .expect("the 0x0f00 block must not be exhausted");
         assert_eq!(
-            next, 0x0f2d,
+            next, 0x0f2e,
             "next free 0x0f-block code moved — update this expectation after registering"
         );
         // The helper's result is by construction absent from the table.

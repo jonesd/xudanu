@@ -379,10 +379,19 @@ async fn public_works_list_handler(
         .into_response()
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct PublicWorkQuery {
+    /// FR-155: requested rendition language (`?lang=en`). Absent,
+    /// invalid, or with no provider configured → the response is
+    /// byte-identical to today.
+    pub lang: Option<String>,
+}
+
 async fn public_work_handler(
     State(state): State<SharedState>,
     axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
     axum::extract::Path(work_id_hex): axum::extract::Path<String>,
+    axum::extract::Query(query): axum::extract::Query<PublicWorkQuery>,
 ) -> impl IntoResponse {
     if !crate::server::rate_limiter::validate_work_id_hex(&work_id_hex) {
         return (
@@ -403,6 +412,20 @@ async fn public_work_handler(
         Some(id) => id,
         None => return (axum::http::StatusCode::NOT_FOUND, "work not found").into_response(),
     };
+    // FR-155: the translated read is offered only when the reader
+    // asked, the tag is well-formed, and a provider is configured.
+    // Any failure below falls through to today's exact read — a
+    // sidecar being down must never break the public API.
+    let target_lang = query
+        .lang
+        .filter(|l| crate::server::translate::valid_language_tag(l));
+    if let Some(target) = target_lang {
+        if crate::server::translate::translate_enabled() {
+            if let Some(response) = public_work_translated(&state, work_id, target).await {
+                return response;
+            }
+        }
+    }
     // FR-83: public reads serve real editions — thaw before the
     // read-lock call (no-op when materialized).
     state.server.with_server(|srv| {
@@ -430,6 +453,89 @@ async fn public_work_handler(
             .into_response(),
         Err(_) => (axum::http::StatusCode::NOT_FOUND, "work not found").into_response(),
     }
+}
+
+/// FR-155: lazy translated public read. Lock discipline (the FR-86
+/// lesson): gather state under short locks, run the provider call in
+/// `spawn_blocking` with no server lock held, then re-sign under a
+/// short read lock. Returns None on any failure so the caller can
+/// serve the untranslated read instead.
+async fn public_work_translated(
+    state: &SharedState,
+    work_id: crate::edition::BeId,
+    target_lang: String,
+) -> Option<axum::response::Response> {
+    let client = crate::server::translate::get_client()?;
+    let annotations = state.server.with_server(|srv| {
+        let _ = srv.ensure_materialized(work_id);
+        srv.public_language_annotations(work_id)
+    });
+    let (base, spans) = state.server.with_server_ref(|srv| {
+        Some((
+            srv.public_work_edition(work_id).ok()?,
+            srv.edition_text_spans(work_id),
+        ))
+    })?;
+
+    let assembly_target = target_lang.clone();
+    let assembly_spans = spans;
+    let assembly_annotations = annotations;
+    let assembled = tokio::task::spawn_blocking(move || {
+        crate::server::translate::assemble_translated_read(
+            &assembly_spans,
+            &assembly_annotations,
+            &assembly_target,
+            client,
+        )
+    })
+    .await
+    .ok()?;
+
+    let mut json = base;
+    let original_hash = json["content_hash_blake3"].clone();
+    let translated_hash = blake3::hash(assembled.text.as_bytes()).to_hex().to_string();
+    json["original_content_hash_blake3"] = original_hash;
+    json["content_hash_blake3"] = serde_json::json!(translated_hash);
+    json["text"] = serde_json::json!(assembled.text);
+    json["char_count"] = serde_json::json!(assembled.text.chars().count());
+    json["translation"] = assembled.block;
+    // The signature binds the served content: re-sign over the
+    // translated hash so verification still holds for this body.
+    let revision = json["revision"].as_u64().unwrap_or(0);
+    let namespace = json["server_namespace_id"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    let sig_payload = format!("{}|{}|{}", translated_hash, namespace, revision);
+    let sig_hex = state.server.with_server_ref(|srv| {
+        srv.sign_data(sig_payload.as_bytes())
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>()
+    });
+    json["server_signature"] = serde_json::json!(sig_hex);
+
+    Some(
+        (
+            [
+                (
+                    axum::http::header::CONTENT_TYPE,
+                    "application/json; charset=utf-8",
+                ),
+                (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+                (
+                    axum::http::header::HeaderName::from_static("x-xudanu-served-by"),
+                    "xudanu",
+                ),
+                (
+                    axum::http::header::HeaderName::from_static("x-xudanu-translation"),
+                    target_lang.as_str(),
+                ),
+            ],
+            json.to_string(),
+        )
+            .into_response(),
+    )
 }
 
 #[derive(Debug, serde::Deserialize)]
