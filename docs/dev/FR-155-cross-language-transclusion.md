@@ -1,11 +1,10 @@
 # FR-155 — Cross-language transclusion: translation as a PROV edge
 
-**Status:** Stage 1 complete (design spike + two-engine bench; owner
-quality verdict pending — see `spike/xlate/bench/VERDICT.md` on the
-spike branch). Stage 2 tracer bullet scoped, not started. The design
-below is fixed by the spike (`spike/cross-language-transclusion`);
-only the engine default and the reveal-vs-auto threshold wait on the
-verdict.
+**Status:** Stage 1 complete and **verdict DECIDED 2026-10-30 —
+Argos is the default engine; NLLB is the deliberate opt-in** (full
+tally of record: `spike/xlate/bench/VERDICT.md` on the spike branch).
+Stage 2 tracer bullet scoped, not started. The design below is fixed
+by the spike (`spike/cross-language-transclusion`).
 
 **Heritage:** the Xanadu lineage made quoting-with-both-ends-visible
 the core primitive. FR-155 completes it across languages: a reader
@@ -113,16 +112,28 @@ other:
   click-to-reveal friction (the mislead rule) forces comparison with
   the original, which is the point in a classroom.
 
-## Engine (VERDICT PENDING)
+## Engine (DECIDED 2026-10-30: Argos default, NLLB opt-in)
 
-| engine | p50 | p95 | worst | RSS | license |
-|---|---|---|---|---|---|
-| Argos | 430ms | 672ms | 1223ms | 987.5MiB | CC-BY (default-safe) |
-| NLLB-600M int8 | 1786ms | 2909ms | 5221ms | 1.031GiB | CC-BY-NC 4.0 (opt-in only) |
+| engine | role | p50 | p95 | worst | RSS | license |
+|---|---|---|---|---|---|---|
+| Argos | **default** | 430ms | 672ms | 1223ms | 987.5MiB | CC-BY (default-safe) |
+| NLLB-600M int8 | deliberate opt-in | 1786ms | 2909ms | 5221ms | 1.031GiB | CC-BY-NC 4.0 (operator-fetched) |
 
-Owner verdict pass (24 calls, gist/mislead/fail) decides the default
-and the reveal threshold. Clean upgrades if coverage demands:
-MADLAD-400 (Apache-2.0), M2M-100 (MIT).
+Owner-ratified tally of record: **Argos 10g/2m/0f, NLLB 10g/1m/1f**
+— mislead rates tie at 17%, under the ⅓ threshold, so **Argos
+renditions may auto-render**. The honest headline: NLLB edges more
+individual spans (technical register, *Anschauungen*, the numbers
+span) and does not lose on rates — **Argos wins on failure
+character**: both catastrophic failures in the set are NLLB's and
+both are silent and fluent (Küssnacht → "Kiss Night"; the long
+paragraph's final sentence dropped without error), while Argos's
+failures are loud and self-flagging (*Stäbe* → "staffs"; garbled
+numbers syntax). Visible failure warns the reader; invisible failure
+deceives them. Owner preference, latency (430ms vs 1.8s p50), and
+license (CC-BY vs CC-BY-NC) vote the same way. **NLLB, when opted
+in, renders long spans click-to-reveal** — silent truncation is its
+known failure class. Clean upgrades if coverage demands: MADLAD-400
+(Apache-2.0), M2M-100 (MIT).
 
 ## Licensing & weights policy (decided)
 
