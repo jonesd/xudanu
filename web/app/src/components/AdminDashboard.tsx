@@ -269,6 +269,55 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
   const [policyBusy, setPolicyBusy] = useState<string | null>(null);
   const [policyMsg, setPolicyMsg] = useState<string | null>(null);
 
+  // ── Public-read rate limit (operator knob) ──
+  interface RateLimitInfo {
+    get_limit: number;
+    default_get_limit: number;
+    min_get_limit: number;
+    max_get_limit: number;
+    get_window_secs: number;
+    tracked_ips: number;
+  }
+  const [rateLimit, setRateLimit] = useState<RateLimitInfo | null>(null);
+  const [rateLimitMsg, setRateLimitMsg] = useState<string | null>(null);
+  const [rateLimitInput, setRateLimitInput] = useState("");
+  const [rateLimitBusy, setRateLimitBusy] = useState(false);
+
+  const loadRateLimit = useCallback(async () => {
+    if (!client) return;
+    try {
+      const resp = await client.sendRequest("admin_rate_limit_get");
+      const val = (resp as { value?: unknown }).value ?? resp;
+      const inner = (val as { value?: unknown }).value ?? val;
+      const info = inner as RateLimitInfo;
+      setRateLimit(info);
+      setRateLimitInput(String(info.get_limit));
+      setRateLimitMsg(null);
+    } catch {
+      setRateLimitMsg("Could not load rate limit (admin sign-in required)");
+    }
+  }, [client]);
+
+  const applyRateLimit = useCallback(async (override?: number) => {
+    if (!client) return;
+    const n = override ?? parseInt(rateLimitInput, 10);
+    if (!Number.isFinite(n)) {
+      setRateLimitMsg("Enter a whole number of reads per minute");
+      return;
+    }
+    setRateLimitBusy(true);
+    setRateLimitMsg(null);
+    try {
+      await client.sendRequest("admin_rate_limit_set", { get_limit: n });
+      await loadRateLimit();
+      setRateLimitMsg(`Rate limit set to ${n} reads/min per IP — applied immediately`);
+    } catch (e) {
+      setRateLimitMsg(`Failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setRateLimitBusy(false);
+    }
+  }, [client, rateLimitInput, loadRateLimit]);
+
   const runPolicy = useCallback(async (key: string, action: () => Promise<void>, done: string) => {
     setPolicyBusy(key);
     setPolicyMsg(null);
@@ -356,6 +405,11 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
   useEffect(() => {
     if (tab === "license") void loadLicense();
   }, [tab, loadLicense]);
+
+  // Rate limit loads when the policy tab is entered.
+  useEffect(() => {
+    if (tab === "policy") void loadRateLimit();
+  }, [tab, loadRateLimit]);
 
   // A stale checkpoint is only a problem when something is unpersisted:
   // dirty works/clubs exist that a crash would lose. A quiet read-only
@@ -552,6 +606,50 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
                 {policyMsg}
               </div>
             )}
+
+            <div style={{ background: "#161b22", border: "1px solid #21262d", borderRadius: "8px", padding: 16, marginBottom: 14 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: "#e6edf3", marginBottom: 4 }}>Public read rate limit</div>
+              <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 12 }}>
+                How many public reads ({rateLimit ? `${rateLimit.get_window_secs}s` : "60s"}) each visitor IP may make{rateLimit ? ` — currently ${rateLimit.get_limit} reads/min${rateLimit.get_limit !== rateLimit.default_get_limit ? " (custom)" : " (default)"}` : ""}.
+                {rateLimit && rateLimit.tracked_ips > 0 && ` ${rateLimit.tracked_ips} IP${rateLimit.tracked_ips === 1 ? "" : "s"} active in the current window.`}
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  type="number"
+                  min={rateLimit?.min_get_limit ?? 10}
+                  max={rateLimit?.max_get_limit ?? 1000000}
+                  value={rateLimitInput}
+                  onChange={(e) => setRateLimitInput(e.target.value)}
+                  disabled={!isAdmin || rateLimitBusy}
+                  style={{ width: 140, background: "#0d1117", border: "1px solid #30363d", borderRadius: "4px", color: "#e6edf3", padding: "6px 10px", fontSize: 13 }}
+                />
+                <button
+                  type="button"
+                  disabled={!isAdmin || rateLimitBusy}
+                  onClick={() => void applyRateLimit()}
+                  style={{ background: "#21262d", border: "1px solid #30363d", color: "#c9d1d9", borderRadius: "4px", padding: "6px 14px", fontSize: 13, cursor: "pointer" }}
+                >
+                  {rateLimitBusy ? "Applying…" : "Apply"}
+                </button>
+                {rateLimit && (
+                  <button
+                    type="button"
+                    disabled={!isAdmin || rateLimitBusy || rateLimit.get_limit === rateLimit.default_get_limit}
+                    onClick={() => { setRateLimitInput(String(rateLimit.default_get_limit)); void applyRateLimit(rateLimit.default_get_limit); }}
+                    style={{ background: "none", border: "none", color: "#58a6ff", cursor: "pointer", fontSize: 12, textDecoration: "underline", padding: 0 }}
+                  >
+                    Reset to default ({rateLimit.default_get_limit})
+                  </button>
+                )}
+              </div>
+              {rateLimitMsg && (
+                <div style={{ marginTop: 8, fontSize: 12, color: "#58a6ff" }}>{rateLimitMsg}</div>
+              )}
+              <div style={{ marginTop: 10, fontSize: 11, color: "#484f58" }}>
+                Applies immediately · audit-logged · resets at restart to the default or XUDANU_RATE_GET_LIMIT · bounds {rateLimit?.min_get_limit ?? 10}–{rateLimit?.max_get_limit ?? 1000000}.
+                Measured headroom: the read path serves ~2,800 reads/s aggregate, so this per-visitor cap is the deliberate throttle.
+              </div>
+            </div>
 
             <div style={{ background: "#161b22", border: "1px solid #21262d", borderRadius: "8px", padding: 16, marginBottom: 14 }}>
               <div style={{ fontSize: 15, fontWeight: 600, color: "#e6edf3", marginBottom: 4 }}>Edit policy</div>

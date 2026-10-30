@@ -302,6 +302,8 @@ const PINNED: &[(u16, &str)] = &[
     (0x0f2b, "LinkSetRespondsTo"),
     (0x0f2c, "AdminLicensePosture"),
     (0x0f2d, "TranslateCapabilities"),
+    (0x0f2e, "AdminRateLimitGet"),
+    (0x0f2f, "AdminRateLimitSet"),
     (0x1001, "VersionIsBefore"),
     (0x1002, "VersionAncestors"),
     (0x1003, "VersionDescendants"),

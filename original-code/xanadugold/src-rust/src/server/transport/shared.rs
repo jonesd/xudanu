@@ -77,7 +77,7 @@ impl AppState {
             oauth_state: OAuthState::new(),
             verification: crate::server::verification::VerificationState::new(String::new()),
             governance_tx: gov_tx,
-            rate_limiter: Arc::new(RateLimiter::new()),
+            rate_limiter: Arc::new(RateLimiter::from_env()),
             metrics: DispatchMetrics::default(),
             dev_mode: false,
         }
