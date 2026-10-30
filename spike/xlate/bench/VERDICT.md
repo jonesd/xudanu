@@ -248,3 +248,36 @@ required; engine identity rides every PROV edge).
 - quality tie → latency decides (430ms fits the read path; 1.8s p50
   argues for a dedicated translation node or click-to-reveal for
   long spans)
+
+## VERDICT RECORDED — 2026-10-30
+
+**Engine decision: Argos is the default. NLLB is the deliberate
+opt-in.**
+
+Owner verdict (summary form): Argos preferred on nearly all pairs;
+NLLB somewhat better on one or two technical spans.
+
+Assistant read (recorded for the diff): NLLB edges more spans than
+the owner credited — rilke ("rods" vs "staffs"), kant ("perceptions"
+vs "views"), fontane (keeps "onto the street"), heine (fluency), and
+all three synthetic technical spans. The decision is unchanged, and
+the reason is worth keeping: **both catastrophic failures in the set
+are NLLB's, and both are silent and fluent** (the place name
+Küssnacht → "Kiss Night"; the long paragraph's final sentence
+dropped, no error) — while Argos's worst failure (synth-numbers) is
+loudly garbled. Visible failure warns the reader; invisible failure
+deceives them. For gisting-grade renditions, the loud failure is the
+safer default.
+
+Tally (by summary + read): ≈2/12 misleads each — under the ⅓
+threshold. **Argos renditions may auto-render; NLLB (opt-in) renders
+long spans click-to-reveal** (silent truncation is its known failure
+class).
+
+Four independent votes for Argos as default: owner preference,
+failure mode, latency (430ms vs 1.8s p50), license (CC-BY vs
+CC-BY-NC). NLLB remains the opt-in for 200-language coverage and
+technical content.
+
+Outcome: FR-155 Stage 2 unblocked; docs/dev/FR-155 engine row
+updated on main.
