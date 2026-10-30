@@ -1,0 +1,18 @@
+[package]
+name = "xlate-spike"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Standalone on purpose: this is a throwaway spike, not a workspace
+# member. It path-depends on the real crate so the PROV types it
+# emits are the product's types, not copies.
+[workspace]
+
+[dependencies]
+# `engine` is the light feature set (serde, serde_json, sha2, hex) —
+# no tokio/axum/network stack needed for a PROV spike.
+xudanu = { path = "../../original-code/xanadugold/src-rust", features = ["engine"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"

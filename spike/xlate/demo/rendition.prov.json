@@ -1,0 +1,105 @@
+{
+  "activity": {
+    "xudanu:translation:c0db5e358b9f1b1f9b144af652130c648c4a4abea59f55c037ffdb99009d70b4": {
+      "prov:endTime": "2026-10-30T14:29:28Z",
+      "prov:startTime": "2026-10-30T14:29:28Z",
+      "prov:type": {
+        "$": "xudanu:Translation",
+        "type": "xsd:QName"
+      },
+      "xudanu:modelVersion": {
+        "$": "argos:de->en",
+        "type": "xsd:string"
+      },
+      "xudanu:provider": {
+        "$": "libretranslate@1.9.6",
+        "type": "xsd:string"
+      }
+    }
+  },
+  "agent": {},
+  "entity": {
+    "xudanu:rendition:c0db5e358b9f1b1f9b144af652130c648c4a4abea59f55c037ffdb99009d70b4": {
+      "prov:type": {
+        "$": "xudanu:Rendition",
+        "type": "xsd:QName"
+      },
+      "xudanu:checksum": {
+        "$": "ae5d2d2b59f2463fef56e7e2a406d12c21955609482838b5ef758211601ad262",
+        "type": "xsd:hexBinary"
+      },
+      "xudanu:modelVersion": {
+        "$": "argos:de->en",
+        "type": "xsd:string"
+      },
+      "xudanu:provider": {
+        "$": "libretranslate@1.9.6",
+        "type": "xsd:string"
+      },
+      "xudanu:qualityGrade": {
+        "$": "machine-gisting",
+        "type": "xsd:string"
+      },
+      "xudanu:sourceLang": {
+        "$": "de",
+        "type": "xsd:string"
+      },
+      "xudanu:targetLang": {
+        "$": "en",
+        "type": "xsd:string"
+      }
+    },
+    "xudanu:span:1_7_120_213_1e28f5dc7edb455eb3fe00a8a027b5d64fce7016beca68b84afe0162b33d170a": {
+      "prov:type": {
+        "$": "xudanu:TextSpan",
+        "type": "xsd:QName"
+      },
+      "xudanu:charEnd": {
+        "$": "213",
+        "type": "xsd:integer"
+      },
+      "xudanu:charStart": {
+        "$": "120",
+        "type": "xsd:integer"
+      },
+      "xudanu:contentHash": {
+        "$": "1e28f5dc7edb455eb3fe00a8a027b5d64fce7016beca68b84afe0162b33d170a",
+        "type": "xsd:hexBinary"
+      },
+      "xudanu:revision": {
+        "$": "7",
+        "type": "xsd:integer"
+      },
+      "xudanu:workId": {
+        "$": "1",
+        "type": "xsd:integer"
+      }
+    }
+  },
+  "prefix": {
+    "prov": "http://www.w3.org/ns/prov#",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "xudanu": "https://dgjones.info/ns/xudanu/"
+  },
+  "used": {
+    "xudanu:translation:c0db5e358b9f1b1f9b144af652130c648c4a4abea59f55c037ffdb99009d70b4:used:span": {
+      "prov:activity": "xudanu:translation:c0db5e358b9f1b1f9b144af652130c648c4a4abea59f55c037ffdb99009d70b4",
+      "prov:entity": "xudanu:span:1_7_120_213_1e28f5dc7edb455eb3fe00a8a027b5d64fce7016beca68b84afe0162b33d170a"
+    }
+  },
+  "wasAssociatedWith": {},
+  "wasAttributedTo": {},
+  "wasDerivedFrom": {
+    "xudanu:translation:c0db5e358b9f1b1f9b144af652130c648c4a4abea59f55c037ffdb99009d70b4:derivation:edge": {
+      "prov:activity": "xudanu:translation:c0db5e358b9f1b1f9b144af652130c648c4a4abea59f55c037ffdb99009d70b4",
+      "prov:generatedEntity": "xudanu:rendition:c0db5e358b9f1b1f9b144af652130c648c4a4abea59f55c037ffdb99009d70b4",
+      "prov:usedEntity": "xudanu:span:1_7_120_213_1e28f5dc7edb455eb3fe00a8a027b5d64fce7016beca68b84afe0162b33d170a"
+    }
+  },
+  "wasGeneratedBy": {
+    "xudanu:translation:c0db5e358b9f1b1f9b144af652130c648c4a4abea59f55c037ffdb99009d70b4:gen:rendition": {
+      "prov:activity": "xudanu:translation:c0db5e358b9f1b1f9b144af652130c648c4a4abea59f55c037ffdb99009d70b4",
+      "prov:entity": "xudanu:rendition:c0db5e358b9f1b1f9b144af652130c648c4a4abea59f55c037ffdb99009d70b4"
+    }
+  }
+}

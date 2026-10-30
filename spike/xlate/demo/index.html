@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cross-language transclusion — spike</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+h1{font-size:32px;font-weight:800;color:#e6edf3;letter-spacing:-0.5px;margin-bottom:8px}
+h2{font-size:20px;font-weight:700;color:#e6edf3;margin:48px 0 16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+.subtitle{font-size:16px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.wrap{max-width:900px;margin:0 auto;padding:48px 32px 80px}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.6;color:#c9d1d9}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13.5px}
+th{text-align:left;padding:8px 12px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px}
+td{padding:8px 12px;border-bottom:1px solid #21262d;vertical-align:top}
+.pass{color:#3fb950;font-family:'JetBrains Mono',monospace;font-weight:600}
+.doc{background:#161b22;border:1px solid #21262d;border-radius:12px;padding:40px 48px;margin:24px 0;font-size:17px;line-height:1.9}
+.rend{border-bottom:2px dotted #d29922;cursor:help;position:relative}
+.chip{display:inline-block;margin-left:8px;padding:1px 10px 2px;border-radius:10px;font-size:11px;font-weight:600;font-family:'JetBrains Mono',monospace;vertical-align:middle;background:rgba(210,153,34,0.15);color:#d29922;border:1px solid rgba(210,153,34,0.4)}
+.side{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:24px 0}
+.panel{background:#161b22;border:1px solid #21262d;border-radius:12px;padding:24px 28px}
+.panel h3{font-size:13px;text-transform:uppercase;letter-spacing:1px;color:#8b949e;margin-bottom:12px;font-weight:600}
+.panel .orig{font-size:16px;line-height:1.9;color:#e6edf3}
+.de-lang{color:#79c0ff}
+.kv{font-family:'JetBrains Mono',monospace;font-size:12px;color:#8b949e;margin-top:16px;line-height:1.8}
+.kv b{color:#c9d1d9;font-weight:500}
+.edge-diagram{font-family:'JetBrains Mono',monospace;font-size:13px;color:#c9d1d9;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;line-height:1.8}
+.hl{color:#d29922}
+.hlb{color:#3fb950}
+@media (max-width:760px){.side{grid-template-columns:1fr}.doc{padding:24px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Cross-language transclusion</h1>
+<div class="subtitle">A spike: one German span, live-windowed into an English document, rendered through a translation edge that rides PROV. Provider: <span class="mono">libretranslate</span>.</div>
+
+<h2>1 · The document a reader sees</h2>
+<div class="doc">
+The network keeps its promises in more than one language now. A reader
+who reads no German still sees the German text — not as a copy, and not
+as a translation of the <em>document</em>, but as a
+<span class="rend">rendition of one transcluded span <span class="chip" title="machine rendition — argos de→en">⚙ machine · de→en</span></span>.
+The window is live: if the source work is revised, the span address
+changes, and the rendition is recomputed under a new key — nothing is
+silently invalidated, and nothing goes stale.
+</div>
+<div class="note"><strong>The chip is the contract.</strong>
+It does not say "translate" — it names the provider, the model, and the
+grade. Machine renditions are labeled <code>machine-gisting</code> until
+a human (or a quorum) says otherwise. Click-through goes to the
+original, never the other way round.</div>
+
+<h2>2 · Both ends visible</h2>
+<div class="side">
+<div class="panel">
+<h3>Rendition (English)</h3>
+<div class="orig">Man is wrong as long as he strives. Whoever strives, we can save him.</div>
+<div class="kv">entity <b>xudanu:rendition:c0db5e358b9f1b1f9b144af652130c648c4a4abea59f55c037ffdb99009d70b4</b><br>checksum <b>ae5d2d2b59f2463f</b><br>grade <b>machine-gisting</b></div>
+</div>
+<div class="panel">
+<h3>Original (German) — what links resolve to</h3>
+<div class="orig de-lang">Es irrt der Mensch, solang er strebt. Wer immer strebend sich bemüht, den können wir erlösen.</div>
+<div class="kv">entity <b>xudanu:span:1_7_120_213_1e28f5dc7edb455eb3fe00a8a027b5d64fce7016beca68b84afe0162b33d170a</b><br>work 1 · revision 7 · chars 120–213<br>sha256 <b>1e28f5dc7edb455e</b></div>
+</div>
+</div>
+
+<h2>3 · The edge, in PROV</h2>
+<div class="edge-diagram">
+<span class="hl">xudanu:span:1_7_120_213_1e28f5dc7edb455eb3fe00a8a027b5d64fce7016beca68b84afe0162b33d170a</span>  &nbsp;&lt;— used —&nbsp;  <span class="hlb">xudanu:Translation</span>  &nbsp;— wasGeneratedBy —&gt;&nbsp;  <span class="hl">xudanu:rendition:c0db5e358b9f1b1f9b144af652130c648c4a4abea59f55c037ffdb99009d70b4</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+╰———————————————— <b>prov:wasDerivedFrom</b> (the edge) —————————————————————╯
+</div>
+<pre>{
+  "activity": {
+    "xudanu:translation:c0db5e358b9f1b1f9b144af652130c648c4a4abea59f55c037ffdb99009d70b4": {
+      "prov:endTime": "2026-10-30T14:29:28Z",
+      "prov:startTime": "2026-10-30T14:29:28Z",
+      "prov:type": {
+        "$": "xudanu:Translation",
+        "type": "xsd:QName"
+      },
+      "xudanu:modelVersion": {
+        "$": "argos:de->en",
+        "type": "xsd:string"
+      },
+      "xudanu:provider": {
+        "$": "libretranslate@1.9.6",
+        "type": "xsd:string"
+      }
+    }
+  },
+  "agent": {},
+  "entity": {
+    "xudanu:rendition:c0db5e358b9f1b1f9b144af652130c648c4a4abea59f55c037ffdb99009d70b4": {
+      "prov:type": {
+        "$": "xudanu:Rendition",
+        "type": "xsd:QName"
+      },
+      "xudanu:checksum": {
+        "$": "ae5d2d2b59f2463fef56e7e2a406d12c21955609482838b5ef758211601ad262",
+        "type": "xsd:hexBinary"
+      },
+      "xudanu:modelVersion": {
+        "$": "argos:de->en",
+        "type": "xsd:string"
+      },
+      "xudanu:provider": {
+        "$": "libretranslate@1.9.6",
+        "type": "xsd:string"
+      },
+      "xudanu:qualityGrade": {
+        "$": "machine-gisting",
+        "type": "xsd:string"
+      },
+      "xudanu:sourceLang": {
+        "$": "de",
+        "type": "xsd:string"
+      },
+      "xudanu:targetLang": {
+        "$": "en",
+        "type": "xsd:string"
+      }
+    },
+    "xudanu:span:1_7_120_213_1e28f5dc7edb455eb3fe00a8a027b5d64fce7016beca68b84afe0162b33d170a": {
+      "prov:type": {
+        "$": "xudanu:TextSpan",
+        "type": "xsd:QName"
+      },
+      "xudanu:charEnd": {
+        "$": "213",
+        "type": "xsd:integer"
+      },
+      "xudanu:charStart": {
+        "$": "120",
+        "type": "xsd:integer"
+      },
+      "xudanu:contentHash": {
+        "$": "1e28f5dc7edb455eb3fe00a8a027b5d64fce7016beca68b84afe0162b33d170a",
+        "type": "xsd:hexBinary"
+      },
+      "xudanu:revision": {
+        "$": "7",
+        "type": "xsd:integer"
+      },
+      "xudanu:workId": {
+        "$": "1",
+        "type": "xsd:integer"
+      }
+    }
+  },
+  "prefix": {
+    "prov": "http://www.w3.org/ns/prov#",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "xudanu": "https://dgjones.info/ns/xudanu/"
+  },
+  "used": {
+    "xudanu:translation:c0db5e358b9f1b1f9b144af652130c648c4a4abea59f55c037ffdb99009d70b4:used:span": {
+      "prov:activity": "xudanu:translation:c0db5e358b9f1b1f9b144af652130c648c4a4abea59f55c037ffdb99009d70b4",
+      "prov:entity": "xudanu:span:1_7_120_213_1e28f5dc7edb455eb3fe00a8a027b5d64fce7016beca68b84afe0162b33d170a"
+    }
+  },
+  "wasAssociatedWith": {},
+  "wasAttributedTo": {},
+  "wasDerivedFrom": {
+    "xudanu:translation:c0db5e358b9f1b1f9b144af652130c648c4a4abea59f55c037ffdb99009d70b4:derivation:edge": {
+      "prov:activity": "xudanu:translation:c0db5e358b9f1b1f9b144af652130c648c4a4abea59f55c037ffdb99009d70b4",
+      "prov:generatedEntity": "xudanu:rendition:c0db5e358b9f1b1f9b144af652130c648c4a4abea59f55c037ffdb99009d70b4",
+      "prov:usedEntity": "xudanu:span:1_7_120_213_1e28f5dc7edb455eb3fe00a8a027b5d64fce7016beca68b84afe0162b33d170a"
+    }
+  },
+  "wasGeneratedBy": {
+    "xudanu:translation:c0db5e358b9f1b1f9b144af652130c648c4a4abea59f55c037ffdb99009d70b4:gen:rendition": {
+      "prov:activity": "xudanu:translation:c0db5e358b9f1b1f9b144af652130c648c4a4abea59f55c037ffdb99009d70b4",
+      "prov:entity": "xudanu:rendition:c0db5e358b9f1b1f9b144af652130c648c4a4abea59f55c037ffdb99009d70b4"
+    }
+  }
+}</pre>
+
+<h2>4 · Reproducibility evidence (from this run)</h2>
+<table>
+<tr><th>check</th><th>result</th><th>meaning</th></tr>
+<tr><td>second resolve of the same edge</td><td class="pass">CACHE HIT — 0 new provider calls</td><td>provider called once; identical bytes back</td></tr>
+<tr><td>model bump (same span, new model)</td><td class="pass">new key ee538649ceff</td><td>2 entries from one span — no stale reuse across upgrades</td></tr>
+<tr><td>rendition checksum</td><td class="pass">sha256 verified</td><td>readers can check bytes against the PROV entity</td></tr>
+</table>
+<pre>provider: LibreTranslate (live container)
+resolve #1: provider calls = 2, checksum ae5d2d2b59f2463f
+resolve #2: provider calls still 2 -> cache hit: true
+model bump: new key ee538649ceff1475 (2 entries from 1 span)
+wrote /Users/jonesd/code/xu-gold-2026/spike/xlate/demo/rendition.prov.json
+</pre>
+
+<h2>5 · What this suggests</h2>
+<div class="gold"><strong>Where this goes next.</strong>
+Read-side only — the original is never edited through MT, so author and
+archive cannot diverge. Per-host providers keep reader text inside the
+federation's trust boundary (self-hosted LibreTranslate now, any better
+local model later, same trait). And the cluster finally gets a
+translation-shaped job: a quorum endorsing a canonical rendition —
+"faithful to revision 7, checksum verified" — is a real governance
+decision, signed and sealed like any other.</div>
+
+</div>
+</body>
+</html>
