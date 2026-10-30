@@ -35878,7 +35878,7 @@ mod tests {
     fn build_minimal_epub(title: &str, author: &str, body: &str) -> Vec<u8> {
         use std::io::Write;
         let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        let options: zip::write::FileOptions<'_, ()> =
+        let options: zip::write::FileOptions<'_, '_, ()> =
             zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
         // mimetype must be first, uncompressed
