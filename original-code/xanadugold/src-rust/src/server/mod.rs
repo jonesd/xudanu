@@ -20,6 +20,8 @@ pub mod identity;
 #[cfg(feature = "server")]
 pub mod keymaster;
 #[cfg(feature = "server")]
+pub mod license;
+#[cfg(feature = "server")]
 pub mod lock;
 #[cfg(feature = "server")]
 pub mod mcp;

@@ -667,6 +667,8 @@ impl JsonCodec {
             OperationCode::AdminClubsList,
             #[cfg(feature = "serde")]
             OperationCode::AdminNetworkStatus,
+            #[cfg(feature = "serde")]
+            OperationCode::AdminLicensePosture,
         ];
         if no_payload_ops.contains(&op) {
             return match op {
@@ -723,6 +725,8 @@ impl JsonCodec {
                 OperationCode::AdminClubsList => Ok(WireRequest::AdminClubsList),
                 #[cfg(feature = "serde")]
                 OperationCode::AdminNetworkStatus => Ok(WireRequest::AdminNetworkStatus),
+                #[cfg(feature = "serde")]
+                OperationCode::AdminLicensePosture => Ok(WireRequest::AdminLicensePosture),
                 // SECURITY: list/match drift must degrade to a protocol
                 // error, never panic. A reachable unreachable!() here is
                 // a remote DoS (found 2026-08-25: admin_clubs_list hung
@@ -3967,6 +3971,8 @@ impl JsonCodec {
             OperationCode::AdminClubsList => Ok(WireRequest::AdminClubsList),
             #[cfg(feature = "serde")]
             OperationCode::AdminNetworkStatus => Ok(WireRequest::AdminNetworkStatus),
+            #[cfg(feature = "serde")]
+            OperationCode::AdminLicensePosture => Ok(WireRequest::AdminLicensePosture),
             #[cfg(feature = "serde")]
             OperationCode::AdminServerProbe => {
                 #[derive(Deserialize)]

@@ -15284,6 +15284,20 @@ impl Server {
         }))
     }
 
+    /// FR-156: license posture — what THIS installation opted into,
+    /// and what it declined. Read-only mirror of the compile-time
+    /// registry (server/license.rs): the panel confirms choices, it
+    /// never makes them. Admin-gated like the other introspection
+    /// endpoints; one registry is the source of truth for the admin
+    /// endpoint, the startup log line, and the docs.
+    pub fn admin_license_posture(
+        &self,
+        session_id: SessionId,
+    ) -> Result<serde_json::Value, ServerError> {
+        self.ensure_admin(session_id)?;
+        Ok(crate::server::license::posture_json())
+    }
+
     /// FR-45 P5: deliberate health probe of ONE directory server.
     /// Trust-but-verify: the returned health is the remote's CLAIM —
     /// labeled as such by the UI; our counters remain ground truth.
@@ -36375,6 +36389,14 @@ mod tests {
         let pleb = server.connect();
         server.login_public(pleb).unwrap();
         assert!(server.admin_audit_tail(pleb).is_err());
+
+        // License posture (FR-156): read-only mirror, admin-gated.
+        // The registry names heif either way — enabled or
+        // available-not-chosen; non-admins get nothing.
+        let posture = server.admin_license_posture(admin_sid).unwrap();
+        let entries = posture["entries"].as_array().unwrap();
+        assert!(entries.iter().any(|e| e["id"] == "heif"));
+        assert!(server.admin_license_posture(pleb).is_err());
 
         let _ = std::fs::remove_dir_all(&data_dir);
     }
