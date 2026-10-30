@@ -669,6 +669,8 @@ impl JsonCodec {
             OperationCode::AdminNetworkStatus,
             #[cfg(feature = "serde")]
             OperationCode::AdminLicensePosture,
+            #[cfg(feature = "serde")]
+            OperationCode::AdminRateLimitGet,
             OperationCode::TranslateCapabilities,
         ];
         if no_payload_ops.contains(&op) {
@@ -728,6 +730,7 @@ impl JsonCodec {
                 OperationCode::AdminNetworkStatus => Ok(WireRequest::AdminNetworkStatus),
                 #[cfg(feature = "serde")]
                 OperationCode::AdminLicensePosture => Ok(WireRequest::AdminLicensePosture),
+                OperationCode::AdminRateLimitGet => Ok(WireRequest::AdminRateLimitGet),
                 OperationCode::TranslateCapabilities => Ok(WireRequest::TranslateCapabilities),
                 // SECURITY: list/match drift must degrade to a protocol
                 // error, never panic. A reachable unreachable!() here is
@@ -3976,6 +3979,20 @@ impl JsonCodec {
             #[cfg(feature = "serde")]
             OperationCode::AdminLicensePosture => Ok(WireRequest::AdminLicensePosture),
             OperationCode::TranslateCapabilities => Ok(WireRequest::TranslateCapabilities),
+            #[cfg(feature = "serde")]
+            OperationCode::AdminRateLimitGet => Ok(WireRequest::AdminRateLimitGet),
+            #[cfg(feature = "serde")]
+            OperationCode::AdminRateLimitSet => {
+                #[derive(Deserialize)]
+                struct Args {
+                    get_limit: u32,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::AdminRateLimitSet {
+                    get_limit: args.get_limit,
+                })
+            }
             #[cfg(feature = "serde")]
             OperationCode::AdminServerProbe => {
                 #[derive(Deserialize)]

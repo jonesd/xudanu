@@ -4816,6 +4816,45 @@ fn dispatch_inner(
             Ok(ResponseValue::Json(posture))
         }
         #[cfg(feature = "serde")]
+        WireRequest::AdminRateLimitGet => {
+            srv.ensure_admin(session_id)?;
+            let s = state.rate_limiter.get_stats();
+            Ok(ResponseValue::Json(serde_json::json!({
+                "get_limit": s.get_limit,
+                "default_get_limit": crate::server::rate_limiter::DEFAULT_GET_LIMIT,
+                "min_get_limit": crate::server::rate_limiter::MIN_GET_LIMIT,
+                "max_get_limit": crate::server::rate_limiter::MAX_GET_LIMIT,
+                "get_window_secs": s.get_window_secs,
+                "tracked_ips": s.tracked_ips,
+                "notify_limit": s.notify_limit,
+                "notify_window_secs": s.notify_window_secs,
+            })))
+        }
+        #[cfg(feature = "serde")]
+        WireRequest::AdminRateLimitSet { get_limit } => {
+            srv.ensure_admin(session_id)?;
+            let (min, max) = (
+                crate::server::rate_limiter::MIN_GET_LIMIT,
+                crate::server::rate_limiter::MAX_GET_LIMIT,
+            );
+            if !(min..=max).contains(&get_limit) {
+                return Err(crate::server::ServerError::InvalidArgument(format!(
+                    "get_limit must be {}..={}",
+                    min, max
+                )));
+            }
+            state.rate_limiter.set_get_limit(get_limit);
+            tracing::warn!(
+                target: "xudanu::security",
+                event = "SECURITY:rate_limit_set",
+                get_limit,
+                "public-read rate limit set by admin session"
+            );
+            Ok(ResponseValue::Json(serde_json::json!({
+                "get_limit": state.rate_limiter.get_limit(),
+            })))
+        }
+        #[cfg(feature = "serde")]
         WireRequest::AdminServerProbe { server_key } => {
             let probe = srv.admin_server_probe(session_id, server_key.as_str())?;
             Ok(ResponseValue::Json(probe))

@@ -1,10 +1,25 @@
 use std::collections::HashMap;
 use std::net::IpAddr;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 const RATE_WINDOW: Duration = Duration::from_secs(60);
-const GET_LIMIT: u32 = 120;
+/// Default public-read budget per client IP per window. Sized for a
+/// human browsing at up to ~2 page loads/sec — the capacity probe
+/// (scripts/fr155-load.mjs) measured the read path at ~2,800 req/s
+/// aggregate, so this per-reader cap is the binding constraint by
+/// design, not a throughput bottleneck.
+pub const DEFAULT_GET_LIMIT: u32 = 120;
+/// Admin floor for the public-read limit: a value below this locks
+/// out legitimate readers (a single page load fetches several
+/// resources). The admin op rejects values outside
+/// MIN_GET_LIMIT..=MAX_GET_LIMIT.
+pub const MIN_GET_LIMIT: u32 = 10;
+/// Admin ceiling: anything beyond this is a configuration mistake
+/// (the point is abuse resistance, not an open pipe). ~16k reads/s
+/// per IP is far past the measured whole-server ceiling.
+pub const MAX_GET_LIMIT: u32 = 1_000_000;
 /// FR-79 Stage 2: overlay marks queries per minute, per IP. Each
 /// query carries the page's text spine (up to 2 MB) and runs
 /// excerpt resolution server-side — browsing generates one per page
@@ -34,6 +49,11 @@ pub struct RateLimiter {
     notify_by_ip: Mutex<HashMap<IpAddr, NotifyEntry>>,
     notify_by_server: Mutex<HashMap<String, NotifyEntry>>,
     federated_search_by_session: Mutex<HashMap<u64, RateEntry>>,
+    /// Public-read budget per IP per window. Admin-adjustable at
+    /// runtime (AdminRateLimitSet) and boot-settable via
+    /// XUDANU_RATE_GET_LIMIT; Relaxed ordering is sufficient — the
+    /// limit is advisory counting, not synchronization.
+    get_limit: AtomicU32,
 }
 
 impl RateLimiter {
@@ -44,7 +64,46 @@ impl RateLimiter {
             notify_by_ip: Mutex::new(HashMap::new()),
             notify_by_server: Mutex::new(HashMap::new()),
             federated_search_by_session: Mutex::new(HashMap::new()),
+            get_limit: AtomicU32::new(DEFAULT_GET_LIMIT),
         }
+    }
+
+    /// Boot-time operator override: XUDANU_RATE_GET_LIMIT. Invalid or
+    /// out-of-bounds values keep the default (with a warning) rather
+    /// than refusing to start.
+    pub fn from_env() -> Self {
+        let limiter = RateLimiter::new();
+        if let Ok(raw) = std::env::var("XUDANU_RATE_GET_LIMIT") {
+            match raw.trim().parse::<u32>() {
+                Ok(n) if (MIN_GET_LIMIT..=MAX_GET_LIMIT).contains(&n) => {
+                    limiter.get_limit.store(n, Ordering::Relaxed);
+                }
+                _ => {
+                    tracing::warn!(
+                        value = %raw,
+                        min = MIN_GET_LIMIT,
+                        max = MAX_GET_LIMIT,
+                        "XUDANU_RATE_GET_LIMIT invalid; keeping default {}",
+                        DEFAULT_GET_LIMIT
+                    );
+                }
+            }
+        }
+        limiter
+    }
+
+    pub fn get_limit(&self) -> u32 {
+        self.get_limit.load(Ordering::Relaxed)
+    }
+
+    /// Set the public-read budget. The only hard invariant here is
+    /// "never zero" — a zero limit blocks every read forever (counts
+    /// only increment). Explicit bounds (MIN..=MAX) are enforced by
+    /// the admin op and the env parser, which reject out-of-range
+    /// values with an error instead of silently clamping.
+    pub fn set_get_limit(&self, limit: u32) {
+        let floored = limit.max(1);
+        self.get_limit.store(floored, Ordering::Relaxed);
     }
 
     /// FR-79 Stage 2: rate-limit overlay marks queries per IP.
@@ -91,7 +150,7 @@ impl RateLimiter {
             entry.window_start = now;
         }
         entry.count += 1;
-        entry.count <= GET_LIMIT
+        entry.count <= self.get_limit()
     }
 
     pub fn check_notify(&self, ip: IpAddr, server_id: &str) -> (bool, bool) {
@@ -151,7 +210,7 @@ impl RateLimiter {
             tracked_ips: get_count,
             notify_ips: notify_ip_count,
             notify_servers: notify_srv_count,
-            get_limit: GET_LIMIT,
+            get_limit: self.get_limit(),
             notify_limit: NOTIFY_LIMIT,
             get_window_secs: RATE_WINDOW.as_secs(),
             notify_window_secs: NOTIFY_WINDOW.as_secs(),
@@ -236,6 +295,54 @@ mod tests {
             limiter.check_get(ip1);
         }
         assert!(limiter.check_get(ip2), "different IP should not be blocked");
+    }
+
+    #[test]
+    fn rate_limiter_get_limit_admin_adjustable() {
+        let limiter = RateLimiter::new();
+        assert_eq!(limiter.get_limit(), DEFAULT_GET_LIMIT);
+        limiter.set_get_limit(2);
+        let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+        assert!(limiter.check_get(ip));
+        assert!(limiter.check_get(ip));
+        assert!(!limiter.check_get(ip), "admin-set limit is enforced");
+        assert_eq!(
+            limiter.get_stats().get_limit,
+            2,
+            "stats reflect the set limit"
+        );
+    }
+
+    #[test]
+    fn rate_limiter_get_limit_rejects_lockout_values() {
+        let limiter = RateLimiter::new();
+        limiter.set_get_limit(0);
+        assert_eq!(
+            limiter.get_limit(),
+            1,
+            "zero would block every read forever; setter floors it at 1"
+        );
+        assert!(
+            limiter.check_get(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
+            "first read still allowed at floor"
+        );
+    }
+
+    #[test]
+    fn rate_limiter_get_limit_changes_apply_immediately() {
+        let limiter = RateLimiter::new();
+        let ip = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
+        limiter.set_get_limit(3);
+        for _ in 0..3 {
+            assert!(limiter.check_get(ip));
+        }
+        limiter.set_get_limit(5);
+        assert!(
+            limiter.check_get(ip),
+            "raising admits more within the same window"
+        );
+        assert!(limiter.check_get(ip));
+        assert!(!limiter.check_get(ip), "new cap enforced once reached");
     }
 
     #[test]
