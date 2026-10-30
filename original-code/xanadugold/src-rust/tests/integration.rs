@@ -9133,6 +9133,204 @@ async fn federation_activation_membership_converges() {
     }
 }
 
+/// P2 follow-up (dialer resilience): a configured peer that is DOWN
+/// must not take the federation tasks down with it. dial_and_maintain
+/// treats dial failure as retryable (exponential backoff 1s→2s→…→30s),
+/// and the server keeps serving while every attempt fails. The dead
+/// address is a released ephemeral port, so nothing answers dials.
+#[tokio::test]
+async fn federation_dial_failure_backs_off_and_server_stays_healthy() {
+    use std::time::Duration;
+    use xudanu::server::federation::{FederationConfig, FederationMode, PeerAddress};
+    use xudanu::server::transport::federation_active::{spawn_federation_tasks, PeerPool};
+
+    let srv = FederationTestServer::start().await;
+
+    // Reserve an ephemeral port, then stop listening: guaranteed dead.
+    let lure = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let dead_port = lure.local_addr().unwrap().port();
+    drop(lure);
+
+    srv.state.server.with_server(|s| {
+        s.set_federation_config(FederationConfig {
+            enabled: true,
+            peers: vec![PeerAddress::new("127.0.0.1", dead_port)],
+            mode: FederationMode::Closed,
+            min_endorsements: 2,
+            pinned_members: vec![],
+        });
+    });
+    let peers = srv.state.server.with_server_ref(|s| s.federation_peers());
+    assert_eq!(peers.len(), 1, "peer configured before spawning dialers");
+
+    let pool = PeerPool::new();
+    spawn_federation_tasks(srv.state.clone(), pool.clone()).await;
+
+    // Let the dialer fail at least three times (initial + 1s + 2s
+    // backoff), exercising the failure arm and the backoff loop.
+    tokio::time::sleep(Duration::from_secs(4)).await;
+
+    // No federation connection was ever established…
+    assert_eq!(pool.len().await, 0, "dead peer never joins the pool");
+    // …and the server is still healthy: the client API answers.
+    let url = format!(
+        "ws://{}/xudanu?format=json&version={}",
+        srv.addr, PROTOCOL_VERSION
+    );
+    let (stream, _) = tokio_tungstenite::connect_async(&url).await.unwrap();
+    let (mut s, mut r) = stream.split();
+    recv_handshake(&mut r).await;
+    let resp = send_recv_json(&mut s, &mut r, json_req(1, "session_connect", None)).await;
+    assert_eq!(resp["type"], "response");
+}
+
+/// Decision-mechanism path (G3 replay): a governance round opened on
+/// the leader BEFORE a peer connects must reach that peer on connect —
+/// pre-prepare replayed by send_pending_round_sync, replica round
+/// created, and the replica's own signed prepare vote returned to the
+/// leader. Four-member cluster (two live servers + two synthetic
+/// members so BFT policy applies); leader selection is deterministic
+/// (active_members sorts by server_id), so the test proposes on the
+/// real server with the smaller id.
+#[tokio::test]
+async fn federation_pending_round_replays_to_connecting_peer() {
+    use std::time::Duration;
+    use xudanu::server::federation::{
+        FederationConfig, FederationMode, GovernanceTx, PeerAddress, PinnedMember,
+    };
+    use xudanu::server::transport::federation_active::{spawn_federation_tasks, PeerPool};
+
+    let srv_l = FederationTestServer::start().await;
+    let srv_f = FederationTestServer::start().await;
+
+    let l_id = srv_l
+        .state
+        .server
+        .with_server_ref(|s| s.federation_server_id());
+    let f_id = srv_f
+        .state
+        .server
+        .with_server_ref(|s| s.federation_server_id());
+    // Synthetic members sort after either real id, so the view-0
+    // leader is always the real server with the smaller id.
+    let (leader, follower, leader_id, follower_id) = if l_id < f_id {
+        (&srv_l, &srv_f, &l_id, &f_id)
+    } else {
+        (&srv_f, &srv_l, &f_id, &l_id)
+    };
+
+    let l_key = srv_l
+        .state
+        .server
+        .with_server_ref(|s| s.server_verifying_key_hex());
+    let f_key = srv_f
+        .state
+        .server
+        .with_server_ref(|s| s.server_verifying_key_hex());
+    let synth = |id: &str| PinnedMember {
+        server_id: id.to_string(),
+        verifying_key_hex: "11".repeat(32),
+        recovery_key_hex: String::new(),
+    };
+
+    // Closed-mode genesis: both servers pin the SAME four-member set,
+    // so both compute the same validator order and the same leader.
+    srv_l.state.server.with_server(|srv| {
+        srv.set_federation_config(FederationConfig {
+            enabled: true,
+            peers: vec![PeerAddress::new("127.0.0.1", srv_f.addr.port())],
+            mode: FederationMode::Closed,
+            min_endorsements: 2,
+            pinned_members: vec![
+                PinnedMember {
+                    server_id: f_id.clone(),
+                    verifying_key_hex: f_key.clone(),
+                    recovery_key_hex: String::new(),
+                },
+                synth("zzz-synthetic-c"),
+                synth("zzz-synthetic-d"),
+            ],
+        });
+        srv.membership_bootstrap_init();
+    });
+    srv_f.state.server.with_server(|srv| {
+        srv.set_federation_config(FederationConfig {
+            enabled: true,
+            peers: vec![PeerAddress::new("127.0.0.1", srv_l.addr.port())],
+            mode: FederationMode::Closed,
+            min_endorsements: 2,
+            pinned_members: vec![
+                PinnedMember {
+                    server_id: l_id.clone(),
+                    verifying_key_hex: l_key.clone(),
+                    recovery_key_hex: String::new(),
+                },
+                synth("zzz-synthetic-c"),
+                synth("zzz-synthetic-d"),
+            ],
+        });
+        srv.membership_bootstrap_init();
+    });
+    srv_l
+        .state
+        .server
+        .with_server(|s| s.federation_register_peer_key(f_key.clone()));
+    srv_f
+        .state
+        .server
+        .with_server(|s| s.federation_register_peer_key(l_key.clone()));
+
+    // Open a decision round on the leader BEFORE any dial: the round
+    // exists only on the leader, exactly the reconnect-strand scenario
+    // the G3 fix addresses.
+    let proposal = leader
+        .state
+        .server
+        .with_server(|srv| {
+            srv.governance_propose(vec![GovernanceTx::Expel {
+                server_id: "zzz-synthetic-d".to_string(),
+                reason: "integration round-replay test".to_string(),
+            }])
+        })
+        .expect("view-0 leader proposes");
+    assert_eq!(proposal.proposer_id, *leader_id);
+
+    let pool_l = PeerPool::new();
+    let pool_f = PeerPool::new();
+    spawn_federation_tasks(srv_l.state.clone(), pool_l).await;
+    spawn_federation_tasks(srv_f.state.clone(), pool_f).await;
+
+    // The follower must receive the replayed round and vote back.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        let follower_round = follower
+            .state
+            .server
+            .with_server_ref(|s| s.governance_pending_round_proposal());
+        let leader_has_vote = leader.state.server.with_server_ref(|s| {
+            s.governance_pending_round_votes()
+                .iter()
+                .any(|v| v.voter_id == *follower_id)
+        });
+        if let Some(p) = follower_round.as_ref() {
+            assert_eq!(p.view_number, proposal.view_number);
+            assert_eq!(p.sequence_number, proposal.sequence_number);
+            assert_eq!(p.proposer_id, proposal.proposer_id);
+            if leader_has_vote {
+                break;
+            }
+        }
+        if tokio::time::Instant::now() >= deadline {
+            panic!(
+                "Pending round did not replay to the connecting peer within 15s (follower_round={}, leader_has_follower_vote={})",
+                follower_round.is_some(),
+                leader_has_vote
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+}
+
 // ── Cross-server transclusion tests (Phase 17) ──────────────────────
 
 #[tokio::test]

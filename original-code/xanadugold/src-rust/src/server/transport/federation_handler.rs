@@ -1269,11 +1269,16 @@ pub(crate) fn handle_governance_frame(
                 batch.sequence_number,
                 batch.proposer_id
             );
-            // Verify certificates, then execute + ingest (S1 fix).
-            state
+            // Verify certificates, then execute + ingest (S1 fix). A
+            // batch beyond our watermark is refused with a tail
+            // request instead — catch up in order, never over a hole.
+            match state
                 .server
-                .with_server(|srv| srv.governance_ingest_sealed_batch(batch.clone()));
-            vec![]
+                .with_server(|srv| srv.governance_ingest_sealed_batch(batch.clone()))
+            {
+                Some(from_seq) => vec![FederationFrame::GovernanceLogRequest { from_seq }],
+                None => vec![],
+            }
         }
         FederationFrame::GovernanceViewChange { message } => {
             if message.server_id != peer_server_id {
@@ -1288,22 +1293,33 @@ pub(crate) fn handle_governance_frame(
                 .server
                 .with_server(|srv| srv.governance_receive_view_change(message))
             {
-                Some(new_view) => {
+                (Some(new_view), assembler_backfill) => {
                     tracing::info!(
                         view = new_view.view_number,
                         "Governance: view-change quorum — broadcasting NewView"
                     );
-                    vec![FederationFrame::GovernanceNewView { new_view }]
+                    // The assembler itself may lag the certificates it
+                    // collected — fetch the missing tail, never count
+                    // the log ahead of itself.
+                    let mut frames = vec![FederationFrame::GovernanceNewView { new_view }];
+                    if let Some(from_seq) = assembler_backfill {
+                        frames.push(FederationFrame::GovernanceLogRequest { from_seq });
+                    }
+                    frames
                 }
-                None => vec![],
+                (None, _) => vec![],
             }
         }
-        FederationFrame::GovernanceNewView { new_view } => {
-            state
-                .server
-                .with_server(|srv| srv.governance_apply_new_view(new_view));
-            vec![]
-        }
+        FederationFrame::GovernanceNewView { new_view } => match state
+            .server
+            .with_server(|srv| srv.governance_apply_new_view(new_view))
+        {
+            // Certificates reported seals beyond our log: request the
+            // missing tail from this peer rather than counting the
+            // log ahead of itself (hole-free catch-up).
+            Some(from_seq) => vec![FederationFrame::GovernanceLogRequest { from_seq }],
+            None => vec![],
+        },
         FederationFrame::GovernanceLogRequest { from_seq } => {
             tracing::debug!(
                 from_seq,
@@ -2875,7 +2891,7 @@ mod tests {
                         srv.governance_force_stall_for_tests();
                         if srv.governance_view_change_due(TIMEOUT) {
                             let msg = srv.governance_make_view_change(TIMEOUT);
-                            let new_view = srv.governance_receive_view_change(&msg);
+                            let (new_view, _) = srv.governance_receive_view_change(&msg);
                             Some((msg, new_view))
                         } else {
                             None
@@ -3017,6 +3033,110 @@ mod tests {
         }
 
         #[test]
+        fn mesh_newview_certs_backfill_instead_of_counting_ahead() {
+            // A5 (federation-adversarial-tests.sh): a node that
+            // restarts into a racing round misses the seal the quorum
+            // makes without it; the view change that follows reports
+            // the missed sequence in its certificates. Advancing the
+            // sequence counter from the certificates (the old
+            // behavior) let the NEXT round seal over a hole no tail
+            // request could ever re-fetch. The node must instead
+            // request the missing tail and ingest it in order.
+            let mut mesh = Mesh::new(4);
+            let leader = mesh.leader_for_view(0);
+            let x = (leader + 2) % 4;
+
+            mesh.propose_from(leader, None);
+            assert_all_agree(&mesh, 1);
+
+            // Partition x: rounds 2 and 3 seal on the quorum without
+            // it (the restart race — x never sees either round).
+            for i in 0..4 {
+                if i != x {
+                    mesh.blocked.insert((i, x));
+                    mesh.blocked.insert((x, i));
+                }
+            }
+            mesh.propose_from(leader, None);
+            mesh.propose_from(leader, None);
+            for i in 0..4 {
+                assert_eq!(
+                    mesh.log_len(i),
+                    if i == x { 1 } else { 3 },
+                    "partitioned node must miss both seals"
+                );
+            }
+
+            // Heal and drive a real view change: the quorum's signed
+            // certificates report highest_prepared=3 — two seals
+            // beyond x's log.
+            mesh.blocked.clear();
+            let l1 = mesh.leader_for_view(1);
+            for from in 0..4 {
+                if from == x {
+                    continue;
+                }
+                let msg = mesh.nodes[from]
+                    .state
+                    .server
+                    .with_server(|srv| srv.governance_make_view_change(TIMEOUT));
+                let outs = handle_governance_frame(
+                    &FederationFrame::GovernanceViewChange { message: msg },
+                    &mesh.nodes[l1].state,
+                    &mesh.nodes[from].id.clone(),
+                );
+                for out in outs {
+                    mesh.deliver_from(l1, &out, 1);
+                }
+            }
+
+            // x entered the new view and its LOG — not its counter —
+            // advanced via the backfill: batches 2 and 3 arrived in
+            // order, no hole, no fork.
+            assert_eq!(mesh.current_view(x), 1, "x entered the new view");
+            assert_all_agree(&mesh, 3);
+
+            // The next round seals everywhere with no hole.
+            mesh.propose_from(l1, None);
+            assert_all_agree(&mesh, 4);
+        }
+
+        #[test]
+        fn mesh_sealed_broadcast_gap_backfills_in_order() {
+            // The papering path (A5 aftermath): a sealed-batch
+            // broadcast for a sequence beyond our log must be refused
+            // with a tail request — ingesting it would punch a hole
+            // (log [b1, b3]) that no from_seq-based request can ever
+            // re-fetch.
+            let mut mesh = Mesh::new(4);
+            let leader = mesh.leader_for_view(0);
+            let x = (leader + 2) % 4;
+
+            mesh.propose_from(leader, None);
+            assert_all_agree(&mesh, 1);
+
+            for i in 0..4 {
+                if i != x {
+                    mesh.blocked.insert((i, x));
+                    mesh.blocked.insert((x, i));
+                }
+            }
+            mesh.propose_from(leader, None);
+            mesh.propose_from(leader, None);
+
+            // Heal and replay the newest sealed batch to x exactly as
+            // the broadcast would have: the gap guard refuses it and
+            // requests the tail from 2 instead.
+            mesh.blocked.clear();
+            let b3 = mesh.nodes[leader]
+                .state
+                .server
+                .with_server_ref(|srv| srv.governance_log()[2].clone());
+            mesh.deliver_from(leader, &FederationFrame::GovernanceSealed { batch: b3 }, 0);
+            assert_all_agree(&mesh, 3);
+        }
+
+        #[test]
         fn mesh_byzantine_leader_forged_seal_rejected_everywhere() {
             let mut mesh = Mesh::new(4);
             let leader = mesh.leader_for_view(0);
@@ -3101,7 +3221,7 @@ mod tests {
             let real_nv = mesh.nodes[new_leader].state.server.with_server(|srv| {
                 let mut assembled = None;
                 for vc in &vcs {
-                    if let Some(nv) = srv.governance_receive_view_change(vc) {
+                    if let (Some(nv), _) = srv.governance_receive_view_change(vc) {
                         assembled = Some(nv);
                     }
                 }
@@ -3815,6 +3935,74 @@ mod tests {
                 .with_server_ref(|srv| srv.governance_log().len());
             assert_eq!(still, 2, "gap refused — history unchanged");
             let _ = pruned_past;
+        }
+
+        #[test]
+        fn mesh_dual_restart_stall_recovers_via_reconnect_replay() {
+            // G3 (federation-governance-tests.sh): after a dual
+            // restart, the pre-prepare races the leader's re-dials
+            // (one replica never receives it) while the survivors'
+            // reverse dials are still in backoff (their prepare votes
+            // never reach the leader). The round stalls below quorum
+            // on every node — nothing seals, nothing is rejected. The
+            // transport replays the pending round on reconnect; this
+            // reproduces the race and the recovery in miniature.
+            let mut mesh = Mesh::new(4);
+            let leader = mesh.leader_for_view(0);
+            let a = (leader + 1) % 4;
+            let b = (leader + 2) % 4;
+            let c = (leader + 3) % 4;
+
+            mesh.blocked.insert((leader, c));
+            mesh.blocked.insert((c, leader));
+            mesh.blocked.insert((a, leader));
+            mesh.blocked.insert((b, leader));
+
+            mesh.propose_from(leader, None);
+            for i in 0..4 {
+                assert_eq!(mesh.log_len(i), 0, "node {i} sealed below quorum");
+            }
+
+            // Dials re-establish: connectivity returns and every node
+            // replays the pending round to each peer — exactly what
+            // send_pending_round_sync does on the transport (own
+            // votes only; third-party votes are rejected by the
+            // authenticated-peer binding).
+            mesh.blocked.clear();
+            for from in 0..4 {
+                let (from_id, proposal, votes) =
+                    mesh.nodes[from].state.server.with_server_ref(|srv| {
+                        (
+                            srv.federation_server_id(),
+                            srv.governance_pending_round_proposal(),
+                            srv.governance_pending_round_votes(),
+                        )
+                    });
+                let Some(proposal) = proposal else {
+                    continue;
+                };
+                let mut frames = vec![FederationFrame::GovernancePrePrepare { proposal }];
+                for vote in votes.into_iter().filter(|v| v.voter_id == from_id) {
+                    if matches!(vote.phase, crate::server::federation::PbftPhase::Commit) {
+                        frames.push(FederationFrame::GovernanceCommitVote { vote });
+                    } else {
+                        frames.push(FederationFrame::GovernancePrepareVote { vote });
+                    }
+                }
+                for to in 0..4 {
+                    if to == from {
+                        continue;
+                    }
+                    for frame in &frames {
+                        let outs = handle_governance_frame(frame, &mesh.nodes[to].state, &from_id);
+                        for out in outs {
+                            mesh.deliver_from(to, &out, 1);
+                        }
+                    }
+                }
+            }
+
+            assert_all_agree(&mesh, 1);
         }
 
         /// FR-75 follow-up: the lifecycle snapshot is the alerting

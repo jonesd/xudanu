@@ -69,6 +69,8 @@ li{margin-bottom:4px}
 <h1>Federation Trust Boundary Analysis</h1>
 <p class="subtitle">A security audit of the multi-server federation layer: trust boundaries, authorization gaps, risk areas, and concrete recommendations to bring federation access control in line with the single-server club model.</p>
 
+<div class="note" style="margin-top:24px"><strong>Status update (2026-10-29):</strong> gaps <strong>C1</strong> and <strong>C2</strong> in the register below are <span style="color:#3fb950;font-weight:600">FIXED</span> — the blob/transclusion data plane now serves only publicly-referenced content (PR #224, 2026-10-28). PBFT governance has since been hardened through an adversarial fault-testing round (see <code>dev/phase-19b-governance-bft.html</code>). The remaining register entries stand as written at audit time.</div>
+
 <div class="toc">
   <a class="toc-section" href="#s1">1. Executive Summary</a>
   <a class="toc-section" href="#s2">2. Architecture Overview: Where the Boundaries Are</a>
@@ -437,8 +439,8 @@ The single-server model has a coherent, layered access control system. The feder
 
 <table>
 <tr><th>#</th><th>Gap</th><th>Location</th><th>Impact</th><th>Severity</th></tr>
-<tr><td><strong>C1</strong></td><td><code>ContentGet</code>/<code>ContentFetch</code>/<code>BlobGet</code>/<code>TranscludeQuery</code> ignore <code>read_club</code></td><td><code>server.rs:11493, 11504, 11570, 11514</code></td><td>Private content read by any peer</td><td class="severity-critical">CRITICAL</td></tr>
-<tr><td><strong>C2</strong></td><td><code>federation_export_editions</code> / <code>federation_export_blobs</code> unfiltered</td><td><code>server.rs:11216, 11341</code></td><td>Bulk exfiltration of all editions + blobs</td><td class="severity-critical">CRITICAL</td></tr>
+<tr><td><strong>C1</strong></td><td><code>ContentGet</code>/<code>ContentFetch</code>/<code>BlobGet</code>/<code>TranscludeQuery</code> ignore <code>read_club</code></td><td><code>server.rs:11493, 11504, 11570, 11514</code></td><td>Private content read by any peer</td><td><span style="color:#3fb950;font-weight:600;background:rgba(63,185,80,0.15);padding:2px 8px;border-radius:4px;font-size:11px">FIXED 2026-10-28</span></td></tr>
+<tr><td><strong>C2</strong></td><td><code>federation_export_editions</code> / <code>federation_export_blobs</code> unfiltered</td><td><code>server.rs:11216, 11341</code></td><td>Bulk exfiltration of all editions + blobs</td><td><span style="color:#3fb950;font-weight:600;background:rgba(63,185,80,0.15);padding:2px 8px;border-radius:4px;font-size:11px">FIXED 2026-10-28</span></td></tr>
 <tr><td><strong>C3</strong></td><td><code>CrdtSyncPull</code> work_ids not club-checked</td><td><code>server.rs:11414</code></td><td>Private work CRDT state exposed</td><td class="severity-critical">CRITICAL</td></tr>
 <tr><td><strong>W1</strong></td><td><code>SyncPush</code>/<code>CrdtSyncPush</code> import content + provenance with no auth</td><td><code>server.rs:11231, 11437</code></td><td>Content &amp; provenance injection</td><td class="severity-critical">CRITICAL</td></tr>
 <tr><td><strong>W2</strong></td><td><code>StateSyncPush</code> LWW hijack of "current" edition</td><td><code>server.rs:11683</code></td><td>Edition censorship/swap</td><td class="severity-high">HIGH</td></tr>

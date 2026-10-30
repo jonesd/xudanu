@@ -3,7 +3,9 @@
 #
 # Two passes (the server needs --features server; the WASM client crates
 # need their integration tests, which --lib would exclude):
-#   1. src-rust lib suite
+#   1. src-rust lib + integration suites (the federation transport
+#      lives in tests/integration.rs — a lib-only pass silently
+#      under-reports it)
 #   2. crates/* including tests/ directories
 #
 # Every pass prints its EXECUTED test count next to its coverage. A suite
@@ -11,7 +13,7 @@
 # exactly the artifact that once reported a tested crate at 0%.
 #
 # Usage:
-#   scripts/coverage.sh               # full pass (both suites, ~25 min)
+#   scripts/coverage.sh               # full pass (both suites, ~40 min)
 #   scripts/coverage.sh --report-only # re-report from cached profdata
 set -euo pipefail
 
@@ -37,12 +39,12 @@ if $REPORT_ONLY; then
   exit 0
 fi
 
-section "1/2 — src-rust lib suite (engine + server)"
-cargo llvm-cov --features server --lib --summary-only 2>&1 | tail -1
-TESTS_ENGINE="$(count_executed --features server --lib)"
+section "1/2 — src-rust lib + integration suites (engine + server)"
+cargo llvm-cov --features server --lib --test integration --summary-only 2>&1 | tail -1
+TESTS_ENGINE="$(count_executed --features server --lib --test integration)"
 echo "Executed tests: $TESTS_ENGINE"
-if [ "$TESTS_ENGINE" -lt 3000 ]; then
-  echo "FAIL: engine suite executed only $TESTS_ENGINE tests (expected 3000+)" >&2
+if [ "$TESTS_ENGINE" -lt 4000 ]; then
+  echo "FAIL: engine suite executed only $TESTS_ENGINE tests (expected 4000+)" >&2
   exit 1
 fi
 

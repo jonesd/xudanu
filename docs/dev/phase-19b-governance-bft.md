@@ -41,12 +41,50 @@ view change, and cluster policy.
 - **L3 no leader-failure recovery** → 10s round timeout → signed
   VIEW-CHANGE for view+1 (with highest-prepared certificate) → new
   leader assembles NEW-VIEW from 2f+1 verified view-changes → all
-  replicas enter the new view with the watermark carried forward.
+  replicas enter the new view. (The sequence watermark follows the
+  LOG, not the certificates — see the 2026-10-29 adversarial round
+  below.)
 - **Deterministic leader election** — active members are sorted by
   server_id; OrSet arrival order previously made leader selection
   differ per replica (proposals rejected as "not from leader").
 - **Bounded state** — the governance log prunes to the last 64 sealed
   batches with a `pruned_below` watermark (checkpoint hygiene).
+
+## Adversarial fault-testing round (2026-10-29)
+
+The 2026-09-20 hardening was followed by adversarial testing against
+a live 4-node docker cluster
+(`scripts/federation-adversarial-tests.sh`): seeded schedules freeze
+(`docker pause`), crash, and flap nodes mid-round, and every scenario
+must end sealed-or-halted-safely, healed, converged, with identical
+sealed-log digests on all nodes — no fork, no hole. Three more
+findings, all fixed:
+
+- **Data-plane privacy (trust-analysis C1/C2)** — blob export/get,
+  fingerprint fetch, and transclusion queries ignored `read_club`;
+  all four paths now serve only publicly-referenced content (PR #224).
+- **Dual-restart stall (liveness)** — a fresh propose after two
+  simultaneous restarts raced the leader's re-established dials while
+  survivors sat in reconnect backoff; no node reached quorum and
+  nothing was rejected. The transport now replays the pending round
+  (pre-prepare plus the node's own signed votes) on every outbound
+  (re)connect and on the periodic sync tick; identical re-delivery
+  of a pre-prepare is idempotent.
+- **Catch-up race hole (safety)** — a node that restarted into a
+  racing round missed a seal; `apply_new_view` then advanced its
+  sequence counter from the certificates' `highest_prepared`,
+  counting the log ahead of itself, so the NEXT round sealed over a
+  permanent hole no `from_seq`-based catch-up could re-fetch. The
+  watermark now follows the log, never the certificates: every guard
+  that sees seals beyond the local log (NewView certificates,
+  sealed-batch broadcasts, log-tail gaps) replies with a
+  `GovernanceLogRequest`, and the node backfills the missing batches
+  in order through the certificate-verified tail path.
+
+Latest run: 16/16 checks pass (seed 20261028) — freeze-leader,
+freeze-replica, dual-freeze, crash-leader, catch-up-race, and
+flapper scenarios all seal-or-halt-safely, converge, and unify
+lifecycle with identical digests cluster-wide.
 
 ## Castro-Liskov conformance
 
@@ -60,18 +98,29 @@ view change, and cluster policy.
 | View change + new-view | ✅ | Simplified: highest-prepared certificate transfer |
 | Checkpoints / log GC | ◐ | Retention-window pruning; no stable-checkpoint protocol |
 | Client request authentication | ✅ | Admin-gated propose; votes server-to-server only |
-| State transfer for lagging replicas | ◐ | Sealed-batch ingestion; no bulk catch-up |
-| Watermarks on sequence numbers | ◐ | Implicit via prepared watermark |
+| State transfer for lagging replicas | ◐ | Sealed-batch ingestion + certificate-verified log-tail backfill (`GovernanceLogRequest`); no snapshot bulk transfer |
+| Watermarks on sequence numbers | ✅ | Explicit log watermark — guards refuse seals beyond the log and request backfill (2026-10-29) |
 
 ## Test coverage
 
-- 46 governance state tests: digests, signature binding (every field
+- 57 governance state tests: digests, signature binding (every field
   tamper-detected), equivocation across digests, certificate
   forgery (tampered content / stripped sigs / unregistered keys),
-  buffered-commit replay, pre-prepare validation, fork protection,
-  view-change quorum + watermark carry, timeout/touch, log pruning,
-  ingest idempotence, cluster policy (2–3 refused), single-server
-  mode, escalation freshness.
+  buffered-commit replay, pre-prepare validation (view/seq/leader
+  rejections on a fresh replica; identical re-proposal accepted for
+  straggler rejoin), fork protection, view-change quorum + watermark
+  carry, timeout/touch, log pruning, ingest idempotence, cluster
+  policy (2–3 refused), single-server mode, escalation freshness,
+  commit-phase rejection arms (unsigned in BFT mode, wrong view,
+  wrong digest, equivocation flip flagged for suspension), the
+  certificate race (a late leader prepare completes the seal after
+  commit quorum), full S4 replay (buffered commits seal the round at
+  the prepare-quorum transition), propose-time refusals (policy,
+  round-in-flight, fork guard), byzantine NewView rejection matrix
+  (cross-view certificates, duplicate senders, conflicting prepared
+  digests — first digest wins), and vote-signature validation arms
+  (unsigned, malformed key hex, non-canonical curve point, malformed
+  signature hex).
 - **In-process mesh harness** (`governance_mesh` tests): N real
   servers driving the REAL protocol code (`handle_governance_frame`
   — the same orchestration the live ws loop uses) with partition /
@@ -88,6 +137,21 @@ view change, and cluster policy.
   catch-up.
 - Coverage: **PBFT core block at 90% line coverage** (was 74%
   pre-harness); the ws orchestration layer went 6% → 25%.
+- 2026-10-29 coverage round (lib + integration measurement):
+  the consensus state machine itself — propose, pre-prepare,
+  prepare, commit, seal, verify, view-change, equivocation,
+  backfill — has **zero dark lines** in `federation.rs`
+  (85.2% lines overall; the remaining dark mass is the FR-75
+  verification-bundle/PROV export surface). The distinct
+  signed-prepare quorum count is now computed in ONE place
+  (`signed_prepare_voters`; previously triplicated with one dead
+  copy). `federation_active.rs` at 82.9% lines, including two new
+  integration tests: dead-port dial failure backs off without
+  harming server health, and a pending round opened before a peer
+  connects replays to it (G3) with the replica voting back.
+  `scripts/coverage.sh` now includes the integration suite in its
+  engine pass (was lib-only — it silently under-measured the
+  federation transport).
 - Security scans: cargo-audit clean after rustls 0.23.43 → 0.23.45
   (RUSTSEC-2026-0285); cargo-deny license failures are pre-existing
   (deny.toml allow-list too narrow — separate maintenance task).
