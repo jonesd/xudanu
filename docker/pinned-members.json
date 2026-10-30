@@ -1,22 +1,22 @@
 [
   {
-    "server_id": "689e6f4262aebdf0",
-    "verifying_key_hex": "689e6f4262aebdf0f24fedeca5741c0635c65010a296a55c85179067e21ff0c2",
+    "server_id": "c88b41b7f8bddad0",
+    "verifying_key_hex": "c88b41b7f8bddad0747ee566ab19dba8ac53c55532cc4d59d2be2b679384a24b",
     "recovery_key_hex": ""
   },
   {
-    "server_id": "6b6b0f4628caac28",
-    "verifying_key_hex": "6b6b0f4628caac2831ca174c70897af41b21db27e2668022d55504c1615a830d",
+    "server_id": "b63204f5bebf3205",
+    "verifying_key_hex": "b63204f5bebf32052898d1f3983c7e402d295d5272e2063c2bb6f57858b8c641",
     "recovery_key_hex": ""
   },
   {
-    "server_id": "526660fe5a572ce4",
-    "verifying_key_hex": "526660fe5a572ce478fbcf859a1d0c0d13493f6f41e219dbcba54dbfc0beb34e",
+    "server_id": "23c2488955a64eeb",
+    "verifying_key_hex": "23c2488955a64eebe83eb5fcf817503c79ceff2c541f38dbd1cf60145fc5e75c",
     "recovery_key_hex": ""
   },
   {
-    "server_id": "d2da920e323eb488",
-    "verifying_key_hex": "d2da920e323eb488f3a7324e392f57718051f55fbf5c7be36c5da9b667b80668",
+    "server_id": "5fde494137cc4ac8",
+    "verifying_key_hex": "5fde494137cc4ac8ac39a39a6cdafbbeaa902e89372ae681a596ee1576050176",
     "recovery_key_hex": ""
   }
 ]
