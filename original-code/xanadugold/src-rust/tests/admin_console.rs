@@ -572,3 +572,25 @@ async fn admin_network_status_and_probe_over_wire() {
         resp
     );
 }
+
+#[tokio::test]
+async fn translate_capabilities_reports_disabled_without_provider() {
+    // FR-155: with no provider configured the op is descriptive
+    // about it — enabled:false plus the env var name that turns it
+    // on. Capability discovery must work for any connected session.
+    let srv = TestServer::start().await;
+    let (mut s, mut r) = connect_with_handshake(&srv.addr).await;
+    let resp = req(&mut s, &mut r, 1, "translate_capabilities", None).await;
+    assert!(is_ok(&resp), "capabilities: {}", err_msg(&resp));
+    let inner = &resp["value"]["value"];
+    assert_eq!(inner["enabled"].as_bool(), Some(false));
+    assert!(
+        inner["reason"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("XUDANU_TRANSLATE_PROVIDER_URL"),
+        "reason must name the env var: {:?}",
+        inner["reason"]
+    );
+    assert!(inner["cache_entries"].as_u64().is_some());
+}

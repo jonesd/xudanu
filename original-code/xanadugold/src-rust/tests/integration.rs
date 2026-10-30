@@ -15907,6 +15907,65 @@ async fn server_directory_add_requires_login() {
 }
 
 #[tokio::test]
+async fn fr155_public_read_with_lang_is_byte_identical_without_provider() {
+    // FR-155 zero-behavior-change guarantee: with the translation
+    // provider unset, `?lang=` (valid or not) must not change one
+    // byte of the public read response.
+    let mut server = Server::new();
+    let sid = server.connect();
+    server.login_public(sid).unwrap();
+    let work_id = server
+        .create_work(
+            sid,
+            xudanu::edition::Edition::from_text("Es irrt der Mensch, solang er strebt."),
+        )
+        .unwrap();
+
+    let state = AppState::new(server).shared();
+    let app = build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let client = reqwest::Client::new();
+    let base = format!("http://{}/api/public/work/{:04x}", addr, work_id);
+    let plain = client
+        .get(&base)
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    let lang_en = client
+        .get(format!("{base}?lang=en"))
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    let lang_invalid = client
+        .get(format!("{base}?lang=not-a-tag"))
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert_eq!(
+        plain, lang_en,
+        "valid ?lang with no provider must be identical"
+    );
+    assert_eq!(
+        plain, lang_invalid,
+        "invalid ?lang must be ignored identically"
+    );
+}
+
+#[tokio::test]
 async fn public_work_api_returns_404_for_missing_work() {
     let server = Server::new();
     let state = AppState::new(server).shared();

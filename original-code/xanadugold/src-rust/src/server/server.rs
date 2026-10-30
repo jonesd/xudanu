@@ -9628,6 +9628,65 @@ impl Server {
         }))
     }
 
+    /// FR-155: text spans of a work's current edition with char
+    /// offsets in the rendered text — the unit of lazy translation
+    /// on the read path.
+    pub fn edition_text_spans(
+        &self,
+        work_be_id: BeId,
+    ) -> Vec<crate::server::translate::TextSpanView> {
+        let Some(ws) = self.works.get(&work_be_id) else {
+            return Vec::new();
+        };
+        let edition = ws.work.current_edition();
+        let mut spans = Vec::new();
+        let mut offset = 0usize;
+        for (_, carrier) in edition.cached_entries() {
+            let len = carrier.char_len();
+            if let Some(text) = carrier.element.as_text() {
+                spans.push(crate::server::translate::TextSpanView {
+                    char_start: offset,
+                    char_end: offset + len,
+                    text: text.to_string(),
+                });
+            }
+            offset += len;
+        }
+        spans
+    }
+
+    /// FR-155: public `kind: "language"` annotations for a work, as
+    /// (kind, payload, char_start, char_end) tuples for declaration
+    /// resolution. Private annotations never key public renditions.
+    /// Needs the write lock briefly to materialize the annotation
+    /// document (same as annotation_list).
+    pub fn public_language_annotations(
+        &mut self,
+        work_be_id: BeId,
+    ) -> Vec<(String, String, usize, usize)> {
+        let edition = match self.works.get(&work_be_id) {
+            Some(ws) => ws.work.current_edition().clone(),
+            None => return Vec::new(),
+        };
+        self.otree_crdt
+            .ensure_doc_for_annotations(work_be_id, &edition);
+        match self.otree_crdt.annotation_list(work_be_id) {
+            Ok(list) => list
+                .into_iter()
+                .filter(|a| !a.is_private)
+                .map(|a| (a.kind.clone(), a.payload.clone(), a.char_start, a.char_end))
+                .collect(),
+            Err(e) => {
+                tracing::debug!(
+                    "language annotations unavailable for {:x}: {}",
+                    work_be_id,
+                    e
+                );
+                Vec::new()
+            }
+        }
+    }
+
     /// FR-79: public shadow read for the overlay's HTTP surface —
     /// text + metadata + BLAKE3 identity, served with an ETag keyed
     /// on the content hash so caches never serve stale shadow text.

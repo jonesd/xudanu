@@ -352,6 +352,13 @@ pub fn dispatch(
         return dispatch_llm_propose(state, session_id, request);
     }
 
+    // FR-155: capability discovery calls the external translation
+    // provider — same lock discipline as the LLM route above (network
+    // I/O never runs under the server state lock).
+    if matches!(request, WireRequest::TranslateCapabilities) {
+        return dispatch_translate_capabilities(state, session_id, request);
+    }
+
     // Frozen policy (museum mode): the complete vandalism surface,
     // denied for non-admin sessions in one place. Reads, sessions,
     // and tickets pass; every corpus mutation does not.
@@ -462,6 +469,52 @@ pub fn dispatch(
     }
 
     result
+}
+
+/// FR-155: what this deployment can serve — provider identity,
+/// model, language coverage, rendition cache depth. Descriptive
+/// only. Runs outside the server lock because the provider
+/// round-trip is network I/O.
+fn dispatch_translate_capabilities(
+    state: &SharedState,
+    session_id: crate::server::SessionId,
+    request: WireRequest,
+) -> Result<ResponseValue, crate::server::ServerError> {
+    let WireRequest::TranslateCapabilities = request else {
+        unreachable!("routed only for TranslateCapabilities");
+    };
+    state
+        .server
+        .with_server_ref(|srv| srv.ensure_session(session_id))?;
+    match crate::server::translate::get_client() {
+        None => Ok(ResponseValue::Json(serde_json::json!({
+            "enabled": false,
+            "reason": format!(
+                "provider unset (set {} to a LibreTranslate-compatible base URL)",
+                crate::server::translate::PROVIDER_URL_ENV
+            ),
+            "cache_entries": crate::server::translate::cache_len(),
+        }))),
+        Some(client) => {
+            let languages = client.languages();
+            let mut payload = serde_json::json!({
+                "enabled": true,
+                "provider": client.provider(),
+                "model": client.model(),
+                "cache_entries": crate::server::translate::cache_len(),
+            });
+            match languages {
+                Ok(langs) => {
+                    payload["languages"] =
+                        serde_json::to_value(langs).unwrap_or(serde_json::Value::Null);
+                }
+                Err(e) => {
+                    payload["languages_error"] = serde_json::json!(e.to_string());
+                }
+            }
+            Ok(ResponseValue::Json(payload))
+        }
+    }
 }
 
 /// FR-86: LLM as reader-critic — load the work + context under a
