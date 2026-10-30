@@ -475,6 +475,8 @@ pub enum OperationCode {
     AdminNetworkStatus,
     AdminLicensePosture,
     TranslateCapabilities,
+    AdminRateLimitGet,
+    AdminRateLimitSet,
     AdminServerProbe,
     #[cfg(feature = "serde")]
     CrossServerResolve,
@@ -877,6 +879,8 @@ impl OperationCode {
         (0x0f2b, OperationCode::LinkSetRespondsTo),
         (0x0f2c, OperationCode::AdminLicensePosture),
         (0x0f2d, OperationCode::TranslateCapabilities),
+        (0x0f2e, OperationCode::AdminRateLimitGet),
+        (0x0f2f, OperationCode::AdminRateLimitSet),
         (0x0f17, OperationCode::AdminClubsList),
         (0x0f18, OperationCode::AdminGrantAdmin),
         (0x0f19, OperationCode::AdminRevokeAdmin),
@@ -2263,6 +2267,17 @@ pub enum WireRequest {
     #[cfg(feature = "serde")]
     AdminLicensePosture,
     TranslateCapabilities,
+    /// Admin view of the public-read rate limiter: current per-IP
+    /// budget, window, and tracked-IP counts.
+    #[cfg(feature = "serde")]
+    AdminRateLimitGet,
+    /// Admin adjustment of the public-read per-IP budget. Takes
+    /// effect immediately, is audit-logged, and resets at restart to
+    /// the default (120) or XUDANU_RATE_GET_LIMIT.
+    #[cfg(feature = "serde")]
+    AdminRateLimitSet {
+        get_limit: u32,
+    },
     #[cfg(feature = "serde")]
     AdminServerProbe {
         server_key: String,
@@ -5359,7 +5374,7 @@ mod lattice_shadow_wire_tests {
         let next = OperationCode::next_free_code(0x0f00, 0x0fff)
             .expect("the 0x0f00 block must not be exhausted");
         assert_eq!(
-            next, 0x0f2e,
+            next, 0x0f30,
             "next free 0x0f-block code moved — update this expectation after registering"
         );
         // The helper's result is by construction absent from the table.

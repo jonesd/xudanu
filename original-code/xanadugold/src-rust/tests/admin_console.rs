@@ -594,3 +594,74 @@ async fn translate_capabilities_reports_disabled_without_provider() {
     );
     assert!(inner["cache_entries"].as_u64().is_some());
 }
+
+#[tokio::test]
+async fn admin_rate_limit_get_set_over_wire() {
+    // Operator knob for the public-read budget: admin-gated on both
+    // ops, bounds enforced, changes reflected immediately.
+    let srv = TestServer::start().await;
+
+    // Pleb refused on both.
+    let (mut ps, mut pr, _) = pleb_session(&srv.addr).await;
+    let resp = req(&mut ps, &mut pr, 1, "admin_rate_limit_get", None).await;
+    assert!(resp["type"] == "error", "get must be admin-gated");
+    let resp = req(
+        &mut ps,
+        &mut pr,
+        2,
+        "admin_rate_limit_set",
+        Some(serde_json::json!({"get_limit": 240})),
+    )
+    .await;
+    assert!(resp["type"] == "error", "set must be admin-gated");
+
+    let (mut as_, mut ar, _admin) = admin_session(&srv.addr).await;
+
+    // Default budget reported with the full contract context.
+    let resp = req(&mut as_, &mut ar, 1, "admin_rate_limit_get", None).await;
+    assert!(is_ok(&resp), "get: {}", err_msg(&resp));
+    let inner = &resp["value"]["value"];
+    assert_eq!(inner["get_limit"].as_u64(), Some(120));
+    assert_eq!(inner["default_get_limit"].as_u64(), Some(120));
+    assert_eq!(inner["min_get_limit"].as_u64(), Some(10));
+    assert_eq!(inner["max_get_limit"].as_u64(), Some(1_000_000));
+    assert_eq!(inner["get_window_secs"].as_u64(), Some(60));
+
+    // Set + reflected immediately.
+    let resp = req(
+        &mut as_,
+        &mut ar,
+        2,
+        "admin_rate_limit_set",
+        Some(serde_json::json!({"get_limit": 240})),
+    )
+    .await;
+    assert!(is_ok(&resp), "set: {}", err_msg(&resp));
+    assert_eq!(
+        resp["value"]["value"]["get_limit"].as_u64(),
+        Some(240),
+        "set echoes the applied limit"
+    );
+    let resp = req(&mut as_, &mut ar, 3, "admin_rate_limit_get", None).await;
+    assert_eq!(resp["value"]["value"]["get_limit"].as_u64(), Some(240));
+
+    // Out-of-bounds values are rejected with an error, and the
+    // previous limit survives them.
+    for bad in [0u64, 5, 2_000_000] {
+        let resp = req(
+            &mut as_,
+            &mut ar,
+            4,
+            "admin_rate_limit_set",
+            Some(serde_json::json!({"get_limit": bad})),
+        )
+        .await;
+        assert!(resp["type"] == "error", "bounds must reject {}", bad);
+    }
+    let resp = req(&mut as_, &mut ar, 5, "admin_rate_limit_get", None).await;
+    assert_eq!(
+        resp["value"]["value"]["get_limit"].as_u64(),
+        Some(240),
+        "rejected sets must not change the limit"
+    );
+}
