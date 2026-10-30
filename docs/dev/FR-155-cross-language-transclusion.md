@@ -3,8 +3,14 @@
 **Status:** Stage 1 complete and **verdict DECIDED 2026-10-30 —
 Argos is the default engine; NLLB is the deliberate opt-in** (full
 tally of record: `spike/xlate/bench/VERDICT.md` on the spike branch).
-Stage 2 tracer bullet scoped, not started. The design below is fixed
-by the spike (`spike/cross-language-transclusion`).
+**Stage 2 tracer bullet BUILT 2026-10-30** (branch
+`fr155/lang-read-path`): lazy `?lang=` read path on the public work
+API, wire op 0x0f2d `translate_capabilities`, FR-156 registry row
+live. DoD met against a live Argos sidecar: cold read 559ms for 3
+spans (one batched provider call), warm read 3ms with zero provider
+calls and byte-identical text, PROV edge per rendition
+(`wasDerivedFrom` source hash, engine identity, machine-gisting
+grade), kill rule p95 delta **1ms** against a +500ms budget.
 
 **Heritage:** the Xanadu lineage made quoting-with-both-ends-visible
 the core primitive. FR-155 completes it across languages: a reader
@@ -146,13 +152,39 @@ known failure class. Clean upgrades if coverage demands: MADLAD-400
 - Translation appears in the FR-156 license-posture registry when
   this feature actually ships.
 
-## Stage 2 — tracer bullet (scoped)
+## Stage 2 — tracer bullet (BUILT 2026-10-30, branch fr155/lang-read-path)
 
-- `?lang=` read path on one span kind, flag-gated, local server only.
-- `translate_provider_url` config; unset = zero behavior change.
-- DoD: reader sees the rendition + its PROV record; reload hits the
-  cache (zero provider calls).
-- Kill rule: read-path p95 +>500ms on hit → stop, reshape.
+Shipped surface:
+
+- `GET /api/public/work/{id}?lang=<BCP-47>` — translated public
+  read. Gather under short locks, provider call in `spawn_blocking`
+  with no server lock held (FR-86 lesson), re-sign the translated
+  body, original hash preserved, `x-xudanu-translation` header.
+  Layout gaps (newlines between translation units) pass through
+  verbatim. Provider failure degrades to the original text — a
+  sidecar being down never breaks the public API.
+- Translation units are coalesced **lines**, not O-tree
+  per-character carriers (one carrier per char — translating letters
+  is garbage; caught live in the first demo run).
+- Wire op 0x0f2d `translate_capabilities` — provider, model,
+  language coverage (`/languages`, 1h cache), cache depth;
+  early-routed like the LLM ops so provider I/O never runs under
+  the state lock.
+- FR-156 registry: `translate` row live (RuntimeConfig source; state
+  mirrors the env opt-in — still a mirror, not a switch).
+- Config: `XUDANU_TRANSLATE_PROVIDER_URL` (unset = disabled, zero
+  behavior change — regression-tested byte-for-byte), optional
+  `XUDANU_TRANSLATE_PROVIDER` (default argos), `XUDANU_TRANSLATE_MODEL`
+  (rides every PROV edge), `XUDANU_TRANSLATE_API_KEY`.
+
+Measured (Argos sidecar, de↔en, 3-span document): cold 559ms /
+warm 3ms / p95 delta vs plain 1ms. Kill rule (+500ms) not tripped.
+
+Deliberately out (next stages): rendition durability (cache is
+in-memory; content-addressed rendition storage is the follow-on),
+`work_get_edition` WS path, transclusion resolution interplay,
+rendition-never-a-target enforcement on the read side, federation
+travel, authoring-UI language declaration.
 
 ## Language declaration: an annotation on runs (direction chosen)
 
