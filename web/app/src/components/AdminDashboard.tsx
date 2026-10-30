@@ -79,7 +79,7 @@ function CheckAlert({ condition, message }: { condition: boolean; message: strin
   );
 }
 
-type AdminTab = "overview" | "content" | "policy" | "sessions" | "audit" | "identities" | "network";
+type AdminTab = "overview" | "content" | "policy" | "sessions" | "audit" | "identities" | "network" | "license";
 
 export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWork }: AdminDashboardProps) {
   const [health, setHealth] = useState<HealthData | null>(null);
@@ -113,6 +113,34 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
       setNetMsg(null);
     } catch {
       setNetMsg("Could not load network status (admin sign-in required)");
+    }
+  }, [client]);
+
+  // ── License posture (FR-156): read-only mirror of opt-ins ──
+  interface LicenseEntry {
+    id: string;
+    name: string;
+    license: string;
+    blast_radius: string;
+    terms_url: string;
+    source: "build_feature" | "runtime_config";
+    feature: string | null;
+    state: "enabled" | "available";
+  }
+  interface LicensePosture { entries: LicenseEntry[]; }
+  const [licPosture, setLicPosture] = useState<LicensePosture | null>(null);
+  const [licMsg, setLicMsg] = useState<string | null>(null);
+
+  const loadLicense = useCallback(async () => {
+    if (!client) return;
+    try {
+      const resp = await client.sendRequest("admin_license_posture");
+      const val = (resp as { value?: unknown }).value ?? resp;
+      const inner = (val as { value?: unknown }).value ?? val;
+      setLicPosture(inner as LicensePosture);
+      setLicMsg(null);
+    } catch {
+      setLicMsg("Could not load license posture (admin sign-in required)");
     }
   }, [client]);
 
@@ -324,6 +352,11 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
     return () => clearInterval(interval);
   }, [fetchHealth]);
 
+  // License posture loads when its tab is entered (FR-156).
+  useEffect(() => {
+    if (tab === "license") void loadLicense();
+  }, [tab, loadLicense]);
+
   // A stale checkpoint is only a problem when something is unpersisted:
   // dirty works/clubs exist that a crash would lose. A quiet read-only
   // server correctly skips zero-dirty checkpoints — "idle", not "stuck".
@@ -387,7 +420,7 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
       </div>
 
       <div style={{ display: "flex", gap: "4px", padding: "0 20px", background: "#161b22", borderBottom: "1px solid #30363d", flexShrink: 0 }}>
-        {(["overview", "content", "policy", "sessions", "audit", "identities", "network"] as const).map((t) => (
+        {(["overview", "content", "policy", "sessions", "audit", "identities", "network", "license"] as const).map((t) => (
           <button
             key={t}
             type="button"
@@ -405,7 +438,7 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
               marginTop: 6,
             }}
           >
-            {t === "overview" ? "Overview" : t === "content" ? "Content" : t === "policy" ? "Policy" : t === "sessions" ? "Sessions" : t === "audit" ? "Audit" : t === "identities" ? "Identities" : "Network"}
+            {t === "overview" ? "Overview" : t === "content" ? "Content" : t === "policy" ? "Policy" : t === "sessions" ? "Sessions" : t === "audit" ? "Audit" : t === "identities" ? "Identities" : t === "network" ? "Network" : "License"}
           </button>
         ))}
       </div>
@@ -469,7 +502,7 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
             <div>
               <div style={{ fontSize: "11px", color: "#8b949e", marginBottom: "4px" }}>Total Operations</div>
               <span style={{ fontSize: "14px", color: "#e6edf3" }}>
-                {health?.operations.toLocaleString() ?? "—"}
+                {health?.operations?.toLocaleString() ?? "—"}
               </span>
             </div>
           </div>
@@ -707,7 +740,7 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
                         {c.is_verified && <span title="Verified" style={{ fontSize: 11, color: "#3fb950" }}>✓</span>}
                       </div>
                       <div style={{ color: "#8b949e", fontSize: 11, marginTop: 2 }}>
-                        {c.member_count.toLocaleString()} member{c.member_count === 1 ? "" : "s"} · {c.works_owned.toLocaleString()} work{c.works_owned === 1 ? "" : "s"}
+                        {(c.member_count ?? 0).toLocaleString()} member{c.member_count === 1 ? "" : "s"} · {(c.works_owned ?? 0).toLocaleString()} work{c.works_owned === 1 ? "" : "s"}
                         {c.is_personal ? " · personal identity" : ""}
                       </div>
                     </div>
@@ -834,6 +867,70 @@ export function AdminDashboard({ onClose, client, isAdmin, works, onNavigateToWo
               {!netStatus && (
                 <div style={{ color: "#8b949e", fontSize: 13, padding: 24, textAlign: "center" }}>Click Refresh (admin sign-in required).</div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === "license" && (
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
+          <div style={{ maxWidth: 1000, margin: "0 auto" }}>
+            <h3 style={{ color: "#8b949e", fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "12px" }}>
+              License &amp; Opt-ins
+            </h3>
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <span style={{ color: "#8b949e", fontSize: 13 }}>
+                {licPosture
+                  ? `${licPosture.entries.filter((e) => e.state === "enabled").length} opted in · ${licPosture.entries.filter((e) => e.state === "available").length} available, not chosen`
+                  : "—"}
+              </span>
+              <button type="button" onClick={() => void loadLicense()} style={{ background: "#21262d", border: "1px solid #30363d", color: "#c9d1d9", borderRadius: "4px", padding: "4px 12px", cursor: "pointer", fontSize: 12 }}>
+                Refresh
+              </button>
+            </div>
+
+            {licMsg && <div style={{ padding: "10px 14px", marginBottom: 12, background: "rgba(248,81,73,0.08)", border: "1px solid rgba(248,81,73,0.3)", borderRadius: "6px", fontSize: 13, color: "#f85149" }}>{licMsg}</div>}
+
+            <div style={{ fontSize: 11, color: "#484f58", marginBottom: 10 }}>
+              What THIS installation opted into — and what it declined. Absence is information too: an unchosen opt-in is listed as available, not hidden.
+            </div>
+
+            <div style={{ display: "grid", gap: 8 }}>
+              {(licPosture?.entries ?? []).map((e) => (
+                <div key={e.id} style={{ background: "#161b22", border: "1px solid #21262d", borderRadius: "8px", padding: "12px 14px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: "#e6edf3", flex: 1 }}>{e.name}</span>
+                    <code style={{ color: "#8b949e", fontSize: 11 }}>{e.id}</code>
+                    {e.state === "enabled" ? (
+                      <span title="Opted in: carried by this binary" style={{ fontSize: 11, fontWeight: 600, padding: "2px 10px", borderRadius: "12px", background: "rgba(63,185,80,0.12)", border: "1px solid rgba(63,185,80,0.3)", color: "#3fb950" }}>enabled</span>
+                    ) : (
+                      <span title="Available but not chosen in this build" style={{ fontSize: 11, fontWeight: 600, padding: "2px 10px", borderRadius: "12px", background: "rgba(139,148,158,0.08)", border: "1px solid #30363d", color: "#8b949e" }}>available · not chosen</span>
+                    )}
+                  </div>
+                  <div style={{ color: "#8b949e", fontSize: 11, marginTop: 4 }}>
+                    {e.license} · <a href={e.terms_url} target="_blank" rel="noreferrer" style={{ color: "#58a6ff" }}>terms</a>
+                  </div>
+                  <div style={{ color: "#c9d1d9", fontSize: 12, marginTop: 6 }}>{e.blast_radius}</div>
+                  <div style={{ color: "#484f58", fontSize: 11, marginTop: 6 }}>
+                    {e.source === "build_feature"
+                      ? e.state === "enabled"
+                        ? `Build feature "${e.feature ?? e.id}" — compiled into this binary; removing it takes a rebuild.`
+                        : `Build feature "${e.feature ?? e.id}" — not compiled into this binary.`
+                      : "Runtime config — set (with acknowledgment) in server config."}
+                  </div>
+                </div>
+              ))}
+              {licPosture && licPosture.entries.length === 0 && (
+                <div style={{ color: "#8b949e", fontSize: 13, padding: 24, textAlign: "center" }}>No license opt-ins known to this build.</div>
+              )}
+              {!licPosture && !licMsg && (
+                <div style={{ color: "#8b949e", fontSize: 13, padding: 24, textAlign: "center" }}>Loading…</div>
+              )}
+            </div>
+
+            <div style={{ marginTop: 16, padding: "10px 14px", background: "#0d1117", border: "1px solid #21262d", borderRadius: "6px", fontSize: 11, color: "#8b949e" }}>
+              This panel is a <strong>mirror, not a switch</strong>: it reports the choices this installation already made. Changing an opt-in happens in your build or config — the deliberate act — never from this screen.
             </div>
           </div>
         </div>

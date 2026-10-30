@@ -4755,6 +4755,14 @@ fn dispatch_inner(
             Ok(ResponseValue::Json(status))
         }
         #[cfg(feature = "serde")]
+        WireRequest::AdminLicensePosture => {
+            // FR-156: descriptive only. The registry mirrors what this
+            // build compiled in; changing an opt-in stays in
+            // Cargo/config — never here.
+            let posture = srv.admin_license_posture(session_id)?;
+            Ok(ResponseValue::Json(posture))
+        }
+        #[cfg(feature = "serde")]
         WireRequest::AdminServerProbe { server_key } => {
             let probe = srv.admin_server_probe(session_id, server_key.as_str())?;
             Ok(ResponseValue::Json(probe))

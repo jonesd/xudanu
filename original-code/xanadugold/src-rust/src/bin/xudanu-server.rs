@@ -1414,6 +1414,13 @@ async fn main() {
                         "[ots] OpenTimestamps anchoring enabled (attribution chain head -> Bitcoin)"
                     );
                 }
+                // FR-156: disclose license posture at boot — what this
+                // build opted into, and what it declined. Descriptive
+                // only; the registry mirrors Cargo/config choices.
+                tracing::info!(
+                    "license posture: {}",
+                    xudanu::server::license::startup_line()
+                );
                 if log_checkpoint_entries != 10_000 || log_retention_keep > 0 {
                     server.log_checkpoint_configure(
                         log_checkpoint_entries,
