@@ -165,10 +165,25 @@ must not drift), so the author or curator declares it:
 - Rides the existing open-typed annotation system (`kind:
   "language"`, payload a language tag), document-default declared at
   creation, run-level override explicit.
+- **Transcluded runs inherit** — the declaration lives on the
+  original text in the source work; a document quoting Latin from a
+  Latin work never re-declares it (language resolves through the
+  link; one source of truth).
+- **Detection may suggest, never declare** — an authoring UI may
+  offer "this looks like Latin — mark it?", but nothing is recorded
+  until a human confirms. Detector output is version-dependent and
+  must never touch a stable key.
+- Tag vocabulary is BCP-47 (`en`, `fr`, `la`, `grc` vs `el`) — no
+  invented taxonomy.
 - Declarations are claims with provenance (who, when); corrections
   are themselves recorded edits — never silent mutation.
 - The translation edge pins source language at creation and must
   agree with the declared annotation — one source of truth.
+- Failure modes, honestly: a missing override falls to the document
+  default → the run renders as-is, no rendition offered (benign
+  absence, visible); a wrong declaration keys a wrong rendition
+  (malign) — which is why language is fail-critical and the
+  declaration UX is guarded.
 
 Governance as run annotations multiply: every new kind answers *who
 declares it, what consumes it, what breaks if it lies*. Language is
