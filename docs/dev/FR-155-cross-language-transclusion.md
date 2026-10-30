@@ -180,6 +180,16 @@ Shipped surface:
 Measured (Argos sidecar, de↔en, 3-span document): cold 559ms /
 warm 3ms / p95 delta vs plain 1ms. Kill rule (+500ms) not tripped.
 
+Capacity probe (release build, Apple M4 10-core, Argos en↔fr in
+Docker, `scripts/fr155-load.mjs`): warm translated reads serve
+~2,800 req/s aggregate (p95 3–18ms at conc 4–32, zero engine
+calls — same ballpark as untranslated reads); cold first-views run
+~5.7 docs/s (~23 translation units/s, one batched engine call per
+doc, p50 0.8s / p95 4.2s at conc 8). The public-read rate limiter
+(120 GETs/min per client IP) is the per-reader design cap, not a
+bottleneck: warm capacity is per-(content, language) once, so the
+engine load tracks new content, not reader count.
+
 Deliberately out (next stages): rendition durability (cache is
 in-memory; content-addressed rendition storage is the follow-on),
 `work_get_edition` WS path, transclusion resolution interplay,
