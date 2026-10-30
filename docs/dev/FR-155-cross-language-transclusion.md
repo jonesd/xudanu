@@ -143,10 +143,31 @@ MADLAD-400 (Apache-2.0), M2M-100 (MIT).
   cache (zero provider calls).
 - Kill rule: read-path p95 +>500ms on hit → stop, reshape.
 
+## Language declaration: an annotation on runs (direction chosen)
+
+Author attribution is **intrinsic** — derived from edit provenance by
+the attribution system, never annotated (an annotation would compete
+with the store's own truth). Language is **declared**, not intrinsic
+— detection is banned by the spike rule (a stable translation key
+must not drift), so the author or curator declares it:
+
+- Rides the existing open-typed annotation system (`kind:
+  "language"`, payload a language tag), document-default declared at
+  creation, run-level override explicit.
+- Declarations are claims with provenance (who, when); corrections
+  are themselves recorded edits — never silent mutation.
+- The translation edge pins source language at creation and must
+  agree with the declared annotation — one source of truth.
+
+Governance as run annotations multiply: every new kind answers *who
+declares it, what consumes it, what breaks if it lies*. Language is
+fail-critical (a lie keys wrong renditions); formatting marks are
+cosmetic. Severity sets how guarded the declaration UX must be.
+
 ## Deliberately unanswered
 
 Federation travel of renditions (whose cache serves a cross-server
 read; does the edge travel with the span?), cluster/quorum
 endorsement of renditions, write-side anything, language detection
-at authoring time, per-span language declaration mechanics in the
-authoring UI.
+at authoring time (banned for keys; the authoring-UI shape for
+declaring language is Stage 2 work).
