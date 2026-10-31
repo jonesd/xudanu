@@ -236,6 +236,52 @@ JSON, so any rendition's provenance is one `cat` away.
 What this unlocks: pre-warming (per the provisioning decision) is
 now worth building — warmed renditions survive restarts.
 
+## Human renditions (DECIDED 2026-10-31)
+
+`machine-gisting` is the bottom rung of a quality ladder, not a
+final state. Humans may improve machine renditions; the design:
+
+**Grade ladder** (all in PROV, where attribution already lives):
+
+| Grade | How reached | Agent |
+| --- | --- | --- |
+| `machine-gisting` | engine produces it (today) | named engine + model |
+| `human-draft` | a translator edits/submits, span-aligned | verified identity, license declared |
+| `human-reviewed` | a second person endorses it | two-person rule |
+| `canonical` | selected per (work, language) | owner/curator first, community endorsement later |
+
+Serve order on `?lang=`: canonical → human-reviewed → human-draft →
+machine. Every response stamps its honest grade; a reader always
+knows which rung they are on. Human renditions record
+`wasRevisionOf` the machine draft (or `wasDerivedFrom` the source)
+with the translator as PROV agent — attribution stays derived from
+who did the work, never annotated.
+
+**Validation anchors to the source, never to the machine draft.**
+A similarity-to-MT gate would enforce MT-shaped prose and punish
+exactly the nuance a human is paid for. Mechanical checks are:
+same source hash, every source span covered (no omissions), valid
+BCP-47 target, verified identity, license declared. Edit distance
+to the machine draft is *recorded as metadata* (it grades engines
+by how much correction they need) and never gates.
+
+**Two hard rules:** human renditions are still not content — not
+transcludable, not link targets, parallel readings keyed to source
+spans (the xanalogical parallel-document model). And a human
+translation is copyrightable creative work: the translator declares
+a license (FR-24 options) and grants serving rights on submission.
+
+**Staged path:** submit/review ops → serve order by grade →
+community endorsements (one per verified identity, retractable) →
+cross-server canonical selection via PBFT when federation travel
+arrives. Builds on machinery that already exists: `LinkEndorse`
+(0x0710, WAL-durable) proves per-identity endorsement over the
+wire; `edition/endorsement.rs` provides the set algebra; a
+*reputation* model (accumulated standing) is future work and
+deliberately not required for the first stages.
+
+Sequencing note: this lands after pre-warming and the offer-list.
+
 ## Provisioning languages (DECIDED 2026-10-30)
 
 The system has exactly three units, and "installing a language"
