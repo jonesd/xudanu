@@ -190,11 +190,114 @@ doc, p50 0.8s / p95 4.2s at conc 8). The public-read rate limiter
 bottleneck: warm capacity is per-(content, language) once, so the
 engine load tracks new content, not reader count.
 
-Deliberately out (next stages): rendition durability (cache is
-in-memory; content-addressed rendition storage is the follow-on),
-`work_get_edition` WS path, transclusion resolution interplay,
-rendition-never-a-target enforcement on the read side, federation
-travel, authoring-UI language declaration.
+Deliberately out (next stages): `work_get_edition` WS path,
+transclusion resolution interplay, rendition-never-a-target
+enforcement on the read side, federation travel, authoring-UI
+language declaration, pre-warming (now unblocked by Stage 3).
+
+## Stage 3 — rendition durability (BUILT 2026-10-31, branch fr155/rendition-durability)
+
+Renditions now live on disk beside the chunks and blobs:
+`<data>/renditions/<xx>/<key-hex>.json` — one JSON
+`TranslationEntry` per file, named by the cache key (BLAKE3 of the
+edge tuple), sharded like the blob store. Lookup order is memory →
+disk → engine; a disk hit is promoted to memory, so a restart pays
+one small file read per key, then memory speed.
+
+Properties:
+
+- **Self-healing, tamper-checked**: a file that fails to parse, or
+  whose rendition text does not hash to its own `rendition_hash`,
+  is treated as a miss (retranslate, overwrite) — corruption,
+  tampering, and format evolution all degrade to recompute instead
+  of being served. Writes are temp-file + rename (atomic
+  visibility); a crashed `.tmp` is never read.
+- **PROV survives**: the stored entry *is* the PROV record — after a
+  restart, renditions report their original `created_at`, provider,
+  and model. A changed model changes the key, so a new engine's
+  output never mixes with the old engine's renditions.
+- **Degradation contract**: no data directory → no store → exactly
+  Stage 2's memory-only behavior (pinned over the wire:
+  `translate_capabilities.cache_disk_entries` is null, not zero).
+  A store that cannot open logs a warning and serves memory-only;
+  startup never fails.
+- `translate_capabilities` now also reports `cache_disk_entries` and
+  `rendition_store_path`; the read block reports `disk_hits` and
+  `renditions_durable`.
+
+Measured — the strongest form of the proof: engine container
+stopped, server `kill -9`ed, restarted on the same data dir. First
+translated read after restart: **3.3ms, `disk_hits=3`,
+`provider_calls=0`** — fully translated while the engine was
+unreachable; second read 1.8ms from promoted memory. Kill rule
+unaffected (p95 delta 0ms with the store attached). Files are plain
+JSON, so any rendition's provenance is one `cat` away.
+
+What this unlocks: pre-warming (per the provisioning decision) is
+now worth building — warmed renditions survive restarts.
+
+## Human renditions (DECIDED 2026-10-31)
+
+`machine-gisting` is the bottom rung of a quality ladder, not a
+final state. Humans may improve machine renditions; the design:
+
+**Grade ladder** (all in PROV, where attribution already lives):
+
+| Grade | How reached | Agent |
+| --- | --- | --- |
+| `machine-gisting` | engine produces it (today) | named engine + model |
+| `human-draft` | a translator edits/submits, span-aligned | verified identity, license declared |
+| `human-reviewed` | a second person endorses it | two-person rule |
+| `canonical` | selected per (work, language) | owner/curator first, community endorsement later |
+
+Serve order on `?lang=`: canonical → human-reviewed → human-draft →
+machine. Every response stamps its honest grade; a reader always
+knows which rung they are on. Human renditions record
+`wasRevisionOf` the machine draft (or `wasDerivedFrom` the source)
+with the translator as PROV agent — attribution stays derived from
+who did the work, never annotated.
+
+**Validation anchors to the source, never to the machine draft.**
+A similarity-to-MT gate would enforce MT-shaped prose and punish
+exactly the nuance a human is paid for. Mechanical checks are:
+same source hash, every source span covered (no omissions), valid
+BCP-47 target, verified identity, license declared. Edit distance
+to the machine draft is *recorded as metadata* (it grades engines
+by how much correction they need) and never gates.
+
+**Two hard rules:** human renditions are still not content — not
+transcludable, not link targets, parallel readings keyed to source
+spans (the xanalogical parallel-document model). And a human
+translation is copyrightable creative work: the translator declares
+a license (FR-24 options) and grants serving rights on submission.
+
+**Staged path:** submit/review ops → serve order by grade →
+community endorsements (one per verified identity, retractable) →
+cross-server canonical selection via PBFT when federation travel
+arrives. Builds on machinery that already exists: `LinkEndorse`
+(0x0710, WAL-durable) proves per-identity endorsement over the
+wire; `edition/endorsement.rs` provides the set algebra; a
+*reputation* model (accumulated standing) is future work and
+deliberately not required for the first stages.
+
+**Udanax Gold lineage** (checked against `src/promise.rog/client.prc`):
+this design re-inhabits Gold's trust model rather than inventing
+one. Gold's `Edition` and `Work` both carried
+`endorse(CrossRegion)` / `endorsements()` / `retract(CrossRegion)`
+— trust assertions anchored to *regions of content*, including
+`CrossRegion[IDSpace,IDSpace]` (a region in one space vouching
+for a region in another — exactly the shape of a translation
+endorsement: source spans ↔ rendition spans). `Work.sponsor(
+IDRegion clubs)` was the public-reputation layer (the Rust port
+keeps `add_sponsor`, persisted and queryable; "sponsors are public
+reputation, not secret"). `visibleEndorsements()` separated what
+endorsements exist from what a reader may see. The port kept the
+set algebra, `CrossRegionN` in the space module, sponsorship, and
+WAL-durable link endorsement; what was dormant — humans endorsing
+regions — is precisely what this stage restores, pointed at
+renditions first.
+
+Sequencing note: this lands after pre-warming and the offer-list.
 
 ## Provisioning languages (DECIDED 2026-10-30)
 

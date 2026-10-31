@@ -481,6 +481,7 @@ async fn public_work_translated(
     let assembly_target = target_lang.clone();
     let assembly_spans = spans;
     let assembly_annotations = annotations;
+    let assembly_store = state.renditions.clone();
     let assembled = tokio::task::spawn_blocking(move || {
         crate::server::translate::assemble_translated_read(
             &original_text,
@@ -488,6 +489,7 @@ async fn public_work_translated(
             &assembly_annotations,
             &assembly_target,
             client,
+            assembly_store.as_ref(),
         )
     })
     .await
