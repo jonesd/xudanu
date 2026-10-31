@@ -414,17 +414,34 @@ impl RenditionStore {
     pub fn get(&self, key: &blake3::Hash) -> Option<TranslationEntry> {
         let path = self.entry_path(key);
         let data = std::fs::read_to_string(&path).ok()?;
-        match serde_json::from_str(&data) {
-            Ok(entry) => Some(entry),
+        let entry: TranslationEntry = match serde_json::from_str(&data) {
+            Ok(entry) => entry,
             Err(err) => {
                 tracing::warn!(
                     "translate: unreadable rendition {} ({}): treated as a miss",
                     path.display(),
                     err
                 );
-                None
+                return None;
             }
+        };
+        // Content check: the file is named by the INPUT tuple key, so
+        // unlike chunks the name proves nothing about the payload.
+        // A rendition that does not hash to its own rendition_hash
+        // (corruption or tampering) is a miss — retranslated and
+        // overwritten on the next read. Self-heals, never serves.
+        if blake3::hash(entry.rendition.as_bytes())
+            .to_hex()
+            .to_string()
+            != entry.rendition_hash
+        {
+            tracing::warn!(
+                "translate: rendition {} failed its content hash — treated as a miss",
+                path.display()
+            );
+            return None;
         }
+        Some(entry)
     }
 
     pub fn put(&self, key: &blake3::Hash, entry: &TranslationEntry) {
@@ -1149,6 +1166,51 @@ mod tests {
             store.get(&key).is_some(),
             "the corrupt file was overwritten with a good entry"
         );
+    }
+
+    #[test]
+    fn tampered_rendition_text_fails_content_hash_and_self_heals() {
+        cache_clear_for_tests();
+        let store = temp_rendition_store("tamper");
+        let spans = vec![TextSpanView {
+            char_start: 0,
+            char_end: 4,
+            text: "neun".into(),
+        }];
+        let annotations = vec![ann("language", "de", 0, 0)];
+        let provider = FakeProvider {
+            calls: AtomicUsize::new(0),
+            fail: false,
+        };
+        let first =
+            assemble_translated_read("neun", &spans, &annotations, "en", &provider, Some(&store));
+        assert_eq!(first.provider_calls, 1);
+
+        // Rewrite the file with altered rendition text but the
+        // original hash: parses fine, fails the content check.
+        let key = cache_key("neun", "de", "en", "fake", "fake/1");
+        let path = store.entry_path(&key);
+        let mut value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        value["rendition"] = serde_json::json!("[tampered] neun");
+        std::fs::write(&path, value.to_string()).expect("tampered rewrite");
+
+        let tampered: TranslationEntry =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(
+            store.get(&key).is_none(),
+            "well-formed but hash-mismatched entry must be refused"
+        );
+        assert_eq!(tampered.rendition, "[tampered] neun");
+
+        // The read path self-heals: retranslate, overwrite, serve.
+        cache_clear_for_tests();
+        let second =
+            assemble_translated_read("neun", &spans, &annotations, "en", &provider, Some(&store));
+        assert_eq!(second.provider_calls, 1, "tampered entry retranslates");
+        assert_eq!(second.text, first.text, "the tampered text never served");
+        let healed = store.get(&key).expect("overwritten with a good entry");
+        assert_eq!(healed.rendition, "[de->en] neun");
     }
 
     #[test]
