@@ -196,6 +196,61 @@ in-memory; content-addressed rendition storage is the follow-on),
 rendition-never-a-target enforcement on the read side, federation
 travel, authoring-UI language declaration.
 
+## Provisioning languages (DECIDED 2026-10-30)
+
+The system has exactly three units, and "installing a language"
+means different things at each layer:
+
+| Layer | Unit | Notes |
+| --- | --- | --- |
+| Engine capability | directional pair (en→fr) | one model; measured 80–156 MB per direction, 60–272 MB across the catalog |
+| Reader intent | single target tag (`?lang=fr`) | one language per read, always |
+| Deployment | a set of pairs | the engine's `--load-only` list |
+
+**Pairs are the atom.** Directionality halves resource cost where a
+community only reads across one direction, and it keeps PROV exact:
+every rendition names the model that produced it.
+
+**Packages are selection UX, never server concepts.** A named
+language pack would (1) create a canon problem — whoever defines
+"the European pack" owns a contested, stale-prone taxonomy; (2)
+couple the wire protocol to engine deployment details that
+`translate_capabilities` already reports truthfully; (3) tempt
+mixed-engine packs (Latin and Ancient Greek exist only on NLLB),
+forcing multi-engine routing before it is designed. The offer-list
+panel (follow-on) gets multi-select plus a paste-able
+`en,fr,de` line instead — sharing selections without taxonomy.
+
+**Model installation stays an operator act.** Weights are never
+bundled or auto-downloaded; the operator fetches, becomes the
+direct licensee, and the deployment is deliberate and inspectable.
+The engine has no runtime model-loading API regardless — changing
+pairs means recreating the container.
+
+**Batch shows up as pre-warming, later.** An admin action to
+translate one work into all offered languages ahead of readers is
+cheap at measured rates (~5.7 docs/s cold → a 10-language pre-warm
+≈ 2s of engine time) and smooths the first-view stampede tail
+(p95 4.2s). It belongs beside rendition durability, so warmed
+renditions survive restarts.
+
+### Operator runbook: adding a language pair
+
+1. Recreate the engine with the pair loaded, e.g.
+   `docker run -d --name xlate -p 5050:5000 libretranslate/libretranslate --load-only en,fr,de --disable-web-ui`
+   (~60–160 MB downloads per direction; en↔de measured 313 MB, en↔fr 158 MB).
+2. Nothing to restart on the xudanu server: it discovers coverage
+   from the engine's `/languages` on the next capabilities call
+   (cached 1h).
+3. Pairs without a direct model pivot through English
+   automatically, at some quality cost.
+4. For languages Argos does not serve (e.g. `la`, `grc`): deploy the
+   NLLB sidecar instead — the deliberate opt-in per the engine
+   verdict (operator-fetched weights, CC-BY-NC).
+5. The server's renditions cache is content-addressed; a changed
+   model identity changes PROV and cache keys, so readers see the
+   new engine on fresh content without staleness.
+
 ## Language declaration: an annotation on runs (direction chosen)
 
 Author attribution is **intrinsic** — derived from edit provenance by
