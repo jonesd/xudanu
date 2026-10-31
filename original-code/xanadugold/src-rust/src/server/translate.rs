@@ -278,11 +278,10 @@ fn languages_cache() -> &'static LanguagesCache {
 
 // === Content-addressed rendition cache ===
 //
-// The edge tuple is the cache key. Entries are in-memory for the
-// Stage 2 tracer bullet; durable content-addressed renditions are
-// the follow-on stage.
+// The edge tuple is the cache key. Memory is the hot layer; the
+// durable layer below survives restarts (Stage 3).
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranslationEntry {
     pub source_hash: String,
     pub source_lang: String,
@@ -378,6 +377,104 @@ pub fn cache_clear_for_tests() {
         .lock()
         .expect("translation cache lock")
         .clear();
+}
+
+// === Durable content-addressed rendition store (Stage 3) ===
+//
+// One JSON file per rendition under `<data>/renditions/<xx>/<key>.json`,
+// named by the cache key (BLAKE3 of the edge tuple) — the blob
+// store's sharding convention. A restarted server finds every
+// warmed rendition on disk, so a read that would have been an engine
+// call becomes a small file read. A corrupt or future-format file is
+// treated as a miss (retranslate, overwrite): format evolution
+// self-heals instead of failing reads. Writes are temp-file + rename
+// (atomic visibility); a crashed `.tmp` leftover is never read.
+
+/// Stateless handle: a base path and nothing else — cheap to clone
+/// and share. Attached to `AppState` only when the server runs with
+/// a data directory; `None` keeps Stage 2's memory-only behavior.
+#[derive(Debug, Clone)]
+pub struct RenditionStore {
+    base: std::path::PathBuf,
+}
+
+impl RenditionStore {
+    pub fn open(base: impl Into<std::path::PathBuf>) -> std::io::Result<Self> {
+        let base = base.into();
+        std::fs::create_dir_all(&base)?;
+        tracing::info!("translate: durable rendition store at {}", base.display());
+        Ok(RenditionStore { base })
+    }
+
+    fn entry_path(&self, key: &blake3::Hash) -> std::path::PathBuf {
+        let hex = key.to_hex().to_string();
+        self.base.join(&hex[..2]).join(format!("{hex}.json"))
+    }
+
+    pub fn get(&self, key: &blake3::Hash) -> Option<TranslationEntry> {
+        let path = self.entry_path(key);
+        let data = std::fs::read_to_string(&path).ok()?;
+        match serde_json::from_str(&data) {
+            Ok(entry) => Some(entry),
+            Err(err) => {
+                tracing::warn!(
+                    "translate: unreadable rendition {} ({}): treated as a miss",
+                    path.display(),
+                    err
+                );
+                None
+            }
+        }
+    }
+
+    pub fn put(&self, key: &blake3::Hash, entry: &TranslationEntry) {
+        let path = self.entry_path(key);
+        let write = || -> std::io::Result<()> {
+            if let Some(dir) = path.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            let json = serde_json::to_string_pretty(entry)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            let tmp = path.with_extension("tmp");
+            std::fs::write(&tmp, json.as_bytes())?;
+            std::fs::rename(&tmp, &path)?;
+            Ok(())
+        };
+        if let Err(err) = write() {
+            tracing::warn!(
+                "translate: rendition persist failed at {}: {} (memory cache still serves)",
+                path.display(),
+                err
+            );
+        }
+    }
+
+    /// Entries on disk. Walks the shards — admin-frequency use, not
+    /// for the read path.
+    pub fn count(&self) -> usize {
+        let Ok(shards) = std::fs::read_dir(&self.base) else {
+            return 0;
+        };
+        let mut n = 0usize;
+        for shard in shards.flatten() {
+            let Ok(files) = std::fs::read_dir(shard.path()) else {
+                continue;
+            };
+            n += files
+                .flatten()
+                .filter(|f| {
+                    f.file_name()
+                        .to_str()
+                        .is_some_and(|name| name.ends_with(".json"))
+                })
+                .count();
+        }
+        n
+    }
+
+    pub fn base(&self) -> &std::path::Path {
+        &self.base
+    }
 }
 
 // === Language declaration resolution ===
@@ -500,16 +597,19 @@ pub struct TranslatedRead {
 /// Build the translated document text plus its provenance block.
 /// Pure with respect to the server: the original rendered text,
 /// spans, annotations, and the provider are handed in; the only
-/// side effects are the rendition cache and the provider call.
+/// side effects are the rendition caches and the provider call.
 /// Runs under `spawn_blocking`. Gaps between spans (newlines and
 /// other layout) are copied verbatim from the original so the
-/// translated document keeps its shape.
+/// translated document keeps its shape. `store`, when present, is
+/// consulted after the memory cache and written on every fresh
+/// rendition (Stage 3 durability: renditions survive restarts).
 pub fn assemble_translated_read<P: RenditionProvider>(
     original_text: &str,
     spans: &[TextSpanView],
     annotations: &[(String, String, usize, usize)],
     target_lang: &str,
     provider: &P,
+    store: Option<&RenditionStore>,
 ) -> TranslatedRead {
     let (doc_default, overrides) = parse_language_annotations(annotations);
     let now = SystemTime::now()
@@ -521,6 +621,7 @@ pub fn assemble_translated_read<P: RenditionProvider>(
     let mut same_language = 0usize;
     let mut undeclared = 0usize;
     let mut cache_hits = 0usize;
+    let mut disk_hits = 0usize;
     // (span index, source lang) for cache misses, grouped per source
     // language below so each provider batch is one (source, target)
     // pair.
@@ -553,6 +654,12 @@ pub fn assemble_translated_read<P: RenditionProvider>(
         if let Some(hit) = cache_get(&key) {
             cache_hits += 1;
             renditions.push(Some(hit));
+        } else if let Some(entry) = store.and_then(|s| s.get(&key)) {
+            // Disk hit after a restart: promote to memory so this is
+            // the only file read for this key.
+            disk_hits += 1;
+            cache_put_entry(key, entry.clone());
+            renditions.push(Some(entry));
         } else {
             misses.push((idx, source_lang));
             renditions.push(None);
@@ -596,6 +703,9 @@ pub fn assemble_translated_read<P: RenditionProvider>(
                         provider.provider_name(),
                         provider.model_name(),
                     );
+                    if let Some(s) = store {
+                        s.put(&key, &entry);
+                    }
                     cache_put_entry(key, entry);
                 }
             }
@@ -653,6 +763,8 @@ pub fn assemble_translated_read<P: RenditionProvider>(
         "spans_same_language": same_language,
         "spans_undeclared": undeclared,
         "cache_hits": cache_hits,
+        "disk_hits": disk_hits,
+        "renditions_durable": store.is_some(),
         "provider_calls": provider_calls,
         "renditions": rendition_json,
     });
@@ -818,7 +930,7 @@ mod tests {
         };
 
         let original = "eins zwei ";
-        let first = assemble_translated_read(original, &spans, &annotations, "en", &provider);
+        let first = assemble_translated_read(original, &spans, &annotations, "en", &provider, None);
         assert_eq!(first.provider_calls, 1, "one batch, one call");
         assert_eq!(
             first.text, "[de->en] eins [de->en] zwei ",
@@ -827,7 +939,8 @@ mod tests {
         assert_eq!(first.block["spans_translated"], 2);
         assert_eq!(first.block["cache_hits"], 0);
 
-        let second = assemble_translated_read(original, &spans, &annotations, "en", &provider);
+        let second =
+            assemble_translated_read(original, &spans, &annotations, "en", &provider, None);
         assert_eq!(second.provider_calls, 0, "second read is all cache hit");
         assert_eq!(second.block["cache_hits"], 2);
         assert_eq!(
@@ -859,7 +972,7 @@ mod tests {
             calls: AtomicUsize::new(0),
             fail: false,
         };
-        let out = assemble_translated_read(original, &spans, &annotations, "en", &provider);
+        let out = assemble_translated_read(original, &spans, &annotations, "en", &provider, None);
         assert_eq!(
             out.text, "[de->en] Es irrt der Mensch.\n\n[de->en] Durch die Gasse.",
             "separators between spans pass through unchanged"
@@ -886,7 +999,7 @@ mod tests {
             calls: AtomicUsize::new(0),
             fail: false,
         };
-        let out = assemble_translated_read("eins????", &spans, &annotations, "en", &provider);
+        let out = assemble_translated_read("eins????", &spans, &annotations, "en", &provider, None);
         assert_eq!(out.provider_calls, 1, "only the German span is fetched");
         assert_eq!(out.block["spans_same_language"], 1);
         assert_eq!(out.block["spans_undeclared"], 0);
@@ -906,7 +1019,7 @@ mod tests {
             calls: AtomicUsize::new(0),
             fail: true,
         };
-        let out = assemble_translated_read("eins", &spans, &annotations, "en", &provider);
+        let out = assemble_translated_read("eins", &spans, &annotations, "en", &provider, None);
         assert_eq!(out.text, "eins", "read serves the original, never fails");
         assert!(out.block["errors"].is_array());
     }
@@ -930,5 +1043,131 @@ mod tests {
         )
         .unwrap();
         assert_eq!(json_strings(wrapped.translated_text).unwrap().len(), 2);
+    }
+
+    fn temp_rendition_store(tag: &str) -> RenditionStore {
+        let dir = std::env::temp_dir().join(format!("xudanu-rend-{}-{}", std::process::id(), tag));
+        let _ = std::fs::remove_dir_all(&dir);
+        RenditionStore::open(&dir).expect("temp rendition store")
+    }
+
+    #[test]
+    fn renditions_survive_memory_wipe_via_disk_store() {
+        cache_clear_for_tests();
+        let store = temp_rendition_store("survive");
+        // Unique texts: parallel tests share the global memory cache,
+        // so these keys must not collide with any other test's.
+        let spans = vec![
+            TextSpanView {
+                char_start: 0,
+                char_end: 6,
+                text: "drei ".into(),
+            },
+            TextSpanView {
+                char_start: 6,
+                char_end: 11,
+                text: "vier ".into(),
+            },
+        ];
+        let annotations = vec![ann("language", "de", 0, 0)];
+        let provider = FakeProvider {
+            calls: AtomicUsize::new(0),
+            fail: false,
+        };
+
+        let first = assemble_translated_read(
+            "drei vier ",
+            &spans,
+            &annotations,
+            "en",
+            &provider,
+            Some(&store),
+        );
+        assert_eq!(first.provider_calls, 1);
+        assert_eq!(first.block["cache_hits"], 0);
+        assert_eq!(store.count(), 2, "fresh renditions persisted to disk");
+
+        // A restart wipes memory, not disk.
+        cache_clear_for_tests();
+        let second = assemble_translated_read(
+            "drei vier ",
+            &spans,
+            &annotations,
+            "en",
+            &provider,
+            Some(&store),
+        );
+        assert_eq!(second.provider_calls, 0, "disk hits replace engine calls");
+        assert_eq!(second.block["disk_hits"], 2);
+        assert_eq!(
+            second.text, first.text,
+            "identical renditions after the simulated restart"
+        );
+    }
+
+    #[test]
+    fn corrupt_rendition_file_degrades_to_miss_and_self_heals() {
+        cache_clear_for_tests();
+        let store = temp_rendition_store("corrupt");
+        let spans = vec![TextSpanView {
+            char_start: 0,
+            char_end: 7,
+            text: "sieben".into(),
+        }];
+        let annotations = vec![ann("language", "de", 0, 0)];
+        let provider = FakeProvider {
+            calls: AtomicUsize::new(0),
+            fail: false,
+        };
+        let first = assemble_translated_read(
+            "sieben",
+            &spans,
+            &annotations,
+            "en",
+            &provider,
+            Some(&store),
+        );
+        assert_eq!(first.provider_calls, 1);
+
+        // Corrupt the persisted entry: the next read treats it as a
+        // miss, retranslates, and overwrites the file.
+        let key = cache_key("sieben", "de", "en", "fake", "fake/1");
+        let path = store.entry_path(&key);
+        std::fs::write(&path, b"{ not json").expect("corrupt write");
+        cache_clear_for_tests();
+        let second = assemble_translated_read(
+            "sieben",
+            &spans,
+            &annotations,
+            "en",
+            &provider,
+            Some(&store),
+        );
+        assert_eq!(second.provider_calls, 1, "corrupt entry retranslates");
+        assert_eq!(second.text, first.text);
+        assert!(
+            store.get(&key).is_some(),
+            "the corrupt file was overwritten with a good entry"
+        );
+    }
+
+    #[test]
+    fn rendition_store_without_disk_hits_reports_memory_only() {
+        cache_clear_for_tests();
+        let spans = vec![TextSpanView {
+            char_start: 0,
+            char_end: 4,
+            text: "acht".into(),
+        }];
+        let annotations = vec![ann("language", "de", 0, 0)];
+        let provider = FakeProvider {
+            calls: AtomicUsize::new(0),
+            fail: false,
+        };
+        // No store: exactly Stage 2 behavior, durable flag false.
+        let out = assemble_translated_read("acht", &spans, &annotations, "en", &provider, None);
+        assert_eq!(out.provider_calls, 1);
+        assert_eq!(out.block["disk_hits"], 0);
+        assert_eq!(out.block["renditions_durable"], false);
     }
 }
