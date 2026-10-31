@@ -96,6 +96,46 @@ region of this work." Links have it; content does not. The
    open-typed annotation system, so they can never compete with
    content or be mistaken for it.
 
+**Work-weighting and AI endorsers.** Endorsements must be priced by
+verified work, or they are free to mint and worth nothing:
+
+- Zero-cost vouches are worth zero by construction: an endorser's
+  weight comes from their own verified useful work in the domain —
+  submitted drafts that survive supersession, reviews that hold.
+- AI agents earn standing the same way humans do: through a history
+  of judgments that survive scrutiny. An AI reviewer whose verdicts
+  keep getting overturned decays to zero; one that keeps being
+  confirmed accrues real standing. PROV records who did what, so
+  this stays auditable. Do not ban AI endorsements — make them
+  prove themselves.
+- Identity cost is the Sybil floor: OAuth-only sign-in makes mass
+  fake identities proportionally expensive. The mature attack is
+  collusion rings of real accounts, and the endorsement history is
+  itself the dataset that detects them (graph analysis; the
+  n>100 problem).
+
+## Bootstrapping without a population
+
+The mechanism must not wait for members: it is a **recorder at n=1**
+that gets smarter with scale. Each build stage has a validation mode
+that needs no community:
+
+| Stage | Validation without users |
+| --- | --- |
+| Grade ladder + submit/review ops | Unit/integration tests; live demo with the operator as sole actor — n=1 is honest record-keeping |
+| Endorsement accumulation | Synthetic-population harness (a "trust-lab"): seeded identities with behavioral profiles (honest, sloppy, colluding ring, AI agent) over the seeded public-domain corpus; assert ladder outcomes and ring suppression |
+| Reputation computation | Offline property tests on synthetic graphs: honest agents converge high, rings suppressed, decay deterministic |
+| PBFT canonicalization | Local demo network (extends `scripts/demo-network.sh`): 4 nodes tolerate 1 fault, 7 tolerate 2 (3f+1) — no real federation partners needed |
+
+AI agents double as the first population: they generate real
+translation and review traffic, humans spot-check, and the
+work-weighted machinery prices them honestly from day one. The
+founding reviewers (5–10 bilingual humans) are an outreach task —
+the HN standing track — not an engineering one. What cannot be
+validated without people is sociology (whether humans bother
+endorsing, whether the weights feel fair); the plumbing
+deliberately does not depend on it.
+
 ## Open questions (deliberately unanswered here)
 
 - Who may endorse: any verified identity, or club-membership-gated?
