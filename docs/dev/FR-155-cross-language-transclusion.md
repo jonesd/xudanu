@@ -280,6 +280,23 @@ wire; `edition/endorsement.rs` provides the set algebra; a
 *reputation* model (accumulated standing) is future work and
 deliberately not required for the first stages.
 
+**Udanax Gold lineage** (checked against `src/promise.rog/client.prc`):
+this design re-inhabits Gold's trust model rather than inventing
+one. Gold's `Edition` and `Work` both carried
+`endorse(CrossRegion)` / `endorsements()` / `retract(CrossRegion)`
+— trust assertions anchored to *regions of content*, including
+`CrossRegion[IDSpace,IDSpace]` (a region in one space vouching
+for a region in another — exactly the shape of a translation
+endorsement: source spans ↔ rendition spans). `Work.sponsor(
+IDRegion clubs)` was the public-reputation layer (the Rust port
+keeps `add_sponsor`, persisted and queryable; "sponsors are public
+reputation, not secret"). `visibleEndorsements()` separated what
+endorsements exist from what a reader may see. The port kept the
+set algebra, `CrossRegionN` in the space module, sponsorship, and
+WAL-durable link endorsement; what was dormant — humans endorsing
+regions — is precisely what this stage restores, pointed at
+renditions first.
+
 Sequencing note: this lands after pre-warming and the offer-list.
 
 ## Provisioning languages (DECIDED 2026-10-30)
