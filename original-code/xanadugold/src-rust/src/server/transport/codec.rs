@@ -3994,6 +3994,65 @@ impl JsonCodec {
                 })
             }
             #[cfg(feature = "serde")]
+            OperationCode::TranslationSubmit => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: String,
+                    target_lang: String,
+                    license: String,
+                    #[serde(default)]
+                    derived_from_model: Option<String>,
+                    spans: Vec<super::protocol::HumanSpanPayload>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::TranslationSubmit {
+                    work_id: args.work_id,
+                    target_lang: args.target_lang,
+                    license: args.license,
+                    derived_from_model: args.derived_from_model,
+                    spans: args.spans,
+                })
+            }
+            #[cfg(feature = "serde")]
+            OperationCode::TranslationEndorse => {
+                #[derive(Deserialize)]
+                struct Args {
+                    submission: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::TranslationEndorse {
+                    submission: args.submission,
+                })
+            }
+            #[cfg(feature = "serde")]
+            OperationCode::TranslationUnendorse => {
+                #[derive(Deserialize)]
+                struct Args {
+                    submission: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::TranslationUnendorse {
+                    submission: args.submission,
+                })
+            }
+            #[cfg(feature = "serde")]
+            OperationCode::TranslationList => {
+                #[derive(Deserialize)]
+                struct Args {
+                    work_id: String,
+                    lang: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::TranslationList {
+                    work_id: args.work_id,
+                    lang: args.lang,
+                })
+            }
+            #[cfg(feature = "serde")]
             OperationCode::AdminServerProbe => {
                 #[derive(Deserialize)]
                 struct Args {

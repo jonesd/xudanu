@@ -421,7 +421,9 @@ async fn public_work_handler(
         .filter(|l| crate::server::translate::valid_language_tag(l));
     if let Some(target) = target_lang {
         if crate::server::translate::translate_enabled() {
-            if let Some(response) = public_work_translated(&state, work_id, target).await {
+            if let Some(response) =
+                public_work_translated(&state, work_id, &work_id_hex, target).await
+            {
                 return response;
             }
         }
@@ -463,6 +465,7 @@ async fn public_work_handler(
 async fn public_work_translated(
     state: &SharedState,
     work_id: crate::edition::BeId,
+    work_id_hex: &str,
     target_lang: String,
 ) -> Option<axum::response::Response> {
     let client = crate::server::translate::get_client()?;
@@ -479,10 +482,16 @@ async fn public_work_translated(
     let original_text = base["text"].as_str().unwrap_or_default().to_string();
 
     let assembly_target = target_lang.clone();
+    let assembly_work_hex = work_id_hex.to_string();
     let assembly_spans = spans;
     let assembly_annotations = annotations;
     let assembly_store = state.renditions.clone();
     let assembled = tokio::task::spawn_blocking(move || {
+        // Strongest human rendition for this (work, target), if any:
+        // preferred span-by-span over cache, disk, and engine.
+        let human = assembly_store
+            .as_ref()
+            .and_then(|s| s.best_human(&assembly_work_hex, &assembly_target));
         crate::server::translate::assemble_translated_read(
             &original_text,
             &assembly_spans,
@@ -490,6 +499,7 @@ async fn public_work_translated(
             &assembly_target,
             client,
             assembly_store.as_ref(),
+            human.as_ref(),
         )
     })
     .await

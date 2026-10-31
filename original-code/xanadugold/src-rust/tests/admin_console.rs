@@ -669,3 +669,308 @@ async fn admin_rate_limit_get_set_over_wire() {
         "rejected sets must not change the limit"
     );
 }
+
+// ─── FR-155 Stage A: human renditions over the wire ────────────────
+
+/// A pleb session that creates a password-holding personal club and
+/// authenticates as it — a distinct acting identity for the
+/// two-person endorsement rule.
+async fn persona_session(
+    addr: &SocketAddr,
+    display_name: &str,
+    password: &str,
+) -> (SplitSender, SplitReceiver, u64) {
+    let (mut s, mut r) = connect_with_handshake(addr).await;
+    let resp = req(&mut s, &mut r, 1, "session_connect", None).await;
+    let _sid = resp["value"]["value"].as_u64().unwrap();
+    req(&mut s, &mut r, 2, "session_login_public", None).await;
+    let resp = req(
+        &mut s,
+        &mut r,
+        3,
+        "club_create_personal",
+        Some(serde_json::json!({
+            "display_name": display_name,
+            "password": password.as_bytes().iter().map(|&b| serde_json::Value::from(b)).collect::<Vec<_>>(),
+        })),
+    )
+    .await;
+    let club = resp["value"]["value"].as_u64().unwrap();
+    req(
+        &mut s,
+        &mut r,
+        4,
+        "session_login",
+        Some(serde_json::json!({"club_id": club})),
+    )
+    .await;
+    let resp = req(
+        &mut s,
+        &mut r,
+        5,
+        "session_authenticate",
+        Some(serde_json::json!({"credential": password_credential(password.as_bytes())})),
+    )
+    .await;
+    assert!(is_ok(&resp), "authenticate: {}", err_msg(&resp));
+    (s, r, club)
+}
+
+#[tokio::test]
+async fn translation_human_renditions_over_wire() {
+    // Stage A: submit → list → endorse (two-person rule, ladder,
+    // retraction) → validation rejections, all over the wire. The
+    // durable store rides the persistent test server's data dir.
+    let srv = TestServer::start_persistent("fr155-human").await;
+
+    let (mut ts, mut tr, translator_club) = persona_session(&srv.addr, "translator", "tpass").await;
+    let (mut es, mut er, endorser_club) = persona_session(&srv.addr, "endorser", "epass").await;
+    assert_ne!(translator_club, endorser_club);
+
+    // A published, publicly readable German work.
+    let text = "Über allen Gipfeln ist Ruh";
+    let mut id = 10u16;
+    let wid = create_work(&mut ts, &mut tr, &mut id, text).await;
+    let wid_hex = format!("{:x}", wid);
+    let resp = req(
+        &mut ts,
+        &mut tr,
+        11,
+        "work_publish",
+        Some(serde_json::json!({"work_id": wid})),
+    )
+    .await;
+    assert!(is_ok(&resp), "publish: {}", err_msg(&resp));
+    let pub_club = req(
+        &mut ts,
+        &mut tr,
+        12,
+        "club_id_by_name",
+        Some(serde_json::json!({"name": "public"})),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    let resp = req(
+        &mut ts,
+        &mut tr,
+        13,
+        "work_set_read_club",
+        Some(serde_json::json!({"work_id": wid, "club_id": pub_club})),
+    )
+    .await;
+    assert!(is_ok(&resp), "read club: {}", err_msg(&resp));
+    // Document default language: German (empty range).
+    let resp = req(
+        &mut ts,
+        &mut tr,
+        14,
+        "annotation_create",
+        Some(serde_json::json!({
+            "work_id": wid,
+            "annotation_id": 1,
+            "kind": "language",
+            "payload": serde_json::json!({"lang": "de"}).to_string(),
+            "char_start": 0,
+            "char_end": 0,
+            "is_private": false,
+        })),
+    )
+    .await;
+    assert!(is_ok(&resp), "annotation: {}", err_msg(&resp));
+
+    // A single line coalesces to one span covering [0, len).
+    let source_hash = blake3::hash(text.as_bytes()).to_hex().to_string();
+    let submit_payload = |hash: &str, rendition: &str| {
+        serde_json::json!({
+            "work_id": wid_hex,
+            "target_lang": "en",
+            "license": "cc-by",
+            "derived_from_model": null,
+            "spans": [{
+                "char_start": 0,
+                "char_end": text.chars().count(),
+                "source_hash": hash,
+                "rendition": rendition,
+            }],
+        })
+    };
+
+    // Unknown license rejected before anything else.
+    let mut bad = submit_payload(&source_hash, "Above all summits it is calm");
+    bad["license"] = serde_json::json!("made-up");
+    let resp = req(&mut ts, &mut tr, 20, "translation_submit", Some(bad)).await;
+    assert!(resp["type"] == "error", "unknown license must reject");
+    assert!(
+        err_msg(&resp).contains("unknown license"),
+        "{}",
+        err_msg(&resp)
+    );
+
+    // Stale source hash rejected: the source changed; retranslate.
+    let stale = blake3::hash("anderer text".as_bytes()).to_hex().to_string();
+    let resp = req(
+        &mut ts,
+        &mut tr,
+        21,
+        "translation_submit",
+        Some(submit_payload(&stale, "Above all summits it is calm")),
+    )
+    .await;
+    assert!(resp["type"] == "error", "stale hash must reject");
+    assert!(
+        err_msg(&resp).contains("source changed"),
+        "{}",
+        err_msg(&resp)
+    );
+
+    // Happy submit.
+    let resp = req(
+        &mut ts,
+        &mut tr,
+        22,
+        "translation_submit",
+        Some(submit_payload(&source_hash, "Above all summits it is calm")),
+    )
+    .await;
+    assert!(is_ok(&resp), "submit: {}", err_msg(&resp));
+    let sub1 = &resp["value"]["value"];
+    assert_eq!(sub1["grade"], "human-draft");
+    assert_eq!(sub1["submitter"].as_u64(), Some(translator_club));
+    let submission_id = sub1["submission"].as_str().unwrap().to_string();
+    assert_eq!(submission_id.len(), 64, "blake3 hex id");
+
+    // Two-person rule: the submitter cannot endorse their own.
+    let resp = req(
+        &mut ts,
+        &mut tr,
+        23,
+        "translation_endorse",
+        Some(serde_json::json!({"submission": submission_id})),
+    )
+    .await;
+    assert!(resp["type"] == "error", "self-endorse must reject");
+    assert!(
+        err_msg(&resp).contains("two-person rule"),
+        "{}",
+        err_msg(&resp)
+    );
+
+    // Endorsement by a second identity moves it up the ladder.
+    let resp = req(
+        &mut es,
+        &mut er,
+        30,
+        "translation_endorse",
+        Some(serde_json::json!({"submission": submission_id})),
+    )
+    .await;
+    assert!(is_ok(&resp), "endorse: {}", err_msg(&resp));
+    let up = &resp["value"]["value"];
+    assert_eq!(up["grade"], "human-reviewed");
+    assert_eq!(up["endorsements"], 1);
+    assert_eq!(
+        up["submission"].as_str(),
+        Some(submission_id.as_str()),
+        "the id is stable under endorsement"
+    );
+
+    // One endorsement per identity.
+    let resp = req(
+        &mut es,
+        &mut er,
+        31,
+        "translation_endorse",
+        Some(serde_json::json!({"submission": submission_id})),
+    )
+    .await;
+    assert!(resp["type"] == "error", "duplicate endorse must reject");
+    assert!(
+        err_msg(&resp).contains("already endorsed"),
+        "{}",
+        err_msg(&resp)
+    );
+
+    // List reflects the reviewed grade; any connected session reads.
+    let resp = req(
+        &mut es,
+        &mut er,
+        32,
+        "translation_list",
+        Some(serde_json::json!({"work_id": wid_hex, "lang": "en"})),
+    )
+    .await;
+    assert!(is_ok(&resp), "list: {}", err_msg(&resp));
+    let subs = resp["value"]["value"]["submissions"].as_array().cloned();
+    let subs = subs.unwrap_or_default();
+    assert_eq!(subs.len(), 1);
+    assert_eq!(subs[0]["grade"], "human-reviewed");
+    assert_eq!(subs[0]["endorsements"], 1);
+
+    // Retraction drops it back to draft.
+    let resp = req(
+        &mut es,
+        &mut er,
+        33,
+        "translation_unendorse",
+        Some(serde_json::json!({"submission": submission_id})),
+    )
+    .await;
+    assert!(is_ok(&resp), "unendorse: {}", err_msg(&resp));
+    assert_eq!(resp["value"]["value"]["grade"], "human-draft");
+    let resp = req(
+        &mut es,
+        &mut er,
+        34,
+        "translation_unendorse",
+        Some(serde_json::json!({"submission": submission_id})),
+    )
+    .await;
+    assert!(resp["type"] == "error", "double retraction must reject");
+
+    // A second submission by the endorser; the list orders strongest
+    // first, so the still-endorsed one wins once re-endorsed.
+    let resp = req(
+        &mut es,
+        &mut er,
+        40,
+        "translation_submit",
+        Some(submit_payload(
+            &source_hash,
+            "Over every peak there is quiet",
+        )),
+    )
+    .await;
+    assert!(is_ok(&resp), "second submit: {}", err_msg(&resp));
+    let sub2_id = resp["value"]["value"]["submission"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let resp = req(
+        &mut ts,
+        &mut tr,
+        41,
+        "translation_endorse",
+        Some(serde_json::json!({"submission": sub2_id})),
+    )
+    .await;
+    assert!(is_ok(&resp), "cross endorse: {}", err_msg(&resp));
+    let resp = req(
+        &mut es,
+        &mut er,
+        42,
+        "translation_list",
+        Some(serde_json::json!({"work_id": wid_hex, "lang": "en"})),
+    )
+    .await;
+    let subs = resp["value"]["value"]["submissions"].as_array().cloned();
+    let subs = subs.unwrap_or_default();
+    assert_eq!(subs.len(), 2, "two submissions recorded");
+    assert_eq!(
+        subs[0]["submission"].as_str(),
+        Some(sub2_id.as_str()),
+        "endorsed submission lists first"
+    );
+    assert_eq!(subs[0]["grade"], "human-reviewed");
+    assert_eq!(subs[1]["grade"], "human-draft");
+}

@@ -197,6 +197,9 @@ fn is_frozen_mutation(req: &WireRequest) -> bool {
             | WireRequest::AnnotationCreate { .. }
             | WireRequest::AnnotationDelete { .. }
             | WireRequest::ClubCreatePersonal { .. }
+            | WireRequest::TranslationSubmit { .. }
+            | WireRequest::TranslationEndorse { .. }
+            | WireRequest::TranslationUnendorse { .. }
     )
 }
 
@@ -371,6 +374,21 @@ pub fn dispatch(
         }
     }
 
+    // FR-155 Stage A: human renditions. The durable store does file
+    // I/O and submit validation only needs the server state briefly
+    // (session, club, spans, annotations) — gather under a short
+    // lock, then work outside it, same discipline as the LLM and
+    // capability routes above.
+    if matches!(
+        request,
+        WireRequest::TranslationSubmit { .. }
+            | WireRequest::TranslationEndorse { .. }
+            | WireRequest::TranslationUnendorse { .. }
+            | WireRequest::TranslationList { .. }
+    ) {
+        return dispatch_translation(state, session_id, request);
+    }
+
     if matches!(request, WireRequest::WorkWritingFeedback { .. }) {
         return dispatch_writing_feedback(state, session_id, request);
     }
@@ -524,6 +542,162 @@ fn dispatch_translate_capabilities(
             }
             Ok(ResponseValue::Json(payload))
         }
+    }
+}
+
+/// FR-155 Stage A: human renditions over the wire. Submit validates
+/// against the work's current spans (source-anchored, never
+/// similarity-to-MT), endorse/unendorse enforce the two-person rule
+/// and one-per-identity in the store, list is any connected session.
+/// All four touch only the durable rendition store — no server-state
+/// mutation — so state is gathered under a short lock and the file
+/// I/O runs outside it.
+fn dispatch_translation(
+    state: &SharedState,
+    session_id: crate::server::SessionId,
+    request: WireRequest,
+) -> Result<ResponseValue, crate::server::ServerError> {
+    use crate::server::translate::{HumanSpanRendition, HumanSubmission, HUMAN_LICENSE_TAGS};
+    let store = state.renditions.clone().ok_or_else(|| {
+        crate::server::ServerError::Internal(
+            "rendition store unavailable (server data directory unset)".to_string(),
+        )
+    })?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    fn human_summary(sub: &crate::server::translate::HumanSubmission) -> serde_json::Value {
+        serde_json::json!({
+            "submission": sub.id().to_hex().to_string(),
+            "work_id": sub.work_id,
+            "target_lang": sub.target_lang,
+            "grade": sub.grade(),
+            "submitter": sub.submitter_club,
+            "license": sub.license,
+            "derived_from_model": sub.derived_from_model,
+            "spans": sub.spans.len(),
+            "endorsements": sub.endorsements.len(),
+            "endorsers": sub.endorsements.iter().map(|e| e.club_id).collect::<Vec<_>>(),
+            "created_at": sub.created_at,
+        })
+    }
+
+    match request {
+        WireRequest::TranslationList { work_id, lang } => {
+            state
+                .server
+                .with_server_ref(|srv| srv.ensure_session(session_id))?;
+            let subs = store.list_human(&work_id.to_lowercase(), &lang);
+            Ok(ResponseValue::Json(serde_json::json!({
+                "work_id": work_id.to_lowercase(),
+                "lang": lang,
+                "submissions": subs.iter().map(human_summary).collect::<Vec<_>>(),
+            })))
+        }
+        WireRequest::TranslationEndorse { submission } => {
+            let club = state.server.with_server_ref(|srv| {
+                srv.ensure_logged_in(session_id)?;
+                srv.resolve_author_club(session_id)
+                    .ok_or(crate::server::ServerError::NotAuthorized)
+            })?;
+            let hash = blake3::Hash::from_hex(&submission).map_err(|_| {
+                crate::server::ServerError::InvalidArgument(
+                    "submission must be a blake3 hex id".to_string(),
+                )
+            })?;
+            let sub = store
+                .human_endorse(&hash, club, now)
+                .map_err(crate::server::ServerError::InvalidArgument)?;
+            Ok(ResponseValue::Json(human_summary(&sub)))
+        }
+        WireRequest::TranslationUnendorse { submission } => {
+            let club = state.server.with_server_ref(|srv| {
+                srv.ensure_logged_in(session_id)?;
+                srv.resolve_author_club(session_id)
+                    .ok_or(crate::server::ServerError::NotAuthorized)
+            })?;
+            let hash = blake3::Hash::from_hex(&submission).map_err(|_| {
+                crate::server::ServerError::InvalidArgument(
+                    "submission must be a blake3 hex id".to_string(),
+                )
+            })?;
+            let sub = store
+                .human_unendorse(&hash, club)
+                .map_err(crate::server::ServerError::InvalidArgument)?;
+            Ok(ResponseValue::Json(human_summary(&sub)))
+        }
+        WireRequest::TranslationSubmit {
+            work_id,
+            target_lang,
+            license,
+            derived_from_model,
+            spans,
+        } => {
+            if !HUMAN_LICENSE_TAGS.contains(&license.as_str()) {
+                return Err(crate::server::ServerError::InvalidArgument(format!(
+                    "unknown license {license:?}; expected one of {HUMAN_LICENSE_TAGS:?}"
+                )));
+            }
+            let work_hex = work_id.to_lowercase();
+            let work_num = u64::from_str_radix(&work_hex, 16).map_err(|_| {
+                crate::server::ServerError::InvalidArgument(
+                    "work_id must be hex (the public API's addressing)".to_string(),
+                )
+            })?;
+            // Gather under a short write lock (annotations need &mut),
+            // validate and persist outside it.
+            let (club, annotations, span_views) = state.server.with_server(|srv| {
+                srv.ensure_logged_in(session_id)?;
+                let club = srv
+                    .resolve_author_club(session_id)
+                    .ok_or(crate::server::ServerError::NotAuthorized)?;
+                srv.ensure_materialized(work_num)?;
+                // Renditions serve the public read path; a work that
+                // is not publicly readable has nothing to attach to.
+                srv.public_work_edition(work_num)?;
+                let annotations = srv.public_language_annotations(work_num);
+                let span_views = srv.edition_text_spans(work_num);
+                Ok::<_, crate::server::ServerError>((club, annotations, span_views))
+            })?;
+            let (doc_default, overrides) =
+                crate::server::translate::parse_language_annotations(&annotations);
+            let candidate: Vec<HumanSpanRendition> = spans
+                .into_iter()
+                .map(|p| HumanSpanRendition {
+                    char_start: p.char_start,
+                    char_end: p.char_end,
+                    source_hash: p.source_hash,
+                    rendition: p.rendition,
+                })
+                .collect();
+            crate::server::translate::validate_human_submission(
+                &span_views,
+                doc_default.as_deref(),
+                &overrides,
+                &target_lang,
+                &candidate,
+            )
+            .map_err(crate::server::ServerError::InvalidArgument)?;
+            let sub = HumanSubmission {
+                work_id: work_hex.clone(),
+                target_lang,
+                submitter_club: club,
+                derived_from_model,
+                license,
+                spans: candidate,
+                created_at: now,
+                endorsements: Vec::new(),
+            };
+            let id = store.put_human(&sub).map_err(|e| {
+                crate::server::ServerError::Internal(format!("persisting submission: {e}"))
+            })?;
+            let mut json = human_summary(&sub);
+            json["submission"] = serde_json::json!(id.to_hex().to_string());
+            Ok(ResponseValue::Json(json))
+        }
+        _ => unreachable!("routed only for translation ops"),
     }
 }
 

@@ -492,6 +492,324 @@ impl RenditionStore {
     pub fn base(&self) -> &std::path::Path {
         &self.base
     }
+
+    // === Human renditions (FR-155 Stage A / FR-157 application) ===
+
+    fn write_atomic(&self, path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let tmp = path.with_extension("tmp");
+        std::fs::write(&tmp, bytes)?;
+        std::fs::rename(&tmp, path)
+    }
+
+    fn human_path(&self, id: &blake3::Hash) -> std::path::PathBuf {
+        let hex = id.to_hex().to_string();
+        self.base
+            .join("human")
+            .join(&hex[..2])
+            .join(format!("{hex}.json"))
+    }
+
+    fn human_index_path(&self, work_id: &str, lang: &str) -> std::path::PathBuf {
+        self.base
+            .join("human-index")
+            .join(format!("{}-{}.json", work_id.to_lowercase(), lang))
+    }
+
+    /// Persist a submission (atomic) and add it to the (work, lang)
+    /// index. The submission's id is its content: endorsements change
+    /// the file, never the id.
+    pub fn put_human(&self, sub: &HumanSubmission) -> std::io::Result<blake3::Hash> {
+        let id = sub.id();
+        let json = serde_json::to_string_pretty(sub)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        self.write_atomic(&self.human_path(&id), json.as_bytes())?;
+        let idx_path = self.human_index_path(&sub.work_id, &sub.target_lang);
+        let hex = id.to_hex().to_string();
+        let mut ids: Vec<String> = std::fs::read_to_string(&idx_path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        if !ids.contains(&hex) {
+            ids.push(hex);
+            let idx_json = serde_json::to_string_pretty(&ids)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            self.write_atomic(&idx_path, idx_json.as_bytes())?;
+        }
+        Ok(id)
+    }
+
+    pub fn get_human(&self, id: &blake3::Hash) -> Option<HumanSubmission> {
+        let path = self.human_path(id);
+        let data = std::fs::read_to_string(path).ok()?;
+        serde_json::from_str(&data).ok()
+    }
+
+    /// The strongest submission for (work, lang): reviewed beats
+    /// draft; within a grade, more endorsements beat fewer; then
+    /// newest.
+    pub fn best_human(&self, work_id: &str, lang: &str) -> Option<HumanSubmission> {
+        let idx_path = self.human_index_path(work_id, lang);
+        let ids: Vec<String> = std::fs::read_to_string(idx_path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        ids.iter()
+            .filter_map(|hex| {
+                blake3::Hash::from_hex(hex)
+                    .ok()
+                    .and_then(|h| self.get_human(&h))
+            })
+            .max_by_key(|s| {
+                (
+                    !s.endorsements.is_empty(),
+                    s.endorsements.len(),
+                    s.created_at,
+                )
+            })
+    }
+
+    /// List submissions for (work, lang), best first (for UI and the
+    /// trust-lab).
+    pub fn list_human(&self, work_id: &str, lang: &str) -> Vec<HumanSubmission> {
+        let idx_path = self.human_index_path(work_id, lang);
+        let ids: Vec<String> = std::fs::read_to_string(idx_path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        let mut subs: Vec<HumanSubmission> = ids
+            .iter()
+            .filter_map(|hex| {
+                blake3::Hash::from_hex(hex)
+                    .ok()
+                    .and_then(|h| self.get_human(&h))
+            })
+            .collect();
+        // Strongest first: endorsed before draft (empty endorsements
+        // sort last — false < true), then more endorsements, then
+        // newest.
+        subs.sort_by(|a, b| {
+            a.endorsements
+                .is_empty()
+                .cmp(&b.endorsements.is_empty())
+                .then(b.endorsements.len().cmp(&a.endorsements.len()))
+                .then(b.created_at.cmp(&a.created_at))
+        });
+        subs
+    }
+
+    /// Add an endorsement. Two-person rule: the submitter cannot
+    /// endorse their own submission; one endorsement per identity,
+    /// retractable via `human_unendorse`.
+    pub fn human_endorse(
+        &self,
+        id: &blake3::Hash,
+        club_id: u64,
+        now: u64,
+    ) -> Result<HumanSubmission, String> {
+        let mut sub = self
+            .get_human(id)
+            .ok_or_else(|| "submission not found".to_string())?;
+        if sub.submitter_club == club_id {
+            return Err(
+                "two-person rule: the submitter cannot endorse their own submission".into(),
+            );
+        }
+        if sub.endorsements.iter().any(|e| e.club_id == club_id) {
+            return Err("this club has already endorsed this submission".into());
+        }
+        sub.endorsements.push(HumanEndorsement {
+            club_id,
+            timestamp: now,
+        });
+        let json = serde_json::to_string_pretty(&sub)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e).to_string())?;
+        self.write_atomic(&self.human_path(id), json.as_bytes())
+            .map_err(|e| e.to_string())?;
+        Ok(sub)
+    }
+
+    /// Retract an endorsement (Gold's un-endorse).
+    pub fn human_unendorse(
+        &self,
+        id: &blake3::Hash,
+        club_id: u64,
+    ) -> Result<HumanSubmission, String> {
+        let mut sub = self
+            .get_human(id)
+            .ok_or_else(|| "submission not found".to_string())?;
+        let before = sub.endorsements.len();
+        sub.endorsements.retain(|e| e.club_id != club_id);
+        if sub.endorsements.len() == before {
+            return Err("no endorsement from this club to retract".into());
+        }
+        let json = serde_json::to_string_pretty(&sub)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e).to_string())?;
+        self.write_atomic(&self.human_path(id), json.as_bytes())
+            .map_err(|e| e.to_string())?;
+        Ok(sub)
+    }
+}
+
+/// FR-24 license tags a human rendition may declare (must match the
+/// `edition::License` serde names).
+pub const HUMAN_LICENSE_TAGS: &[&str] = &[
+    "all-rights-reserved",
+    "transcopyright",
+    "cc-by",
+    "cc-by-sa",
+    "public-domain",
+];
+
+pub const HUMAN_GRADE_DRAFT: &str = "human-draft";
+pub const HUMAN_GRADE_REVIEWED: &str = "human-reviewed";
+
+/// One translated span inside a human submission. `source_hash`
+/// anchors the rendition to the exact source text it translated —
+/// validation rejects a submission whose hashes do not match the
+/// work's current spans (the source was edited; retranslate).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HumanSpanRendition {
+    pub char_start: usize,
+    pub char_end: usize,
+    pub source_hash: String,
+    pub rendition: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HumanEndorsement {
+    pub club_id: u64,
+    pub timestamp: u64,
+}
+
+/// A whole-document human translation into one language, with its
+/// trust record. Stored under `<data>/renditions/human/` — durable
+/// like machine renditions, still never content: not addressable,
+/// not transcludable, a parallel reading keyed to source spans.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HumanSubmission {
+    /// Work id as hex (the public API's addressing).
+    pub work_id: String,
+    pub target_lang: String,
+    pub submitter_club: u64,
+    /// The engine model the translator started from, if any — PROV
+    /// `wasRevisionOf` material.
+    pub derived_from_model: Option<String>,
+    pub license: String,
+    pub spans: Vec<HumanSpanRendition>,
+    pub created_at: u64,
+    pub endorsements: Vec<HumanEndorsement>,
+}
+
+impl HumanSubmission {
+    /// Content-addressed identity over the immutable core
+    /// (work/lang/submitter/license/model/spans/created_at).
+    /// Endorsements are deliberately excluded: they are the trust
+    /// record riding on the submission, not its identity.
+    pub fn id(&self) -> blake3::Hash {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"xudanu:human-submission:1");
+        for part in [
+            self.work_id.as_bytes(),
+            self.target_lang.as_bytes(),
+            &self.submitter_club.to_le_bytes(),
+            self.derived_from_model.as_deref().unwrap_or("").as_bytes(),
+            self.license.as_bytes(),
+            &self.created_at.to_le_bytes(),
+        ] {
+            hasher.update(&(part.len() as u64).to_le_bytes());
+            hasher.update(part);
+        }
+        for s in &self.spans {
+            hasher.update(&(s.char_start as u64).to_le_bytes());
+            hasher.update(&(s.char_end as u64).to_le_bytes());
+            hasher.update(s.source_hash.as_bytes());
+            hasher.update(s.rendition.as_bytes());
+        }
+        hasher.finalize()
+    }
+
+    pub fn grade(&self) -> &'static str {
+        if self.endorsements.is_empty() {
+            HUMAN_GRADE_DRAFT
+        } else {
+            HUMAN_GRADE_REVIEWED
+        }
+    }
+}
+
+/// Source-anchored validation. Every translatable span (declared
+/// source language, not the target) must be covered exactly once by
+/// a candidate whose range equals the span's and whose source_hash
+/// matches the span's current text — never a similarity check
+/// against the machine draft. Extra or unknown ranges are rejected.
+pub fn validate_human_submission(
+    spans: &[TextSpanView],
+    doc_default: Option<&str>,
+    overrides: &[LanguageOverride],
+    target_lang: &str,
+    candidate: &[HumanSpanRendition],
+) -> Result<(), String> {
+    if !valid_language_tag(target_lang) {
+        return Err(format!("invalid target language tag: {target_lang}"));
+    }
+    let mut used = vec![false; candidate.len()];
+    for span in spans {
+        let Some(source_lang) =
+            span_source_language(doc_default, overrides, span.char_start, span.char_end)
+        else {
+            continue;
+        };
+        if source_lang == target_lang {
+            continue;
+        }
+        let matches: Vec<usize> = candidate
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.char_start == span.char_start && c.char_end == span.char_end)
+            .map(|(i, _)| i)
+            .collect();
+        match matches.len() {
+            0 => {
+                return Err(format!(
+                    "span [{}, {}) is not covered",
+                    span.char_start, span.char_end
+                ))
+            }
+            1 => {
+                let i = matches[0];
+                used[i] = true;
+                let expected = blake3::hash(span.text.as_bytes()).to_hex().to_string();
+                if candidate[i].source_hash != expected {
+                    return Err(format!(
+                        "source hash mismatch for span [{}, {}) — the source changed; retranslate",
+                        span.char_start, span.char_end
+                    ));
+                }
+                if candidate[i].rendition.trim().is_empty() {
+                    return Err(format!(
+                        "empty rendition for span [{}, {})",
+                        span.char_start, span.char_end
+                    ));
+                }
+            }
+            _ => {
+                return Err(format!(
+                    "duplicate coverage for span [{}, {})",
+                    span.char_start, span.char_end
+                ))
+            }
+        }
+    }
+    if let Some(i) = used.iter().position(|u| !u) {
+        return Err(format!(
+            "candidate span [{}, {}) does not correspond to a translatable span",
+            candidate[i].char_start, candidate[i].char_end
+        ));
+    }
+    Ok(())
 }
 
 // === Language declaration resolution ===
@@ -620,6 +938,11 @@ pub struct TranslatedRead {
 /// translated document keeps its shape. `store`, when present, is
 /// consulted after the memory cache and written on every fresh
 /// rendition (Stage 3 durability: renditions survive restarts).
+/// `human`, when present, is consulted first, span by span: a human
+/// span applies only while the source text still hashes to what the
+/// translator anchored to — an edited source invalidates that span
+/// (it falls back to the machine path), never silently serving a
+/// stale human rendition.
 pub fn assemble_translated_read<P: RenditionProvider>(
     original_text: &str,
     spans: &[TextSpanView],
@@ -627,6 +950,7 @@ pub fn assemble_translated_read<P: RenditionProvider>(
     target_lang: &str,
     provider: &P,
     store: Option<&RenditionStore>,
+    human: Option<&HumanSubmission>,
 ) -> TranslatedRead {
     let (doc_default, overrides) = parse_language_annotations(annotations);
     let now = SystemTime::now()
@@ -635,6 +959,10 @@ pub fn assemble_translated_read<P: RenditionProvider>(
         .unwrap_or(0);
 
     let mut renditions: Vec<Option<TranslationEntry>> = Vec::with_capacity(spans.len());
+    // Parallel to `spans`: the human span picked for that index, with
+    // its declared source language.
+    let mut human_picks: Vec<Option<(&HumanSpanRendition, String)>> = vec![None; spans.len()];
+    let mut human_used = 0usize;
     let mut same_language = 0usize;
     let mut undeclared = 0usize;
     let mut cache_hits = 0usize;
@@ -660,6 +988,22 @@ pub fn assemble_translated_read<P: RenditionProvider>(
             same_language += 1;
             renditions.push(None);
             continue;
+        }
+        // Human before machine: a human span whose range matches and
+        // whose source hash still matches the live text wins over
+        // cache, disk, and engine, and makes no provider call.
+        if let Some(h) = human {
+            let span_hash = blake3::hash(span.text.as_bytes()).to_hex().to_string();
+            if let Some(hs) = h.spans.iter().find(|s| {
+                s.char_start == span.char_start
+                    && s.char_end == span.char_end
+                    && s.source_hash == span_hash
+            }) {
+                human_used += 1;
+                human_picks[idx] = Some((hs, source_lang));
+                renditions.push(None);
+                continue;
+            }
         }
         let key = cache_key(
             &span.text,
@@ -735,34 +1079,64 @@ pub fn assemble_translated_read<P: RenditionProvider>(
     let mut rendition_json = Vec::new();
     let mut translated = 0usize;
     let mut last_end = 0usize;
-    for (span, entry) in spans.iter().zip(renditions.iter()) {
+    for ((span, entry), human_pick) in spans.iter().zip(renditions.iter()).zip(human_picks.iter()) {
         let gap_end = span.char_start.min(original_chars.len());
         if last_end < gap_end {
             text.extend(&original_chars[last_end..gap_end]);
         }
-        match entry {
-            Some(e) => {
-                translated += 1;
-                text.push_str(&e.rendition);
-                rendition_json.push(serde_json::json!({
-                    "start": span.char_start,
-                    "end": span.char_end,
-                    "source_hash": e.source_hash,
-                    "rendition_hash": e.rendition_hash,
-                    "source_lang": e.source_lang,
-                    "target_lang": e.target_lang,
-                    "provider": e.provider,
-                    "model": e.model,
-                    "created_at": e.created_at,
-                    "prov": {
-                        "entity": e.rendition_hash,
-                        "wasDerivedFrom": e.source_hash,
-                        "wasGeneratedBy": "xudanu:Translation",
-                        "quality_grade": "machine-gisting",
-                    },
-                }));
+        if let Some((hs, hs_source_lang)) = human_pick {
+            translated += 1;
+            text.push_str(&hs.rendition);
+            let rendition_hash = blake3::hash(hs.rendition.as_bytes()).to_hex().to_string();
+            let mut prov = serde_json::json!({
+                "entity": rendition_hash,
+                "wasDerivedFrom": hs.source_hash,
+                "wasGeneratedBy": "xudanu:HumanSubmission",
+                "quality_grade": human.map(HumanSubmission::grade).unwrap_or("human-draft"),
+                "submitter": human.map(|h| h.submitter_club),
+            });
+            if let Some(h) = human {
+                if let Some(model) = &h.derived_from_model {
+                    prov["wasRevisionOf"] = serde_json::json!(model);
+                }
             }
-            None => text.push_str(&span.text),
+            rendition_json.push(serde_json::json!({
+                "start": span.char_start,
+                "end": span.char_end,
+                "source_hash": hs.source_hash,
+                "rendition_hash": rendition_hash,
+                "source_lang": hs_source_lang,
+                "target_lang": target_lang,
+                "provider": "human",
+                "model": human.and_then(|h| h.derived_from_model.clone()),
+                "created_at": human.map(|h| h.created_at),
+                "prov": prov,
+            }));
+        } else {
+            match entry {
+                Some(e) => {
+                    translated += 1;
+                    text.push_str(&e.rendition);
+                    rendition_json.push(serde_json::json!({
+                        "start": span.char_start,
+                        "end": span.char_end,
+                        "source_hash": e.source_hash,
+                        "rendition_hash": e.rendition_hash,
+                        "source_lang": e.source_lang,
+                        "target_lang": e.target_lang,
+                        "provider": e.provider,
+                        "model": e.model,
+                        "created_at": e.created_at,
+                        "prov": {
+                            "entity": e.rendition_hash,
+                            "wasDerivedFrom": e.source_hash,
+                            "wasGeneratedBy": "xudanu:Translation",
+                            "quality_grade": "machine-gisting",
+                        },
+                    }));
+                }
+                None => text.push_str(&span.text),
+            }
         }
         last_end = span.char_end.min(original_chars.len());
     }
@@ -770,11 +1144,21 @@ pub fn assemble_translated_read<P: RenditionProvider>(
         text.extend(&original_chars[last_end..]);
     }
 
+    // Honest top-level grade: human only when every translated span
+    // came from the human submission; partial coverage keeps the
+    // machine grade while the per-span entries carry the truth.
+    let top_grade = if human_used > 0 && human_used == translated {
+        human
+            .map(HumanSubmission::grade)
+            .unwrap_or("machine-gisting")
+    } else {
+        "machine-gisting"
+    };
     let mut block = serde_json::json!({
         "target_lang": target_lang,
         "provider": provider.provider_name(),
         "model": provider.model_name(),
-        "quality_grade": "machine-gisting",
+        "quality_grade": top_grade,
         "spans_total": spans.len(),
         "spans_translated": translated,
         "spans_same_language": same_language,
@@ -785,6 +1169,18 @@ pub fn assemble_translated_read<P: RenditionProvider>(
         "provider_calls": provider_calls,
         "renditions": rendition_json,
     });
+    if let Some(h) = human {
+        block["human"] = serde_json::json!({
+            "submission": h.id().to_hex().to_string(),
+            "grade": h.grade(),
+            "submitter": h.submitter_club,
+            "license": h.license,
+            "endorsements": h.endorsements.len(),
+            "endorsers": h.endorsements.iter().map(|e| e.club_id).collect::<Vec<_>>(),
+            "spans_offered": h.spans.len(),
+            "spans_used": human_used,
+        });
+    }
     if !errors.is_empty() {
         block["errors"] = serde_json::json!(errors);
     }
@@ -947,7 +1343,8 @@ mod tests {
         };
 
         let original = "eins zwei ";
-        let first = assemble_translated_read(original, &spans, &annotations, "en", &provider, None);
+        let first =
+            assemble_translated_read(original, &spans, &annotations, "en", &provider, None, None);
         assert_eq!(first.provider_calls, 1, "one batch, one call");
         assert_eq!(
             first.text, "[de->en] eins [de->en] zwei ",
@@ -957,7 +1354,7 @@ mod tests {
         assert_eq!(first.block["cache_hits"], 0);
 
         let second =
-            assemble_translated_read(original, &spans, &annotations, "en", &provider, None);
+            assemble_translated_read(original, &spans, &annotations, "en", &provider, None, None);
         assert_eq!(second.provider_calls, 0, "second read is all cache hit");
         assert_eq!(second.block["cache_hits"], 2);
         assert_eq!(
@@ -989,7 +1386,8 @@ mod tests {
             calls: AtomicUsize::new(0),
             fail: false,
         };
-        let out = assemble_translated_read(original, &spans, &annotations, "en", &provider, None);
+        let out =
+            assemble_translated_read(original, &spans, &annotations, "en", &provider, None, None);
         assert_eq!(
             out.text, "[de->en] Es irrt der Mensch.\n\n[de->en] Durch die Gasse.",
             "separators between spans pass through unchanged"
@@ -1016,7 +1414,15 @@ mod tests {
             calls: AtomicUsize::new(0),
             fail: false,
         };
-        let out = assemble_translated_read("eins????", &spans, &annotations, "en", &provider, None);
+        let out = assemble_translated_read(
+            "eins????",
+            &spans,
+            &annotations,
+            "en",
+            &provider,
+            None,
+            None,
+        );
         assert_eq!(out.provider_calls, 1, "only the German span is fetched");
         assert_eq!(out.block["spans_same_language"], 1);
         assert_eq!(out.block["spans_undeclared"], 0);
@@ -1036,7 +1442,8 @@ mod tests {
             calls: AtomicUsize::new(0),
             fail: true,
         };
-        let out = assemble_translated_read("eins", &spans, &annotations, "en", &provider, None);
+        let out =
+            assemble_translated_read("eins", &spans, &annotations, "en", &provider, None, None);
         assert_eq!(out.text, "eins", "read serves the original, never fails");
         assert!(out.block["errors"].is_array());
     }
@@ -1099,6 +1506,7 @@ mod tests {
             "en",
             &provider,
             Some(&store),
+            None,
         );
         assert_eq!(first.provider_calls, 1);
         assert_eq!(first.block["cache_hits"], 0);
@@ -1113,6 +1521,7 @@ mod tests {
             "en",
             &provider,
             Some(&store),
+            None,
         );
         assert_eq!(second.provider_calls, 0, "disk hits replace engine calls");
         assert_eq!(second.block["disk_hits"], 2);
@@ -1143,6 +1552,7 @@ mod tests {
             "en",
             &provider,
             Some(&store),
+            None,
         );
         assert_eq!(first.provider_calls, 1);
 
@@ -1159,6 +1569,7 @@ mod tests {
             "en",
             &provider,
             Some(&store),
+            None,
         );
         assert_eq!(second.provider_calls, 1, "corrupt entry retranslates");
         assert_eq!(second.text, first.text);
@@ -1182,8 +1593,15 @@ mod tests {
             calls: AtomicUsize::new(0),
             fail: false,
         };
-        let first =
-            assemble_translated_read("neun", &spans, &annotations, "en", &provider, Some(&store));
+        let first = assemble_translated_read(
+            "neun",
+            &spans,
+            &annotations,
+            "en",
+            &provider,
+            Some(&store),
+            None,
+        );
         assert_eq!(first.provider_calls, 1);
 
         // Rewrite the file with altered rendition text but the
@@ -1205,8 +1623,15 @@ mod tests {
 
         // The read path self-heals: retranslate, overwrite, serve.
         cache_clear_for_tests();
-        let second =
-            assemble_translated_read("neun", &spans, &annotations, "en", &provider, Some(&store));
+        let second = assemble_translated_read(
+            "neun",
+            &spans,
+            &annotations,
+            "en",
+            &provider,
+            Some(&store),
+            None,
+        );
         assert_eq!(second.provider_calls, 1, "tampered entry retranslates");
         assert_eq!(second.text, first.text, "the tampered text never served");
         let healed = store.get(&key).expect("overwritten with a good entry");
@@ -1227,9 +1652,339 @@ mod tests {
             fail: false,
         };
         // No store: exactly Stage 2 behavior, durable flag false.
-        let out = assemble_translated_read("acht", &spans, &annotations, "en", &provider, None);
+        let out =
+            assemble_translated_read("acht", &spans, &annotations, "en", &provider, None, None);
         assert_eq!(out.provider_calls, 1);
         assert_eq!(out.block["disk_hits"], 0);
         assert_eq!(out.block["renditions_durable"], false);
+    }
+
+    // === Human renditions (Stage A) ===
+
+    fn hspan(s: usize, e: usize, source: &str, rendition: &str) -> HumanSpanRendition {
+        HumanSpanRendition {
+            char_start: s,
+            char_end: e,
+            source_hash: blake3::hash(source.as_bytes()).to_hex().to_string(),
+            rendition: rendition.into(),
+        }
+    }
+
+    fn human_sub(
+        work: &str,
+        lang: &str,
+        submitter: u64,
+        spans: Vec<HumanSpanRendition>,
+    ) -> HumanSubmission {
+        HumanSubmission {
+            work_id: work.to_string(),
+            target_lang: lang.to_string(),
+            submitter_club: submitter,
+            derived_from_model: None,
+            license: "cc-by".into(),
+            spans,
+            created_at: 1_000,
+            endorsements: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn human_rendition_preferred_over_machine_and_makes_no_provider_calls() {
+        cache_clear_for_tests();
+        let spans = vec![
+            TextSpanView {
+                char_start: 0,
+                char_end: 5,
+                text: "hund ".into(),
+            },
+            TextSpanView {
+                char_start: 5,
+                char_end: 11,
+                text: "katze".into(),
+            },
+        ];
+        let annotations = vec![ann("language", "de", 0, 0)];
+        let provider = FakeProvider {
+            calls: AtomicUsize::new(0),
+            fail: false,
+        };
+        let sub = human_sub(
+            "0abc",
+            "en",
+            7,
+            vec![hspan(0, 5, "hund ", "dog "), hspan(5, 11, "katze", "cat")],
+        );
+
+        let out = assemble_translated_read(
+            "hund katze",
+            &spans,
+            &annotations,
+            "en",
+            &provider,
+            None,
+            Some(&sub),
+        );
+        assert_eq!(out.provider_calls, 0, "human coverage means no engine call");
+        assert_eq!(out.text, "dog cat");
+        assert_eq!(out.block["quality_grade"], "human-draft");
+        assert_eq!(out.block["human"]["spans_used"], 2);
+        assert_eq!(out.block["human"]["grade"], "human-draft");
+        assert_eq!(out.block["human"]["submitter"], 7);
+        assert_eq!(out.block["renditions"][0]["provider"], "human");
+        assert_eq!(
+            out.block["renditions"][0]["prov"]["quality_grade"],
+            "human-draft"
+        );
+        assert_eq!(out.block["renditions"][1]["provider"], "human");
+
+        // One endorsement moves the same submission up the ladder.
+        let mut reviewed = sub.clone();
+        reviewed.endorsements.push(HumanEndorsement {
+            club_id: 99,
+            timestamp: 5_000,
+        });
+        let out2 = assemble_translated_read(
+            "hund katze",
+            &spans,
+            &annotations,
+            "en",
+            &provider,
+            None,
+            Some(&reviewed),
+        );
+        assert_eq!(out2.block["quality_grade"], "human-reviewed");
+        assert_eq!(out2.block["human"]["endorsements"], 1);
+    }
+
+    #[test]
+    fn human_partial_coverage_falls_back_to_machine() {
+        cache_clear_for_tests();
+        let spans = vec![
+            TextSpanView {
+                char_start: 0,
+                char_end: 5,
+                text: "maus ".into(),
+            },
+            TextSpanView {
+                char_start: 5,
+                char_end: 11,
+                text: "vogel".into(),
+            },
+        ];
+        let annotations = vec![ann("language", "de", 0, 0)];
+        let provider = FakeProvider {
+            calls: AtomicUsize::new(0),
+            fail: false,
+        };
+        // Covers only the first span; the second goes to the engine.
+        let sub = human_sub("0abc", "en", 7, vec![hspan(0, 5, "maus ", "mouse ")]);
+
+        let out = assemble_translated_read(
+            "maus vogel",
+            &spans,
+            &annotations,
+            "en",
+            &provider,
+            None,
+            Some(&sub),
+        );
+        assert_eq!(out.provider_calls, 1);
+        assert_eq!(out.text, "mouse [de->en] vogel");
+        // Partial coverage keeps the machine grade at the top level;
+        // the per-span entries carry the mixed truth.
+        assert_eq!(out.block["quality_grade"], "machine-gisting");
+        assert_eq!(out.block["human"]["spans_used"], 1);
+        assert_eq!(out.block["human"]["spans_offered"], 1);
+        assert_eq!(out.block["renditions"][0]["provider"], "human");
+        assert_eq!(out.block["renditions"][1]["provider"], "fake");
+    }
+
+    #[test]
+    fn human_span_with_stale_source_hash_falls_back_to_machine() {
+        cache_clear_for_tests();
+        let spans = vec![TextSpanView {
+            char_start: 0,
+            char_end: 5,
+            text: "fuchs".into(),
+        }];
+        let annotations = vec![ann("language", "de", 0, 0)];
+        let provider = FakeProvider {
+            calls: AtomicUsize::new(0),
+            fail: false,
+        };
+        // Hash anchored to different source text: the source was
+        // edited after submission; the human span must not apply.
+        let mut stale = hspan(0, 5, "fuchz", "fox");
+        stale.char_end = 5;
+        let sub = human_sub("0abc", "en", 7, vec![stale]);
+
+        let out = assemble_translated_read(
+            "fuchs",
+            &spans,
+            &annotations,
+            "en",
+            &provider,
+            None,
+            Some(&sub),
+        );
+        assert_eq!(
+            out.provider_calls, 1,
+            "stale human span falls back to engine"
+        );
+        assert_eq!(out.text, "[de->en] fuchs");
+        assert_eq!(out.block["human"]["spans_used"], 0);
+        assert_eq!(out.block["quality_grade"], "machine-gisting");
+    }
+
+    #[test]
+    fn human_submission_id_stable_under_endorsement() {
+        let mut sub = human_sub("0abc", "en", 7, vec![hspan(0, 5, "hund ", "dog ")]);
+        let id_before = sub.id();
+        assert_eq!(sub.grade(), "human-draft");
+        sub.endorsements.push(HumanEndorsement {
+            club_id: 99,
+            timestamp: 5_000,
+        });
+        assert_eq!(
+            sub.id(),
+            id_before,
+            "endorsements ride the record, not the id"
+        );
+        assert_eq!(sub.grade(), "human-reviewed");
+    }
+
+    #[test]
+    fn validate_human_submission_accepts_exact_coverage() {
+        let spans = vec![
+            TextSpanView {
+                char_start: 0,
+                char_end: 5,
+                text: "hund ".into(),
+            },
+            TextSpanView {
+                char_start: 5,
+                char_end: 11,
+                text: "katze".into(),
+            },
+        ];
+        let overrides = vec![];
+        let candidate = vec![hspan(0, 5, "hund ", "dog "), hspan(5, 11, "katze", "cat")];
+        assert!(
+            validate_human_submission(&spans, Some("de"), &overrides, "en", &candidate).is_ok()
+        );
+        // Target equal to the source language: nothing to translate,
+        // so nothing to cover.
+        assert!(validate_human_submission(&spans, Some("de"), &overrides, "de", &[]).is_ok());
+    }
+
+    #[test]
+    fn validate_human_submission_rejects_broken_coverage() {
+        let spans = vec![TextSpanView {
+            char_start: 0,
+            char_end: 5,
+            text: "hund ".into(),
+        }];
+        let overrides = vec![];
+
+        // Missing coverage.
+        let err = validate_human_submission(&spans, Some("de"), &overrides, "en", &[])
+            .expect_err("uncovered span");
+        assert!(err.contains("not covered"), "{err}");
+
+        // Source hash mismatch — the source changed; retranslate.
+        let mut stale = hspan(0, 5, "hund", "dog ");
+        stale.char_end = 5;
+        let err = validate_human_submission(&spans, Some("de"), &overrides, "en", &[stale])
+            .expect_err("hash mismatch");
+        assert!(err.contains("source changed"), "{err}");
+
+        // Duplicate coverage of one span.
+        let dup = vec![hspan(0, 5, "hund ", "dog "), hspan(0, 5, "hund ", "dog ")];
+        let err = validate_human_submission(&spans, Some("de"), &overrides, "en", &dup)
+            .expect_err("duplicate");
+        assert!(err.contains("duplicate coverage"), "{err}");
+
+        // Candidate range that is no translatable span.
+        let extra = vec![hspan(0, 5, "hund ", "dog "), hspan(6, 9, "???", "!!!")];
+        let err = validate_human_submission(&spans, Some("de"), &overrides, "en", &extra)
+            .expect_err("extra range");
+        assert!(err.contains("does not correspond"), "{err}");
+
+        // Empty rendition.
+        let empty = vec![hspan(0, 5, "hund ", "   ")];
+        let err = validate_human_submission(&spans, Some("de"), &overrides, "en", &empty)
+            .expect_err("empty rendition");
+        assert!(err.contains("empty rendition"), "{err}");
+
+        // Invalid target tag (bad shape, not merely unregistered).
+        let ok = vec![hspan(0, 5, "hund ", "dog ")];
+        let err = validate_human_submission(&spans, Some("de"), &overrides, "e1", &ok)
+            .expect_err("bad tag");
+        assert!(err.contains("invalid target language tag"), "{err}");
+    }
+
+    #[test]
+    fn human_store_roundtrip_best_and_endorse_rules() {
+        let store = temp_rendition_store("human-rules");
+        let mut a = human_sub("0abc", "en", 7, vec![hspan(0, 5, "hund ", "dog ")]);
+        a.created_at = 1_000;
+        let mut b = human_sub("0abc", "en", 8, vec![hspan(0, 5, "hund ", "doggo ")]);
+        b.created_at = 2_000;
+
+        let id_a = store.put_human(&a).expect("put a");
+        let id_b = store.put_human(&b).expect("put b");
+        assert_ne!(id_a, id_b);
+        assert_eq!(store.get_human(&id_a), Some(a.clone()));
+        assert_eq!(store.get_human(&id_b), Some(b.clone()));
+
+        // Neither endorsed: newest wins.
+        assert_eq!(store.best_human("0abc", "en").unwrap().submitter_club, 8);
+        // Two drafts listed best-first is still deterministic.
+        assert_eq!(store.list_human("0abc", "en").len(), 2);
+
+        // Two-person rule: the submitter cannot self-endorse.
+        let err = store
+            .human_endorse(&id_a, 7, 5_000)
+            .expect_err("self-endorse rejected");
+        assert!(err.contains("two-person rule"), "{err}");
+
+        // Endorsements move submissions up; more beats fewer.
+        store
+            .human_endorse(&id_b, 9, 5_000)
+            .expect("endorse b by 9");
+        store
+            .human_endorse(&id_b, 10, 5_100)
+            .expect("endorse b by 10");
+        store
+            .human_endorse(&id_a, 9, 5_200)
+            .expect("endorse a by 9");
+        let best = store.best_human("0abc", "en").unwrap();
+        assert_eq!(best.submitter_club, 8, "two endorsements beat one");
+        assert_eq!(best.grade(), "human-reviewed");
+        assert_eq!(best.endorsements.len(), 2);
+
+        // One endorsement per identity.
+        let err = store
+            .human_endorse(&id_b, 9, 5_300)
+            .expect_err("duplicate endorsement rejected");
+        assert!(err.contains("already endorsed"), "{err}");
+
+        // Retraction drops back down the ladder.
+        store.human_unendorse(&id_b, 9).expect("retract");
+        store.human_unendorse(&id_b, 10).expect("retract");
+        let best = store.best_human("0abc", "en").unwrap();
+        assert_eq!(
+            best.submitter_club, 7,
+            "after retractions a wins on its one"
+        );
+        assert_eq!(
+            store.get_human(&id_b).unwrap().grade(),
+            "human-draft",
+            "b is back to draft after full retraction"
+        );
+        let err = store
+            .human_unendorse(&id_b, 9)
+            .expect_err("nothing to retract");
+        assert!(err.contains("no endorsement"), "{err}");
     }
 }

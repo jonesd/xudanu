@@ -477,6 +477,10 @@ pub enum OperationCode {
     TranslateCapabilities,
     AdminRateLimitGet,
     AdminRateLimitSet,
+    TranslationSubmit,
+    TranslationEndorse,
+    TranslationUnendorse,
+    TranslationList,
     AdminServerProbe,
     #[cfg(feature = "serde")]
     CrossServerResolve,
@@ -881,6 +885,10 @@ impl OperationCode {
         (0x0f2d, OperationCode::TranslateCapabilities),
         (0x0f2e, OperationCode::AdminRateLimitGet),
         (0x0f2f, OperationCode::AdminRateLimitSet),
+        (0x0f30, OperationCode::TranslationSubmit),
+        (0x0f31, OperationCode::TranslationEndorse),
+        (0x0f32, OperationCode::TranslationUnendorse),
+        (0x0f33, OperationCode::TranslationList),
         (0x0f17, OperationCode::AdminClubsList),
         (0x0f18, OperationCode::AdminGrantAdmin),
         (0x0f19, OperationCode::AdminRevokeAdmin),
@@ -2278,6 +2286,39 @@ pub enum WireRequest {
     AdminRateLimitSet {
         get_limit: u32,
     },
+    /// FR-155 Stage A: submit a whole-document, span-aligned human
+    /// rendition. Validation anchors to the source: every
+    /// translatable span must be covered exactly once and every
+    /// source hash must match the work's current text.
+    #[cfg(feature = "serde")]
+    TranslationSubmit {
+        /// Work id as lowercase hex (the public API's addressing).
+        work_id: String,
+        target_lang: String,
+        /// FR-24 license the translator declares for the rendition.
+        license: String,
+        /// Engine model the translator started from, if any.
+        #[cfg_attr(feature = "serde", serde(default))]
+        derived_from_model: Option<String>,
+        spans: Vec<HumanSpanPayload>,
+    },
+    /// Endorse a human submission (one per identity, two-person rule
+    /// enforced; moves it to human-reviewed).
+    #[cfg(feature = "serde")]
+    TranslationEndorse {
+        submission: String,
+    },
+    /// Retract an endorsement.
+    #[cfg(feature = "serde")]
+    TranslationUnendorse {
+        submission: String,
+    },
+    /// Human submissions for (work, lang), strongest first.
+    #[cfg(feature = "serde")]
+    TranslationList {
+        work_id: String,
+        lang: String,
+    },
     #[cfg(feature = "serde")]
     AdminServerProbe {
         server_key: String,
@@ -3421,6 +3462,18 @@ pub struct CrossServerTransclusionPayload {
     pub content_hash: String,
     pub server_name: String,
     pub text_len: u64,
+}
+
+/// One translated span inside a `TranslationSubmit`. `source_hash`
+/// is blake3 of the exact source text translated — the server
+/// re-checks it against the work's current spans; a mismatch means
+/// the source changed and the submission is rejected (retranslate).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HumanSpanPayload {
+    pub char_start: usize,
+    pub char_end: usize,
+    pub source_hash: String,
+    pub rendition: String,
 }
 
 /// One endorser on a link: the club, its display name (resolved
@@ -5374,7 +5427,7 @@ mod lattice_shadow_wire_tests {
         let next = OperationCode::next_free_code(0x0f00, 0x0fff)
             .expect("the 0x0f00 block must not be exhausted");
         assert_eq!(
-            next, 0x0f30,
+            next, 0x0f34,
             "next free 0x0f-block code moved — update this expectation after registering"
         );
         // The helper's result is by construction absent from the table.
