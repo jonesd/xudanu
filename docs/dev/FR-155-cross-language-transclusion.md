@@ -206,10 +206,12 @@ one small file read per key, then memory speed.
 
 Properties:
 
-- **Self-healing**: a corrupt or future-format file is treated as a
-  miss (retranslate, overwrite) — format evolution degrades to
-  recompute instead of failing reads. Writes are temp-file + rename
-  (atomic visibility); a crashed `.tmp` is never read.
+- **Self-healing, tamper-checked**: a file that fails to parse, or
+  whose rendition text does not hash to its own `rendition_hash`,
+  is treated as a miss (retranslate, overwrite) — corruption,
+  tampering, and format evolution all degrade to recompute instead
+  of being served. Writes are temp-file + rename (atomic
+  visibility); a crashed `.tmp` is never read.
 - **PROV survives**: the stored entry *is* the PROV record — after a
   restart, renditions report their original `created_at`, provider,
   and model. A changed model changes the key, so a new engine's
