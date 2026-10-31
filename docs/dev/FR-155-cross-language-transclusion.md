@@ -297,7 +297,103 @@ WAL-durable link endorsement; what was dormant — humans endorsing
 regions — is precisely what this stage restores, pointed at
 renditions first.
 
-Sequencing note: this lands after pre-warming and the offer-list.
+Sequencing note: reordered 2026-10-31 — this lands *before* pre-warming
+and the offer-list, because the trust-lab experiment (FR-157) needs the
+ladder as its substrate.
+
+## Stage A — submit, endorse, serve by grade (BUILT 2026-10-31, branch fr155/human-renditions)
+
+The ladder's first three rungs are real: `machine-gisting` (engine,
+Stage 2), `human-draft` (submit), `human-reviewed` (endorse). The
+`canonical` rung stays future (owner/curator selection, later PBFT).
+
+**Data model** (`server/translate.rs`): a `HumanSubmission` is a
+whole-document translation into one language — `work_id` (hex),
+`target_lang`, `submitter_club`, optional `derived_from_model`
+(`wasRevisionOf` PROV material), FR-24 `license`, `created_at`, and
+span-aligned `HumanSpanRendition`s (`char_start`, `char_end`,
+`source_hash`, `rendition`). The submission's **id is its content**
+(blake3 over everything except endorsements): endorsements mutate the
+record, never the identity, so a grade can rise and fall without
+orphaning references. `grade()` is derived, not stored: no
+endorsements → `human-draft`, any → `human-reviewed`.
+
+**Durable layout** (rides the Stage 3 store, `<data>/renditions/`):
+`human/<xx>/<hash>.json` per submission, written atomically
+(tmp+rename); `human-index/<work>-<lang>.json` lists ids per
+(work, language). Tamper semantics inherit Stage 3's: a corrupt or
+unparseable file is a miss, never a crash.
+
+**Validation anchors to the source** (`validate_human_submission`):
+every translatable span (declared source language ≠ target) must be
+covered exactly once, each candidate's range must equal a span's, and
+each `source_hash` must match the span's *current* text — a mismatch
+means the source changed and the submission is rejected
+("retranslate"). Extra ranges, duplicates, empty renditions, and
+malformed BCP-47 targets are rejected. Submit-side checks run in the
+dispatch layer (0x0f30) against `edition_text_spans` +
+`public_language_annotations`, and the work must pass
+`public_work_edition` — renditions serve the public read path, so a
+non-public work has nothing to attach to. License must be one of the
+FR-24 serde tags.
+
+**Serving** (`assemble_translated_read`, new last param `human`):
+the strongest submission for (work, lang) is fetched
+(`best_human`: reviewed beats draft, more endorsements beat fewer,
+then newest) and consulted **span by span before cache, disk, and
+engine**. A human span applies only while the live text still hashes
+to what the translator anchored to — an edited source silently
+invalidates that span back to the machine path, never serving a
+stale human rendition. Full human coverage makes no provider call.
+PROV per human span: `wasGeneratedBy: xudanu:HumanSubmission`,
+quality_grade at the submission's grade, `wasRevisionOf` the engine
+model when the translator started from a draft, submitter recorded.
+The response block carries a `human` section (submission id, grade,
+submitter, license, endorsers, spans offered/used). The top-level
+grade goes human only when human spans covered *every* translated
+span — partial coverage keeps `machine-gisting` at the top while the
+per-span entries carry the mixed truth. Human renditions remain not
+content: never addressable, never transcludable.
+
+**Endorsement rules** (in the store, enforced server-side):
+two-person rule (the submitter's club cannot endorse its own
+submission), one endorsement per identity, retraction via
+`translation_unendorse`. Endorsements are `(club_id, timestamp)`
+— unweighted by design; weighting is the n>100 problem (FR-157).
+
+**Wire ops** (protocol + codec + dispatch; tripwire now 0x0f34):
+
+| Op | Code | Gate |
+| --- | --- | --- |
+| `translation_submit` | 0x0f30 | logged-in identity; source-anchored validation |
+| `translation_endorse` | 0x0f31 | logged-in identity; two-person + one-per-identity |
+| `translation_unendorse` | 0x0f32 | logged-in identity |
+| `translation_list` | 0x0f33 | any connected session; strongest first |
+
+All four are museum-mode mutations (except list) and route early in
+dispatch with the FR-86 lock discipline: gather session/spans under a
+short lock, do file I/O outside it. Requires the data-dir rendition
+store (clear Internal error when absent).
+
+**Tests**: 7 new unit tests (preference over machine with zero
+provider calls, partial coverage fallback, stale-hash fallback, id
+stability under endorsement, validation accept/reject matrix, store
+roundtrip + endorse rules) and a full wire test
+(`translation_human_renditions_over_wire`) driving two
+password-authenticated personal identities through
+publish → annotate → submit → self-endorse rejection → endorse →
+duplicate rejection → list → retract → cross-endorse ordering.
+
+**Known limitation (deliberate)**: the `?lang=` read path remains
+provider-gated as a whole — without `XUDANU_TRANSLATE_PROVIDER_URL`,
+human renditions are durable and listable but not *served*, keeping
+the zero-behavior-change guarantee byte-simple. Human-only serving
+without an engine is a small future change (the gate, not the
+assembly — assembly already needs no provider call for covered
+spans) and is recorded here so it is a decision, not an accident.
+
+**Next**: trust-lab v0 (FR-157's synthetic-population harness) on
+this substrate.
 
 ## Provisioning languages (DECIDED 2026-10-30)
 
