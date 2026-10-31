@@ -190,11 +190,49 @@ doc, p50 0.8s / p95 4.2s at conc 8). The public-read rate limiter
 bottleneck: warm capacity is per-(content, language) once, so the
 engine load tracks new content, not reader count.
 
-Deliberately out (next stages): rendition durability (cache is
-in-memory; content-addressed rendition storage is the follow-on),
-`work_get_edition` WS path, transclusion resolution interplay,
-rendition-never-a-target enforcement on the read side, federation
-travel, authoring-UI language declaration.
+Deliberately out (next stages): `work_get_edition` WS path,
+transclusion resolution interplay, rendition-never-a-target
+enforcement on the read side, federation travel, authoring-UI
+language declaration, pre-warming (now unblocked by Stage 3).
+
+## Stage 3 — rendition durability (BUILT 2026-10-31, branch fr155/rendition-durability)
+
+Renditions now live on disk beside the chunks and blobs:
+`<data>/renditions/<xx>/<key-hex>.json` — one JSON
+`TranslationEntry` per file, named by the cache key (BLAKE3 of the
+edge tuple), sharded like the blob store. Lookup order is memory →
+disk → engine; a disk hit is promoted to memory, so a restart pays
+one small file read per key, then memory speed.
+
+Properties:
+
+- **Self-healing**: a corrupt or future-format file is treated as a
+  miss (retranslate, overwrite) — format evolution degrades to
+  recompute instead of failing reads. Writes are temp-file + rename
+  (atomic visibility); a crashed `.tmp` is never read.
+- **PROV survives**: the stored entry *is* the PROV record — after a
+  restart, renditions report their original `created_at`, provider,
+  and model. A changed model changes the key, so a new engine's
+  output never mixes with the old engine's renditions.
+- **Degradation contract**: no data directory → no store → exactly
+  Stage 2's memory-only behavior (pinned over the wire:
+  `translate_capabilities.cache_disk_entries` is null, not zero).
+  A store that cannot open logs a warning and serves memory-only;
+  startup never fails.
+- `translate_capabilities` now also reports `cache_disk_entries` and
+  `rendition_store_path`; the read block reports `disk_hits` and
+  `renditions_durable`.
+
+Measured — the strongest form of the proof: engine container
+stopped, server `kill -9`ed, restarted on the same data dir. First
+translated read after restart: **3.3ms, `disk_hits=3`,
+`provider_calls=0`** — fully translated while the engine was
+unreachable; second read 1.8ms from promoted memory. Kill rule
+unaffected (p95 delta 0ms with the store attached). Files are plain
+JSON, so any rendition's provenance is one `cat` away.
+
+What this unlocks: pre-warming (per the provisioning decision) is
+now worth building — warmed renditions survive restarts.
 
 ## Provisioning languages (DECIDED 2026-10-30)
 

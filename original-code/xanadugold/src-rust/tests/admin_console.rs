@@ -593,6 +593,10 @@ async fn translate_capabilities_reports_disabled_without_provider() {
         inner["reason"]
     );
     assert!(inner["cache_entries"].as_u64().is_some());
+    // Stage 3 contract: with no data directory the durable layer is
+    // absent — null, not zero — so "memory-only" is observable.
+    assert!(inner["cache_disk_entries"].is_null());
+    assert!(inner["rendition_store_path"].is_null());
 }
 
 #[tokio::test]

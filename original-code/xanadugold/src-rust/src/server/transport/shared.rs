@@ -47,6 +47,10 @@ pub struct AppState {
     pub verification: crate::server::verification::VerificationState,
     pub governance_tx: tokio::sync::broadcast::Sender<super::federation_handler::FederationFrame>,
     pub rate_limiter: Arc<RateLimiter>,
+    /// FR-155 Stage 3: durable content-addressed renditions under
+    /// `<data>/renditions`. None when the server runs without a data
+    /// directory — the cache stays memory-only exactly as before.
+    pub renditions: Option<crate::server::translate::RenditionStore>,
     pub dev_mode: bool,
     /// FR-43: per-op dispatch latency (robots/CI read via snapshot).
     pub metrics: DispatchMetrics,
@@ -61,6 +65,26 @@ impl AppState {
     }
 
     pub fn with_security(srv: Server, monitor: SecurityMonitor) -> Self {
+        // FR-155 Stage 3: renditions live beside the chunks/blobs when
+        // the server has a data directory; a failure to open the store
+        // degrades to memory-only, never blocks startup.
+        let renditions = srv
+            .data_dir
+            .as_ref()
+            .map(|dir| dir.join("renditions"))
+            .and_then(
+                |dir| match crate::server::translate::RenditionStore::open(&dir) {
+                    Ok(store) => Some(store),
+                    Err(err) => {
+                        tracing::warn!(
+                        "translate: durable renditions unavailable at {}: {} — memory cache only",
+                        dir.display(),
+                        err
+                    );
+                        None
+                    }
+                },
+            );
         let handle = ServerHandle::new(srv);
         let (tx, _) = tokio::sync::broadcast::channel(256);
         let (gov_tx, _) = tokio::sync::broadcast::channel(64);
@@ -78,6 +102,7 @@ impl AppState {
             verification: crate::server::verification::VerificationState::new(String::new()),
             governance_tx: gov_tx,
             rate_limiter: Arc::new(RateLimiter::from_env()),
+            renditions,
             metrics: DispatchMetrics::default(),
             dev_mode: false,
         }

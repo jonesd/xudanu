@@ -494,6 +494,11 @@ fn dispatch_translate_capabilities(
                 crate::server::translate::PROVIDER_URL_ENV
             ),
             "cache_entries": crate::server::translate::cache_len(),
+            "cache_disk_entries": state.renditions.as_ref().map(|s| s.count()),
+            "rendition_store_path": state
+                .renditions
+                .as_ref()
+                .map(|s| s.base().display().to_string()),
         }))),
         Some(client) => {
             let languages = client.languages();
@@ -502,6 +507,11 @@ fn dispatch_translate_capabilities(
                 "provider": client.provider(),
                 "model": client.model(),
                 "cache_entries": crate::server::translate::cache_len(),
+                "cache_disk_entries": state.renditions.as_ref().map(|s| s.count()),
+                "rendition_store_path": state
+                    .renditions
+                    .as_ref()
+                    .map(|s| s.base().display().to_string()),
             });
             match languages {
                 Ok(langs) => {
