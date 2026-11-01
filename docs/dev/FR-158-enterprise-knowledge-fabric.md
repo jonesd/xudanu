@@ -201,3 +201,15 @@ no-evidence guard on submit.
 Still deliberately v2: graph edges (the map's person nodes exist;
 endorsement edges would be a new edge type, not a new visualization),
 work-weighting, visibility scoping.
+
+**Deferred after live-panel use (2026-11-01):** claim edit/delete.
+There is no update op and no delete op in Stage A — the claim's id
+is the hash of what it says, so a changed claim is a different
+claim; today the fix path is filing a corrected claim alongside.
+The natural next op (0x0f38 is free) is **claim retract**: the
+subject may retract their own claim, but only while it has zero
+endorsements — once someone vouched, it is social fact, not just
+the subject's assertion (the two-person rule's symmetry). A
+`supersedes` field would let a corrected claim point at the one it
+replaces. Found the hard way: a user filed a claim, then asked how
+to update it.
