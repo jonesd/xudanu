@@ -1,6 +1,7 @@
 # FR-158: The enterprise knowledge fabric — Gold-lineage trust for the workplace
 
-**Status:** sketched 2026-10-31. Idea capture, no build commitment.
+**Status:** sketched 2026-10-31; **Stage A (skills claims
+backend) built same day** — see the as-built section at the end.
 Prompted by the FR-157 exploration: asked whether any of the
 endorsement fabric is an enhancement over tools like MS Teams, the
 answer turned out to be a specific layer, not a replacement — and
@@ -108,3 +109,60 @@ in the wild does not exist inside an org chart.
 - Sequencing within the enterprise story: does sponsorship (teams
   vouching for work products) come before individual skills?
 - The labor-law/works-council question above.
+
+## Stage A — skills claims, the FR-157 way (BUILT 2026-10-31, branch fr158/skills-endorsement)
+
+The sketch's first rung is real: a person files an evidence-anchored
+skill claim, peers endorse it, the grade is derived. Self-claims only
+in this stage; work-weighting stays future (the n>100 problem,
+FR-157).
+
+**Data model** (`server/skills.rs`): a `SkillClaim` is a person
+saying "I have this skill, on the evidence of these works" —
+`subject_club`, `skill` (normalized tag), `summary` (≤280 chars),
+`evidence` (1..=8 refs: `work_id` hex + a `note` saying what about
+it demonstrates the skill), `submitter_club`, `created_at`, and
+riding `endorsements` (`club_id`, `timestamp` — unweighted by
+design). The claim's **id is its content** (blake3 over everything
+except endorsements): endorsements mutate the record, never the
+identity, exactly the FR-155 Stage A pattern. `grade()` is derived,
+not stored: no endorsements → `claimed`, any → `verified`.
+
+**Tags are vocabulary-lite:** trimmed, lowercased, ≤64 chars, no
+control characters or slashes (they become filenames). `Rust`,
+`rust`, and ` RUST ` are one skill. Bounds: summary and evidence
+notes ≤280 chars, 1..=8 evidence refs — a claim is a pointer to
+evidence, not an essay.
+
+**Durable layout** (`<data>/skills/`, atomic tmp+rename writes):
+`claims/<xx>/<hash>.json` per claim, `by-club/<club>.json` and
+`by-skill/<slug>.json` id indexes. Corrupt or tampered files
+degrade to misses, never crashes — Stage 3 semantics inherited.
+
+**Wire ops 0x0f34–0x0f37** (`skill_claim_submit`, `skill_endorse`,
+`skill_unendorse`, `skill_list`; next free op 0x0f38). Submit is
+self-claims only — the payload's `subject` must equal the caller's
+club, else "v1: self-claims only" — and every evidence `work_id`
+must parse as hex **and** exist in the server (a dangling reference
+can only arise from later deletion, which leaves it visible, never
+a crash). Endorse/unendorse enforce the store's rules: two-person
+rule (the subject cannot endorse their own claim), one endorsement
+per identity, retractable; retraction drops the grade back to
+`claimed`. List requires exactly one filter — `club` (a person's
+claims, best first) or `skill` (who claims it: the
+expertise-location query) — and answers any connected session:
+existence ≠ visibility stays the model for later scoping.
+
+**Ordering** (`best_first`): verified before claimed, then more
+endorsements, then newest — the comparator FR-155's `list_human`
+initially got backwards, written correctly here.
+
+**Claims are not content:** not addressable, not transcludable —
+trust facts about people, riding their own structures, never the
+annotation system.
+
+**Not in this stage (deliberately):** no UI yet (Stage A2: a claims
+panel — list/detail with grade badges; the graph stays v2, where
+endorsement edges join the existing FR-22 `person` nodes in
+`DocumentMapPanel`), no work-weighting (FR-157), no visibility
+scoping, no curated vocabulary.

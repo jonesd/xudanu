@@ -974,3 +974,243 @@ async fn translation_human_renditions_over_wire() {
     assert_eq!(subs[0]["grade"], "human-reviewed");
     assert_eq!(subs[1]["grade"], "human-draft");
 }
+
+// ─── FR-158 Stage A: skills claims over the wire ──────────────────
+
+#[tokio::test]
+async fn skills_claims_over_wire() {
+    // Stage A: self-claim anchored to evidence works → two-person
+    // endorse/unendorse with the derived grade → list by club and
+    // by skill → validation rejections. The durable store rides
+    // the persistent test server's data dir.
+    let srv = TestServer::start_persistent("fr158-skills").await;
+
+    let (mut as_, mut ar, club_a) = persona_session(&srv.addr, "claimant", "apass").await;
+    let (mut bs, mut br, club_b) = persona_session(&srv.addr, "peer", "bpass").await;
+    assert_ne!(club_a, club_b);
+
+    // The evidence: a work the claimant authored.
+    let mut id = 10u16;
+    let wid = create_work(&mut as_, &mut ar, &mut id, "The CRDT engine notes").await;
+    let wid_hex = format!("{:x}", wid);
+
+    let claim_payload = |subject: u64, skill: &str, evidence: serde_json::Value| {
+        serde_json::json!({
+            "subject": subject,
+            "skill": skill,
+            "summary": "systems work",
+            "evidence": evidence,
+        })
+    };
+    let good_evidence = serde_json::json!([{"work_id": wid_hex, "note": "wrote the engine"}]);
+
+    // Happy self-claim: submitted as mixed-case, stored normalized.
+    let resp = req(
+        &mut as_,
+        &mut ar,
+        20,
+        "skill_claim_submit",
+        Some(claim_payload(club_a, "Rust", good_evidence.clone())),
+    )
+    .await;
+    assert!(is_ok(&resp), "submit: {}", err_msg(&resp));
+    let claim = &resp["value"]["value"];
+    assert_eq!(claim["grade"], "claimed");
+    assert_eq!(claim["subject"].as_u64(), Some(club_a));
+    assert_eq!(claim["skill"], "rust", "tags normalize to lowercase");
+    assert_eq!(claim["evidence"].as_array().map(Vec::len), Some(1));
+    let claim_id = claim["claim"].as_str().unwrap().to_string();
+    assert_eq!(claim_id.len(), 64, "blake3 hex id");
+
+    // Two-person rule: the subject cannot endorse their own claim.
+    let resp = req(
+        &mut as_,
+        &mut ar,
+        21,
+        "skill_endorse",
+        Some(serde_json::json!({"claim": claim_id})),
+    )
+    .await;
+    assert!(resp["type"] == "error", "self-endorse must reject");
+    assert!(
+        err_msg(&resp).contains("two-person rule"),
+        "{}",
+        err_msg(&resp)
+    );
+
+    // A peer's endorsement verifies it; the id is stable.
+    let resp = req(
+        &mut bs,
+        &mut br,
+        30,
+        "skill_endorse",
+        Some(serde_json::json!({"claim": claim_id})),
+    )
+    .await;
+    assert!(is_ok(&resp), "endorse: {}", err_msg(&resp));
+    let up = &resp["value"]["value"];
+    assert_eq!(up["grade"], "verified");
+    assert_eq!(up["endorsements"], 1);
+    assert_eq!(
+        up["claim"].as_str(),
+        Some(claim_id.as_str()),
+        "the id is stable under endorsement"
+    );
+
+    // One endorsement per identity.
+    let resp = req(
+        &mut bs,
+        &mut br,
+        31,
+        "skill_endorse",
+        Some(serde_json::json!({"claim": claim_id})),
+    )
+    .await;
+    assert!(resp["type"] == "error", "duplicate endorse must reject");
+    assert!(
+        err_msg(&resp).contains("already endorsed"),
+        "{}",
+        err_msg(&resp)
+    );
+
+    // List by club: the claimant's claims, verified grade.
+    let resp = req(
+        &mut bs,
+        &mut br,
+        32,
+        "skill_list",
+        Some(serde_json::json!({"club": club_a})),
+    )
+    .await;
+    assert!(is_ok(&resp), "list by club: {}", err_msg(&resp));
+    let claims = resp["value"]["value"]["claims"].as_array().cloned();
+    let claims = claims.unwrap_or_default();
+    assert_eq!(claims.len(), 1);
+    assert_eq!(claims[0]["grade"], "verified");
+    assert_eq!(claims[0]["claim"].as_str(), Some(claim_id.as_str()));
+
+    // List by skill: case-insensitive, the expertise query.
+    let resp = req(
+        &mut bs,
+        &mut br,
+        33,
+        "skill_list",
+        Some(serde_json::json!({"skill": "RUST"})),
+    )
+    .await;
+    assert!(is_ok(&resp), "list by skill: {}", err_msg(&resp));
+    let claims = resp["value"]["value"]["claims"].as_array().cloned();
+    let claims = claims.unwrap_or_default();
+    assert_eq!(claims.len(), 1, "by-skill matches any case");
+    assert_eq!(claims[0]["subject"].as_u64(), Some(club_a));
+
+    // Retraction drops the grade back to claimed.
+    let resp = req(
+        &mut bs,
+        &mut br,
+        34,
+        "skill_unendorse",
+        Some(serde_json::json!({"claim": claim_id})),
+    )
+    .await;
+    assert!(is_ok(&resp), "unendorse: {}", err_msg(&resp));
+    assert_eq!(resp["value"]["value"]["grade"], "claimed");
+    let resp = req(
+        &mut bs,
+        &mut br,
+        35,
+        "skill_unendorse",
+        Some(serde_json::json!({"claim": claim_id})),
+    )
+    .await;
+    assert!(resp["type"] == "error", "double retraction must reject");
+
+    // Validation rejections: oversized tag, empty evidence, non-hex
+    // and nonexistent evidence works, and third-party claims.
+    let resp = req(
+        &mut as_,
+        &mut ar,
+        40,
+        "skill_claim_submit",
+        Some(claim_payload(
+            club_a,
+            &"x".repeat(65),
+            good_evidence.clone(),
+        )),
+    )
+    .await;
+    assert!(resp["type"] == "error", "oversized tag must reject");
+    assert!(err_msg(&resp).contains("1..=64"), "{}", err_msg(&resp));
+
+    let resp = req(
+        &mut as_,
+        &mut ar,
+        41,
+        "skill_claim_submit",
+        Some(claim_payload(club_a, "rust", serde_json::json!([]))),
+    )
+    .await;
+    assert!(resp["type"] == "error", "empty evidence must reject");
+    assert!(err_msg(&resp).contains("evidence"), "{}", err_msg(&resp));
+
+    let resp = req(
+        &mut as_,
+        &mut ar,
+        42,
+        "skill_claim_submit",
+        Some(claim_payload(
+            club_a,
+            "rust",
+            serde_json::json!([{"work_id": "nothex", "note": "x"}]),
+        )),
+    )
+    .await;
+    assert!(resp["type"] == "error", "non-hex work id must reject");
+    assert!(err_msg(&resp).contains("not hex"), "{}", err_msg(&resp));
+
+    let resp = req(
+        &mut as_,
+        &mut ar,
+        43,
+        "skill_claim_submit",
+        Some(claim_payload(
+            club_a,
+            "rust",
+            serde_json::json!([{"work_id": "deadbeef", "note": "x"}]),
+        )),
+    )
+    .await;
+    assert!(resp["type"] == "error", "nonexistent work must reject");
+    assert!(err_msg(&resp).contains("not found"), "{}", err_msg(&resp));
+
+    let resp = req(
+        &mut as_,
+        &mut ar,
+        44,
+        "skill_claim_submit",
+        Some(claim_payload(club_b, "rust", good_evidence)),
+    )
+    .await;
+    assert!(resp["type"] == "error", "third-party claim must reject");
+    assert!(err_msg(&resp).contains("self-claims"), "{}", err_msg(&resp));
+
+    // List takes exactly one filter.
+    let resp = req(
+        &mut bs,
+        &mut br,
+        45,
+        "skill_list",
+        Some(serde_json::json!({"club": club_a, "skill": "rust"})),
+    )
+    .await;
+    assert!(resp["type"] == "error", "both filters must reject");
+    let resp = req(
+        &mut bs,
+        &mut br,
+        46,
+        "skill_list",
+        Some(serde_json::json!({})),
+    )
+    .await;
+    assert!(resp["type"] == "error", "no filter must reject");
+}
