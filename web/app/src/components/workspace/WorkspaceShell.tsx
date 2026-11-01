@@ -102,6 +102,7 @@ import { ImportWizard } from "../ImportWizard";
 import { AttributionPanel } from "../AttributionPanel";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { ServerDirectoryPanel } from "../ServerDirectoryPanel";
+import { SkillsPanel } from "../SkillsPanel";
 import { loadThemeState, saveThemeState, activePalette } from "../../theme";
 import type { ThemeMode } from "../../theme";
 import type { WorkListEntry, TrailPayload, AgainHop, DetectorInfo, GlobalSearchResultItem } from "../../api/crdt_sync";
@@ -143,7 +144,7 @@ import "../../workspace.css";
 const WS_URL = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/xudanu`;
 
 type LeftRailMode = "documents" | "outline";
-type RightPanelTab = "provenance" | "connections" | "trails" | "timeline" | "servers" | "compare" | "map" | "more";
+type RightPanelTab = "provenance" | "connections" | "trails" | "skills" | "timeline" | "servers" | "compare" | "map" | "more";
 
 interface WorkMeta {
   title: string;
@@ -4411,6 +4412,15 @@ export function WorkspaceShell() {
                 />
               </div>
             )}
+            {rightPanelTab === "skills" && (
+              <SkillsPanel
+                client={connected ? clientRef.current : null}
+                identity={identity}
+                currentWorkId={workBeId}
+                works={works}
+                onSelectWork={selectWork}
+              />
+            )}
             {rightPanelTab === "servers" && (
               <ServerDirectoryPanel
                 client={connected ? clientRef.current : null}
@@ -6999,6 +7009,7 @@ export function WorkspaceShell() {
                ["connections", "Links"],
                ["map", "Map"],
                ["trails", "Trails"],
+               ["skills", "Skills"],
                ["timeline", "History"],
                ["servers", "Servers"],
                ["compare", "Compare"],
@@ -7920,6 +7931,7 @@ export function WorkspaceShell() {
                   ["connections", "Links"],
                   ["map", "Map"],
                   ["trails", "Trails"],
+                  ["skills", "Skills"],
                   ["timeline", "History"],
                   ["compare", "Compare"],
                   ["more", "More"],

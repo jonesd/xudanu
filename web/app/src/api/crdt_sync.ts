@@ -65,6 +65,8 @@ import type {
   BlobEntry,
   WorkGraphPayload,
   TrailPayload,
+  SkillClaimEntry,
+  SkillListResult,
   ChangeHighlight
 } from "./protocol";
 
@@ -1464,6 +1466,43 @@ export class CrdtSyncClient {
   async trailListCategories(): Promise<string[]> {
     const resp = await this.sendRequest("trail_list_categories");
     return extractValue(resp) as string[];
+  }
+
+  // ── FR-158 Stage A: skills claims ──
+
+  async skillListByClub(clubId: number): Promise<SkillListResult> {
+    const resp = await this.sendRequest("skill_list", { club: clubId });
+    return extractValue(resp) as SkillListResult;
+  }
+
+  async skillListBySkill(skill: string): Promise<SkillListResult> {
+    const resp = await this.sendRequest("skill_list", { skill });
+    return extractValue(resp) as SkillListResult;
+  }
+
+  async skillClaimSubmit(
+    subject: number,
+    skill: string,
+    summary: string,
+    evidence: Array<{ work_id: string; note: string }>,
+  ): Promise<SkillClaimEntry> {
+    const resp = await this.sendRequest("skill_claim_submit", {
+      subject,
+      skill,
+      summary,
+      evidence,
+    });
+    return extractValue(resp) as SkillClaimEntry;
+  }
+
+  async skillEndorse(claim: string): Promise<SkillClaimEntry> {
+    const resp = await this.sendRequest("skill_endorse", { claim });
+    return extractValue(resp) as SkillClaimEntry;
+  }
+
+  async skillUnendorse(claim: string): Promise<SkillClaimEntry> {
+    const resp = await this.sendRequest("skill_unendorse", { claim });
+    return extractValue(resp) as SkillClaimEntry;
   }
 
   // ── Blob / Image API ──

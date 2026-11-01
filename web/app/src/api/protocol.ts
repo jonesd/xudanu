@@ -144,6 +144,36 @@ export interface WhoAmIEntry {
   clubs?: [number, string][];
 }
 
+// ── FR-158 Stage A: skills claims ──
+
+export interface SkillEvidenceEntry {
+  /** Work id as lowercase hex — the artifact the claim anchors to. */
+  work_id: string;
+  note: string;
+}
+
+/** A skills claim as returned by every skills op: submit, endorse,
+ *  unendorse, list. The grade is derived server-side (claimed →
+ *  verified at the first peer endorsement); endorsements ride the
+ *  record without changing the claim id. */
+export interface SkillClaimEntry {
+  claim: string;
+  subject: number;
+  skill: string;
+  grade: string;
+  summary: string;
+  evidence: SkillEvidenceEntry[];
+  endorsements: number;
+  endorsers: number[];
+  created_at: number;
+}
+
+export interface SkillListResult {
+  club?: number;
+  skill?: string;
+  claims: SkillClaimEntry[];
+}
+
 export interface LlmUsageSummary {
   total_requests: number;
   total_prompt_chars: number;

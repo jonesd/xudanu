@@ -161,8 +161,43 @@ initially got backwards, written correctly here.
 trust facts about people, riding their own structures, never the
 annotation system.
 
-**Not in this stage (deliberately):** no UI yet (Stage A2: a claims
-panel — list/detail with grade badges; the graph stays v2, where
+**Not in this stage (deliberately):** no work-weighting (FR-157), no
+visibility scoping, no curated vocabulary. (The UI followed
+immediately as Stage A2 below; the graph stays v2, where
 endorsement edges join the existing FR-22 `person` nodes in
-`DocumentMapPanel`), no work-weighting (FR-157), no visibility
-scoping, no curated vocabulary.
+`DocumentMapPanel`.)
+
+## Stage A2 — the claims panel (BUILT 2026-11-01, branch fr158/claims-panel)
+
+The panel is real: a "Skills" tab in the right panel (desktop and
+phone tab strips), list-first, no graph — exactly the v1 call.
+
+**Component** (`web/app/src/components/SkillsPanel.tsx`): two
+in-panel views. *My claims* — auto-loads `skill_list` by the logged-
+in club; "Claim a skill" opens the submit form (skill tag, optional
+summary, optional evidence note, "cite open work" checkbox — v1
+evidence is the work you have open, which is the honest anchor: you
+claim the skill *on the evidence of this thing you made*). *Find by
+skill* — the expertise-location query, no login required to read.
+
+**Claim cards** render the whole wire shape: skill tag, grade badge
+(grey `claimed`, teal `verified` — the derived ladder, visually),
+summary, evidence chips (`0x<hex>` + title when resolvable from the
+work list; click opens the work), endorsement count and endorsers,
+date. Endorse/Retract follow the two-person rule and one-per-
+identity by construction: your own claims show "your claim" instead
+of a button, logged-out readers see "log in to endorse", and Retract
+replaces Endorse once you have vouched. Errors from the server
+(self-claims-only, evidence-not-found, tag bounds) surface inline.
+
+**Client** (`api/crdt_sync.ts`): typed wrappers `skillListByClub`,
+`skillListBySkill`, `skillClaimSubmit`, `skillEndorse`,
+`skillUnendorse`; types in `api/protocol.ts` mirror the wire shape
+one-to-one. 12 vitest cases cover the helpers (hex round-trip,
+two-person rule, endorsement tracking), rendering, both mutation
+paths, search-without-identity, evidence chips, and the
+no-evidence guard on submit.
+
+Still deliberately v2: graph edges (the map's person nodes exist;
+endorsement edges would be a new edge type, not a new visualization),
+work-weighting, visibility scoping.
