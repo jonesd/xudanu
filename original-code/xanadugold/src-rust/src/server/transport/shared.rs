@@ -51,6 +51,10 @@ pub struct AppState {
     /// `<data>/renditions`. None when the server runs without a data
     /// directory — the cache stays memory-only exactly as before.
     pub renditions: Option<crate::server::translate::RenditionStore>,
+    /// FR-158 Stage A: durable content-addressed skill claims under
+    /// `<data>/skills`. None when the server runs without a data
+    /// directory — skills ops return a clear error instead.
+    pub skills: Option<crate::server::skills::SkillStore>,
     pub dev_mode: bool,
     /// FR-43: per-op dispatch latency (robots/CI read via snapshot).
     pub metrics: DispatchMetrics,
@@ -85,6 +89,24 @@ impl AppState {
                     }
                 },
             );
+        // FR-158 Stage A: skill claims live beside renditions; a
+        // failure to open degrades to None (ops error clearly),
+        // never blocks startup.
+        let skills = srv
+            .data_dir
+            .as_ref()
+            .map(|dir| dir.join("skills"))
+            .and_then(|dir| match crate::server::skills::SkillStore::open(&dir) {
+                Ok(store) => Some(store),
+                Err(err) => {
+                    tracing::warn!(
+                        "skills: durable claims unavailable at {}: {} — skills ops disabled",
+                        dir.display(),
+                        err
+                    );
+                    None
+                }
+            });
         let handle = ServerHandle::new(srv);
         let (tx, _) = tokio::sync::broadcast::channel(256);
         let (gov_tx, _) = tokio::sync::broadcast::channel(64);
@@ -103,6 +125,7 @@ impl AppState {
             governance_tx: gov_tx,
             rate_limiter: Arc::new(RateLimiter::from_env()),
             renditions,
+            skills,
             metrics: DispatchMetrics::default(),
             dev_mode: false,
         }

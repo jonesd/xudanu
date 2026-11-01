@@ -481,6 +481,10 @@ pub enum OperationCode {
     TranslationEndorse,
     TranslationUnendorse,
     TranslationList,
+    SkillClaimSubmit,
+    SkillEndorse,
+    SkillUnendorse,
+    SkillList,
     AdminServerProbe,
     #[cfg(feature = "serde")]
     CrossServerResolve,
@@ -889,6 +893,10 @@ impl OperationCode {
         (0x0f31, OperationCode::TranslationEndorse),
         (0x0f32, OperationCode::TranslationUnendorse),
         (0x0f33, OperationCode::TranslationList),
+        (0x0f34, OperationCode::SkillClaimSubmit),
+        (0x0f35, OperationCode::SkillEndorse),
+        (0x0f36, OperationCode::SkillUnendorse),
+        (0x0f37, OperationCode::SkillList),
         (0x0f17, OperationCode::AdminClubsList),
         (0x0f18, OperationCode::AdminGrantAdmin),
         (0x0f19, OperationCode::AdminRevokeAdmin),
@@ -2319,6 +2327,36 @@ pub enum WireRequest {
         work_id: String,
         lang: String,
     },
+    /// FR-158 Stage A: file a skills claim about yourself, anchored
+    /// to evidence artifacts. Subject must be the caller (self-
+    /// claims only in this stage); peers endorse via skill_endorse.
+    #[cfg(feature = "serde")]
+    SkillClaimSubmit {
+        subject: u64,
+        skill: String,
+        summary: String,
+        evidence: Vec<SkillEvidencePayload>,
+    },
+    /// Endorse a skills claim (one per identity, two-person rule;
+    /// moves it claimed → verified).
+    #[cfg(feature = "serde")]
+    SkillEndorse {
+        claim: String,
+    },
+    /// Retract a skills endorsement.
+    #[cfg(feature = "serde")]
+    SkillUnendorse {
+        claim: String,
+    },
+    /// Claims by club or by skill — exactly one filter required.
+    /// The by-skill form is the expertise-location query.
+    #[cfg(feature = "serde")]
+    SkillList {
+        #[cfg_attr(feature = "serde", serde(default))]
+        club: Option<u64>,
+        #[cfg_attr(feature = "serde", serde(default))]
+        skill: Option<String>,
+    },
     #[cfg(feature = "serde")]
     AdminServerProbe {
         server_key: String,
@@ -3462,6 +3500,15 @@ pub struct CrossServerTransclusionPayload {
     pub content_hash: String,
     pub server_name: String,
     pub text_len: u64,
+}
+
+/// One evidence reference inside a `SkillClaimSubmit` — the
+/// artifact a skills claim anchors to. `work_id` is the work's hex
+/// id; `note` says what about it demonstrates the skill.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillEvidencePayload {
+    pub work_id: String,
+    pub note: String,
 }
 
 /// One translated span inside a `TranslationSubmit`. `source_hash`
@@ -5427,7 +5474,7 @@ mod lattice_shadow_wire_tests {
         let next = OperationCode::next_free_code(0x0f00, 0x0fff)
             .expect("the 0x0f00 block must not be exhausted");
         assert_eq!(
-            next, 0x0f34,
+            next, 0x0f38,
             "next free 0x0f-block code moved — update this expectation after registering"
         );
         // The helper's result is by construction absent from the table.

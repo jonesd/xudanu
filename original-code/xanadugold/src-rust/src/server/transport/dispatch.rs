@@ -200,6 +200,9 @@ fn is_frozen_mutation(req: &WireRequest) -> bool {
             | WireRequest::TranslationSubmit { .. }
             | WireRequest::TranslationEndorse { .. }
             | WireRequest::TranslationUnendorse { .. }
+            | WireRequest::SkillClaimSubmit { .. }
+            | WireRequest::SkillEndorse { .. }
+            | WireRequest::SkillUnendorse { .. }
     )
 }
 
@@ -387,6 +390,18 @@ pub fn dispatch(
             | WireRequest::TranslationList { .. }
     ) {
         return dispatch_translation(state, session_id, request);
+    }
+
+    // FR-158 Stage A: skills claims — same discipline (durable
+    // store does file I/O; state gathered under a short lock).
+    if matches!(
+        request,
+        WireRequest::SkillClaimSubmit { .. }
+            | WireRequest::SkillEndorse { .. }
+            | WireRequest::SkillUnendorse { .. }
+            | WireRequest::SkillList { .. }
+    ) {
+        return dispatch_skills(state, session_id, request);
     }
 
     if matches!(request, WireRequest::WorkWritingFeedback { .. }) {
@@ -698,6 +713,177 @@ fn dispatch_translation(
             Ok(ResponseValue::Json(json))
         }
         _ => unreachable!("routed only for translation ops"),
+    }
+}
+
+/// FR-158 Stage A: skills claims over the wire. Submit is self-
+/// claims only (the subject must be the caller's club) and every
+/// evidence reference must point at an existing work; endorse/
+/// unendorse enforce the two-person rule and one-per-identity in
+/// the store; list is any connected session, by club or by skill
+/// (exactly one filter). Same lock discipline as renditions: state
+/// gathered under a short lock, file I/O outside it.
+fn dispatch_skills(
+    state: &SharedState,
+    session_id: crate::server::SessionId,
+    request: WireRequest,
+) -> Result<ResponseValue, crate::server::ServerError> {
+    use crate::server::skills::{SkillClaim, SkillEvidence, SkillStore};
+    let store: SkillStore = state.skills.clone().ok_or_else(|| {
+        crate::server::ServerError::Internal(
+            "skills store unavailable (server data directory unset)".to_string(),
+        )
+    })?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    fn skill_summary(claim: &crate::server::skills::SkillClaim) -> serde_json::Value {
+        serde_json::json!({
+            "claim": claim.id().to_hex().to_string(),
+            "subject": claim.subject_club,
+            "skill": claim.skill,
+            "grade": claim.grade(),
+            "summary": claim.summary,
+            "evidence": claim.evidence.iter().map(|e| serde_json::json!({
+                "work_id": e.work_id,
+                "note": e.note,
+            })).collect::<Vec<_>>(),
+            "endorsements": claim.endorsements.len(),
+            "endorsers": claim.endorsements.iter().map(|e| e.club_id).collect::<Vec<_>>(),
+            "created_at": claim.created_at,
+        })
+    }
+
+    match request {
+        WireRequest::SkillList { club, skill } => {
+            state
+                .server
+                .with_server_ref(|srv| srv.ensure_session(session_id))?;
+            match (club, skill) {
+                (Some(_), Some(_)) => Err(crate::server::ServerError::InvalidArgument(
+                    "pass exactly one of club or skill, not both".to_string(),
+                )),
+                (None, None) => Err(crate::server::ServerError::InvalidArgument(
+                    "pass exactly one filter: club (a person's claims) or skill (who claims it)"
+                        .to_string(),
+                )),
+                (Some(club), None) => {
+                    let claims = store.claims_by_club(club);
+                    Ok(ResponseValue::Json(serde_json::json!({
+                        "club": club,
+                        "claims": claims.iter().map(skill_summary).collect::<Vec<_>>(),
+                    })))
+                }
+                (None, Some(skill)) => {
+                    let claims = store.claims_by_skill(&skill);
+                    Ok(ResponseValue::Json(serde_json::json!({
+                        "skill": crate::server::skills::normalize_skill_tag(&skill),
+                        "claims": claims.iter().map(skill_summary).collect::<Vec<_>>(),
+                    })))
+                }
+            }
+        }
+        WireRequest::SkillEndorse { claim } => {
+            let club = state.server.with_server_ref(|srv| {
+                srv.ensure_logged_in(session_id)?;
+                srv.resolve_author_club(session_id)
+                    .ok_or(crate::server::ServerError::NotAuthorized)
+            })?;
+            let hash = blake3::Hash::from_hex(&claim).map_err(|_| {
+                crate::server::ServerError::InvalidArgument(
+                    "claim must be a blake3 hex id".to_string(),
+                )
+            })?;
+            let updated = store
+                .endorse(&hash, club, now)
+                .map_err(crate::server::ServerError::InvalidArgument)?;
+            Ok(ResponseValue::Json(skill_summary(&updated)))
+        }
+        WireRequest::SkillUnendorse { claim } => {
+            let club = state.server.with_server_ref(|srv| {
+                srv.ensure_logged_in(session_id)?;
+                srv.resolve_author_club(session_id)
+                    .ok_or(crate::server::ServerError::NotAuthorized)
+            })?;
+            let hash = blake3::Hash::from_hex(&claim).map_err(|_| {
+                crate::server::ServerError::InvalidArgument(
+                    "claim must be a blake3 hex id".to_string(),
+                )
+            })?;
+            let updated = store
+                .unendorse(&hash, club)
+                .map_err(crate::server::ServerError::InvalidArgument)?;
+            Ok(ResponseValue::Json(skill_summary(&updated)))
+        }
+        WireRequest::SkillClaimSubmit {
+            subject,
+            skill,
+            summary,
+            evidence,
+        } => {
+            // Gather under a short read lock: session, subject rule,
+            // and evidence-work existence. Validation and the claim
+            // construction are pure; persistence is file I/O and
+            // runs outside the lock.
+            let (club, evidence): (u64, Vec<SkillEvidence>) =
+                state.server.with_server_ref(|srv| {
+                    srv.ensure_logged_in(session_id)?;
+                    let club = srv
+                        .resolve_author_club(session_id)
+                        .ok_or(crate::server::ServerError::NotAuthorized)?;
+                    if subject != club {
+                        return Err(crate::server::ServerError::InvalidArgument(
+                            "v1: self-claims only — subject must be the caller's club".to_string(),
+                        ));
+                    }
+                    let candidate: Vec<SkillEvidence> = evidence
+                        .iter()
+                        .map(|p| SkillEvidence {
+                            work_id: p.work_id.to_lowercase(),
+                            note: p.note.clone(),
+                        })
+                        .collect();
+                    crate::server::skills::validate_skill_claim(&skill, &summary, &candidate)
+                        .map_err(crate::server::ServerError::InvalidArgument)?;
+                    let checked = candidate
+                        .iter()
+                        .map(|e| {
+                            let num = u64::from_str_radix(&e.work_id, 16).map_err(|_| {
+                                crate::server::ServerError::InvalidArgument(format!(
+                                    "evidence work_id {:?} is not hex",
+                                    e.work_id
+                                ))
+                            })?;
+                            srv.work_title(num).ok_or_else(|| {
+                                crate::server::ServerError::InvalidArgument(format!(
+                                    "evidence work {:?} not found",
+                                    e.work_id
+                                ))
+                            })?;
+                            Ok(e.clone())
+                        })
+                        .collect::<Result<Vec<_>, crate::server::ServerError>>()?;
+                    Ok((club, checked))
+                })?;
+            let claim = SkillClaim {
+                subject_club: club,
+                skill: crate::server::skills::normalize_skill_tag(&skill),
+                summary,
+                evidence,
+                submitter_club: club,
+                created_at: now,
+                endorsements: Vec::new(),
+            };
+            let id = store.put_claim(&claim).map_err(|e| {
+                crate::server::ServerError::Internal(format!("persisting skill claim: {e}"))
+            })?;
+            let mut json = skill_summary(&claim);
+            json["claim"] = serde_json::json!(id.to_hex().to_string());
+            Ok(ResponseValue::Json(json))
+        }
+        _ => unreachable!("routed only for skills ops"),
     }
 }
 

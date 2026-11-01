@@ -4053,6 +4053,60 @@ impl JsonCodec {
                 })
             }
             #[cfg(feature = "serde")]
+            OperationCode::SkillClaimSubmit => {
+                #[derive(Deserialize)]
+                struct Args {
+                    subject: u64,
+                    skill: String,
+                    summary: String,
+                    evidence: Vec<super::protocol::SkillEvidencePayload>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::SkillClaimSubmit {
+                    subject: args.subject,
+                    skill: args.skill,
+                    summary: args.summary,
+                    evidence: args.evidence,
+                })
+            }
+            #[cfg(feature = "serde")]
+            OperationCode::SkillEndorse => {
+                #[derive(Deserialize)]
+                struct Args {
+                    claim: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::SkillEndorse { claim: args.claim })
+            }
+            #[cfg(feature = "serde")]
+            OperationCode::SkillUnendorse => {
+                #[derive(Deserialize)]
+                struct Args {
+                    claim: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::SkillUnendorse { claim: args.claim })
+            }
+            #[cfg(feature = "serde")]
+            OperationCode::SkillList => {
+                #[derive(Deserialize)]
+                struct Args {
+                    #[serde(default)]
+                    club: Option<u64>,
+                    #[serde(default)]
+                    skill: Option<String>,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::SkillList {
+                    club: args.club,
+                    skill: args.skill,
+                })
+            }
+            #[cfg(feature = "serde")]
             OperationCode::AdminServerProbe => {
                 #[derive(Deserialize)]
                 struct Args {
