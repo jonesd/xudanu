@@ -392,8 +392,8 @@ without an engine is a small future change (the gate, not the
 assembly — assembly already needs no provider call for covered
 spans) and is recorded here so it is a decision, not an accident.
 
-**Next**: trust-lab v0 (FR-157's synthetic-population harness) on
-this substrate.
+**Next**: trust-lab v0 — **BUILT 2026-11-01** (`tests/trust_lab.rs`;
+see FR-157's as-built section).
 
 ## Provisioning languages (DECIDED 2026-10-30)
 
