@@ -60,6 +60,13 @@ pub struct SkillClaim {
     pub skill: String,
     pub summary: String,
     pub evidence: Vec<SkillEvidence>,
+    /// The claim this one corrects, if any (the claim's id is the
+    /// hash of what it says, so a changed claim is a different
+    /// claim; `supersedes` is the correction pointer). Participates
+    /// in the id. May dangle after the replaced claim is retracted
+    /// — same semantics as evidence works after deletion.
+    #[serde(default)]
+    pub supersedes: Option<String>,
     pub submitter_club: u64,
     pub created_at: u64,
     pub endorsements: Vec<SkillEndorsement>,
@@ -83,6 +90,10 @@ impl SkillClaim {
         for part in [self.skill.as_bytes(), self.summary.as_bytes()] {
             hasher.update(&(part.len() as u64).to_le_bytes());
             hasher.update(part);
+        }
+        if let Some(s) = &self.supersedes {
+            hasher.update(&(s.len() as u64).to_le_bytes());
+            hasher.update(s.as_bytes());
         }
         for e in &self.evidence {
             hasher.update(&(e.work_id.len() as u64).to_le_bytes());
@@ -314,6 +325,42 @@ impl SkillStore {
         Ok(claim)
     }
 
+    /// Retract a claim — the subject withdrawing their own
+    /// assertion. The two-person rule's symmetry: only the subject
+    /// may retract, and only while the claim has zero endorsements —
+    /// once someone vouched, it is social fact, not just the
+    /// subject's assertion. A corrected claim is filed alongside
+    /// with `supersedes` pointing here.
+    pub fn retract(&self, id: &blake3::Hash, club_id: u64) -> Result<(), String> {
+        let claim = self
+            .get_claim(id)
+            .ok_or_else(|| "claim not found".to_string())?;
+        if claim.subject_club != club_id {
+            return Err("only the subject may retract their claim".into());
+        }
+        if !claim.endorsements.is_empty() {
+            return Err(
+                "social fact: the claim has endorsements — a vouched claim cannot be retracted"
+                    .into(),
+            );
+        }
+        let hex = id.to_hex().to_string();
+        std::fs::remove_file(self.claim_path(id)).map_err(|e| e.to_string())?;
+        for idx in [
+            self.club_index_path(claim.subject_club),
+            self.skill_index_path(&claim.skill),
+        ] {
+            let mut ids = Self::load_index(&idx);
+            if ids.iter().any(|x| x == &hex) {
+                ids.retain(|x| x != &hex);
+                let idx_json = serde_json::to_string_pretty(&ids).map_err(|e| e.to_string())?;
+                self.write_atomic(&idx, idx_json.as_bytes())
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
+    }
+
     fn persist(&self, claim: &SkillClaim) -> std::io::Result<()> {
         let json = serde_json::to_string_pretty(claim)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
@@ -333,11 +380,21 @@ mod tests {
     }
 
     fn claim(skill: &str, subject: u64, evidence: Vec<SkillEvidence>) -> SkillClaim {
+        claim_with_supersedes(skill, subject, evidence, None)
+    }
+
+    fn claim_with_supersedes(
+        skill: &str,
+        subject: u64,
+        evidence: Vec<SkillEvidence>,
+        supersedes: Option<&str>,
+    ) -> SkillClaim {
         SkillClaim {
             subject_club: subject,
             skill: normalize_skill_tag(skill),
             summary: "did the thing".into(),
             evidence,
+            supersedes: supersedes.map(str::to_string),
             submitter_club: subject,
             created_at: 1_000,
             endorsements: Vec::new(),
@@ -477,5 +534,66 @@ mod tests {
             "corrupt file is a miss, not a crash"
         );
         assert!(store.claims_by_club(7).is_empty());
+    }
+
+    #[test]
+    fn supersedes_participates_in_id_and_back_compatible_json() {
+        let base = claim("rust", 7, vec![evidence("1a", "core")]);
+        let prev_hex = "0".repeat(64);
+        let corrected = claim_with_supersedes(
+            "rust",
+            7,
+            vec![evidence("1a", "core")],
+            Some(prev_hex.as_str()),
+        );
+        assert_ne!(
+            base.id(),
+            corrected.id(),
+            "a corrected claim is a different claim"
+        );
+        assert_eq!(corrected.supersedes.as_deref(), Some(prev_hex.as_str()));
+
+        // Claims written before the field existed deserialize with
+        // supersedes defaulting to None.
+        let old_json = r#"{
+            "subject_club": 7,
+            "skill": "rust",
+            "summary": "did the thing",
+            "evidence": [{"work_id": "1a", "note": "core"}],
+            "submitter_club": 7,
+            "created_at": 1000,
+            "endorsements": []
+        }"#;
+        let parsed: SkillClaim = serde_json::from_str(old_json).expect("legacy claim parses");
+        assert_eq!(parsed.supersedes, None);
+        assert_eq!(parsed.id(), base.id(), "legacy content keeps its id");
+    }
+
+    #[test]
+    fn retract_enforces_subject_and_social_fact_gates() {
+        let store = temp_store("retract");
+        let subject = 7u64;
+        let c = claim("rust", subject, vec![evidence("1a", "core")]);
+        let id = store.put_claim(&c).expect("put");
+
+        // Not the subject.
+        let err = store.retract(&id, 8).expect_err("non-subject retract");
+        assert!(err.contains("only the subject"), "{err}");
+
+        // Endorsed: social fact, not just the subject's assertion.
+        store.endorse(&id, 9, 5_000).expect("endorse");
+        let err = store.retract(&id, subject).expect_err("endorsed retract");
+        assert!(err.contains("social fact"), "{err}");
+        store.unendorse(&id, 9).expect("unendorse");
+
+        // Happy path: file gone, both indexes drained.
+        store.retract(&id, subject).expect("subject retract");
+        assert_eq!(store.get_claim(&id), None);
+        assert!(store.claims_by_club(subject).is_empty());
+        assert!(store.claims_by_skill("rust").is_empty());
+
+        // Double retract: not found.
+        let err = store.retract(&id, subject).expect_err("double retract");
+        assert!(err.contains("not found"), "{err}");
     }
 }

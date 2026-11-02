@@ -220,3 +220,38 @@ the subject's assertion (the two-person rule's symmetry). A
 `supersedes` field would let a corrected claim point at the one it
 replaces. Found the hard way: a user filed a claim, then asked how
 to update it.
+
+## Claim retract — op 0x0f38 (BUILT 2026-11-02, branch fr158/claim-retract)
+
+The deferred op above, exactly as designed. `skill_claim_retract`
+removes the subject's own claim, gated on zero endorsements:
+not the subject → "only the subject may retract their claim";
+endorsed → "social fact". Retraction deletes the claim file and
+drains both indexes (`by-club`, `by-skill`); a second retract is
+"claim not found". The recovery path for an endorsed claim is the
+endorsers withdrawing first — trust returns to the subject's own
+assertion before it can be withdrawn.
+
+`SkillClaim.supersedes: Option<String>` rides the submit payload:
+a corrected claim points at the one it replaces. It participates
+in the id (a corrected claim is a different claim), serializes
+with `serde(default)` so pre-existing claim files parse unchanged,
+and renders on the card ("replaces claim 0x…") and in every list
+response. Validation: the value must be a blake3 hex id; if the
+target still exists it must be the caller's own claim (you cannot
+point your correction at someone else's history); a target that is
+already retracted — the normal flow — passes as a dangling
+pointer, visible in the record, never fatal (the same semantics
+as evidence works after deletion).
+
+Panel: own unendorsed claims get "Retract claim" (confirm dialog);
+own endorsed claims show "endorsed — social fact" with the
+explanation on hover. The submit form gains an optional "replaces
+claim id" field. Trust-lab coverage
+(`trust_lab_claim_retract_over_wire`): the laundering attack is
+staged — the ring endorses a claim, the subject tries to retract
+the vouched claim, the gate holds — then the recovery path, the
+retraction, the corrected claim with `supersedes`, and both
+validation rejections (another's live claim, non-hex). Unit
+tests: gates, id participation, legacy-JSON back-compat. Next free
+op: 0x0f39.

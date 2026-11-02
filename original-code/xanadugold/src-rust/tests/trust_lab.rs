@@ -808,3 +808,273 @@ async fn trust_lab_population_over_wire() {
     );
     assert_eq!(subs[sub_index(&subs, honest)]["grade"], "human-reviewed");
 }
+
+/// The claim lifecycle's missing verb, found the hard way during
+/// live panel use: a subject files a claim, then needs to take it
+/// back. Retract is subject-only and gated on zero endorsements —
+/// the two-person rule's symmetry — with `supersedes` as the
+/// correction pointer. The ring tries the laundering attack
+/// (retract a vouched claim, refile corrected); the gate holds.
+#[tokio::test]
+async fn trust_lab_claim_retract_over_wire() {
+    let srv = TestServer::start_persistent("fr157-retract").await;
+
+    let (mut hs, mut hr, honest) =
+        persona_session(&srv.addr, "lab-honest", "lab-honest-pass").await;
+    let (mut ras, mut rar, ring_a) =
+        persona_session(&srv.addr, "lab-ring-a", "lab-ring-a-pass").await;
+    let (mut rbs, mut rbr, ring_b) =
+        persona_session(&srv.addr, "lab-ring-b", "lab-ring-b-pass").await;
+    assert_ne!(honest, ring_a);
+
+    let mut id = 10u16;
+    let ev_honest = create_work(&mut hs, &mut hr, &mut id, "Correction journal").await;
+    let ev_b = create_work(&mut rbs, &mut rbr, &mut id, "Ring notes B").await;
+
+    let claim_payload =
+        |subject: u64, skill: &str, evidence_hex: &str, supersedes: Option<&str>| {
+            let mut p = serde_json::json!({
+                "subject": subject,
+                "skill": skill,
+                "summary": "translation practice",
+                "evidence": [{"work_id": evidence_hex, "note": "kept the journal"}],
+            });
+            if let Some(s) = supersedes {
+                p["supersedes"] = serde_json::json!(s);
+            }
+            p
+        };
+
+    // Honest files a claim with a mistake in it.
+    let resp = call!(
+        hs,
+        hr,
+        id,
+        "skill_claim_submit",
+        Some(claim_payload(
+            honest,
+            "Translation",
+            &format!("{:x}", ev_honest),
+            None
+        ))
+    );
+    assert!(is_ok(&resp), "file: {}", err_msg(&resp));
+    let c1 = resp["value"]["value"]["claim"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(
+        resp["value"]["value"]["supersedes"],
+        serde_json::Value::Null
+    );
+
+    // Not the subject: the ring cannot retract honest's claim.
+    let resp = call!(
+        ras,
+        rar,
+        id,
+        "skill_claim_retract",
+        Some(serde_json::json!({"claim": c1}))
+    );
+    assert!(resp["type"] == "error", "non-subject retract must reject");
+    assert!(
+        err_msg(&resp).contains("only the subject"),
+        "{}",
+        err_msg(&resp)
+    );
+
+    // Malformed id.
+    let resp = call!(
+        hs,
+        hr,
+        id,
+        "skill_claim_retract",
+        Some(serde_json::json!({"claim": "nothex"}))
+    );
+    assert!(resp["type"] == "error", "non-hex claim id must reject");
+
+    // The laundering attack: the ring endorses the claim (it is now
+    // social fact), the subject tries to retract anyway. Blocked —
+    // once someone vouched, the claim is not just the subject's
+    // assertion to withdraw.
+    let resp = call!(
+        ras,
+        rar,
+        id,
+        "skill_endorse",
+        Some(serde_json::json!({"claim": c1}))
+    );
+    assert!(is_ok(&resp), "ring_a endorses: {}", err_msg(&resp));
+    assert_eq!(resp["value"]["value"]["grade"], "verified");
+    let resp = call!(
+        hs,
+        hr,
+        id,
+        "skill_claim_retract",
+        Some(serde_json::json!({"claim": c1}))
+    );
+    assert!(resp["type"] == "error", "endorsed retract must reject");
+    assert!(err_msg(&resp).contains("social fact"), "{}", err_msg(&resp));
+
+    // Recovery path: the endorser withdraws, then the subject may
+    // retract. The claim leaves both list queries.
+    let resp = call!(
+        ras,
+        rar,
+        id,
+        "skill_unendorse",
+        Some(serde_json::json!({"claim": c1}))
+    );
+    assert!(is_ok(&resp), "unendorse: {}", err_msg(&resp));
+    let resp = call!(
+        hs,
+        hr,
+        id,
+        "skill_claim_retract",
+        Some(serde_json::json!({"claim": c1}))
+    );
+    assert!(is_ok(&resp), "subject retract: {}", err_msg(&resp));
+    assert_eq!(resp["value"]["value"]["retracted"], true);
+    let resp = call!(
+        hs,
+        hr,
+        id,
+        "skill_list",
+        Some(serde_json::json!({"club": honest}))
+    );
+    assert_eq!(
+        resp["value"]["value"]["claims"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .len(),
+        0,
+        "retracted claim leaves the by-club list"
+    );
+    let resp = call!(
+        rbs,
+        rbr,
+        id,
+        "skill_list",
+        Some(serde_json::json!({"skill": "translation"}))
+    );
+    assert_eq!(
+        resp["value"]["value"]["claims"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .len(),
+        0,
+        "retracted claim leaves the by-skill list"
+    );
+
+    // Double retract: the claim is gone.
+    let resp = call!(
+        hs,
+        hr,
+        id,
+        "skill_claim_retract",
+        Some(serde_json::json!({"claim": c1}))
+    );
+    assert!(resp["type"] == "error", "double retract must reject");
+    assert!(err_msg(&resp).contains("not found"), "{}", err_msg(&resp));
+
+    // The correction: a new claim pointing at the one it replaces.
+    // The target is gone (retracted) — a dangling supersedes is the
+    // normal flow, visible in the record, never fatal.
+    let resp = call!(
+        hs,
+        hr,
+        id,
+        "skill_claim_submit",
+        Some(claim_payload(
+            honest,
+            "translation",
+            &format!("{:x}", ev_honest),
+            Some(&c1)
+        ))
+    );
+    assert!(is_ok(&resp), "corrected claim: {}", err_msg(&resp));
+    let c2 = resp["value"]["value"]["claim"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_ne!(c2, c1, "a corrected claim is a different claim");
+    assert_eq!(
+        resp["value"]["value"]["supersedes"].as_str(),
+        Some(c1.as_str())
+    );
+    let resp = call!(
+        rbs,
+        rbr,
+        id,
+        "skill_list",
+        Some(serde_json::json!({"skill": "translation"}))
+    );
+    let claims = resp["value"]["value"]["claims"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(claims.len(), 1);
+    assert_eq!(
+        claims[0]["supersedes"].as_str(),
+        Some(c1.as_str()),
+        "supersedes rides the list response"
+    );
+
+    // Superseding someone else's live claim is refused.
+    let resp = call!(
+        rbs,
+        rbr,
+        id,
+        "skill_claim_submit",
+        Some(claim_payload(
+            ring_b,
+            "translation",
+            &format!("{:x}", ev_b),
+            None
+        ))
+    );
+    assert!(is_ok(&resp), "ring_b claim: {}", err_msg(&resp));
+    let c3 = resp["value"]["value"]["claim"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let resp = call!(
+        hs,
+        hr,
+        id,
+        "skill_claim_submit",
+        Some(claim_payload(
+            honest,
+            "translation",
+            &format!("{:x}", ev_honest),
+            Some(&c3)
+        ))
+    );
+    assert!(
+        resp["type"] == "error",
+        "superseding another's claim must reject"
+    );
+    assert!(
+        err_msg(&resp).contains("your own claim"),
+        "{}",
+        err_msg(&resp)
+    );
+
+    // Malformed supersedes.
+    let resp = call!(
+        hs,
+        hr,
+        id,
+        "skill_claim_submit",
+        Some(claim_payload(
+            honest,
+            "translation",
+            &format!("{:x}", ev_honest),
+            Some("nothex")
+        ))
+    );
+    assert!(resp["type"] == "error", "non-hex supersedes must reject");
+    assert!(err_msg(&resp).contains("supersedes"), "{}", err_msg(&resp));
+}

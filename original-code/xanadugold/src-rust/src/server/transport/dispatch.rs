@@ -203,6 +203,7 @@ fn is_frozen_mutation(req: &WireRequest) -> bool {
             | WireRequest::SkillClaimSubmit { .. }
             | WireRequest::SkillEndorse { .. }
             | WireRequest::SkillUnendorse { .. }
+            | WireRequest::SkillClaimRetract { .. }
     )
 }
 
@@ -399,6 +400,7 @@ pub fn dispatch(
         WireRequest::SkillClaimSubmit { .. }
             | WireRequest::SkillEndorse { .. }
             | WireRequest::SkillUnendorse { .. }
+            | WireRequest::SkillClaimRetract { .. }
             | WireRequest::SkillList { .. }
     ) {
         return dispatch_skills(state, session_id, request);
@@ -746,6 +748,7 @@ fn dispatch_skills(
             "skill": claim.skill,
             "grade": claim.grade(),
             "summary": claim.summary,
+            "supersedes": claim.supersedes,
             "evidence": claim.evidence.iter().map(|e| serde_json::json!({
                 "work_id": e.work_id,
                 "note": e.note,
@@ -822,6 +825,7 @@ fn dispatch_skills(
             skill,
             summary,
             evidence,
+            supersedes,
         } => {
             // Gather under a short read lock: session, subject rule,
             // and evidence-work existence. Validation and the claim
@@ -867,11 +871,35 @@ fn dispatch_skills(
                         .collect::<Result<Vec<_>, crate::server::ServerError>>()?;
                     Ok((club, checked))
                 })?;
+            // Supersedes: format always; if the target still exists
+            // it must be the caller's own claim. A retracted (gone)
+            // target is the normal correction flow and passes —
+            // dangling pointers are visible, never fatal (same
+            // semantics as evidence after work deletion).
+            let supersedes = match supersedes {
+                Some(s) => {
+                    let h = blake3::Hash::from_hex(&s).map_err(|_| {
+                        crate::server::ServerError::InvalidArgument(
+                            "supersedes must be a blake3 hex claim id".to_string(),
+                        )
+                    })?;
+                    if let Some(prev) = store.get_claim(&h) {
+                        if prev.subject_club != club {
+                            return Err(crate::server::ServerError::InvalidArgument(
+                                "supersedes must reference your own claim".to_string(),
+                            ));
+                        }
+                    }
+                    Some(s.to_lowercase())
+                }
+                None => None,
+            };
             let claim = SkillClaim {
                 subject_club: club,
                 skill: crate::server::skills::normalize_skill_tag(&skill),
                 summary,
                 evidence,
+                supersedes,
                 submitter_club: club,
                 created_at: now,
                 endorsements: Vec::new(),
@@ -882,6 +910,25 @@ fn dispatch_skills(
             let mut json = skill_summary(&claim);
             json["claim"] = serde_json::json!(id.to_hex().to_string());
             Ok(ResponseValue::Json(json))
+        }
+        WireRequest::SkillClaimRetract { claim } => {
+            let club = state.server.with_server_ref(|srv| {
+                srv.ensure_logged_in(session_id)?;
+                srv.resolve_author_club(session_id)
+                    .ok_or(crate::server::ServerError::NotAuthorized)
+            })?;
+            let hash = blake3::Hash::from_hex(&claim).map_err(|_| {
+                crate::server::ServerError::InvalidArgument(
+                    "claim must be a blake3 hex id".to_string(),
+                )
+            })?;
+            store
+                .retract(&hash, club)
+                .map_err(crate::server::ServerError::InvalidArgument)?;
+            Ok(ResponseValue::Json(serde_json::json!({
+                "claim": claim,
+                "retracted": true,
+            })))
         }
         _ => unreachable!("routed only for skills ops"),
     }

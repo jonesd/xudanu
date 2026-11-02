@@ -40,6 +40,13 @@ export function iHaveEndorsed(claim: SkillClaimEntry, myClubId: number | null): 
   return myClubId !== null && claim.endorsers.includes(myClubId);
 }
 
+/** Retract gate: your claim, and only while unendorsed — once
+ *  someone vouched, it is social fact (the two-person rule's
+ *  symmetry). */
+export function canRetractClaim(claim: SkillClaimEntry, myClubId: number | null): boolean {
+  return myClubId !== null && claim.subject === myClubId && claim.endorsements === 0;
+}
+
 const BADGE: Record<string, { label: string; background: string; color: string }> = {
   claimed: { label: "claimed", background: "#30363d", color: "#e8e6e0" },
   verified: { label: "verified", background: "#39d2c0", color: "#0d1117" },
@@ -112,6 +119,7 @@ function ClaimCard({
   onSelectWork,
   onEndorse,
   onUnendorse,
+  onRetractClaim,
 }: {
   claim: SkillClaimEntry;
   identity: WhoAmIEntry | null;
@@ -120,6 +128,7 @@ function ClaimCard({
   onSelectWork: (workId: number) => void;
   onEndorse: (claim: SkillClaimEntry) => void;
   onUnendorse: (claim: SkillClaimEntry) => void;
+  onRetractClaim: (claim: SkillClaimEntry) => void;
 }) {
   const myClub = identity?.club_id ?? null;
   const mine = claim.subject === myClub;
@@ -146,6 +155,11 @@ function ClaimCard({
           {claim.summary}
         </div>
       )}
+      {claim.supersedes && (
+        <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>
+          replaces claim 0x{claim.supersedes.slice(0, 8)}…
+        </div>
+      )}
       <EvidenceChips claim={claim} works={works} onSelectWork={onSelectWork} />
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
         <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
@@ -153,11 +167,33 @@ function ClaimCard({
             ? "no endorsements yet"
             : `${claim.endorsements} endorsement${claim.endorsements === 1 ? "" : "s"}: club ${claim.endorsers.join(", club ")}`}
         </span>
-        <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+        <span style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
           {mine ? (
-            <span style={{ fontSize: 11, color: "var(--text-dim)" }} title="Two-person rule: peers endorse your claim; you cannot.">
-              your claim
-            </span>
+            <>
+              <span style={{ fontSize: 11, color: "var(--text-dim)" }} title="Two-person rule: peers endorse your claim; you cannot.">
+                your claim
+              </span>
+              {canRetractClaim(claim, myClub) ? (
+                <button
+                  type="button"
+                  className="ws-action-btn"
+                  disabled={busy}
+                  title="Withdraw this claim while it has no endorsements"
+                  onClick={() => onRetractClaim(claim)}
+                >
+                  Retract claim
+                </button>
+              ) : (
+                claim.endorsements > 0 && (
+                  <span
+                    style={{ fontSize: 11, color: "var(--text-dim)" }}
+                    title="Once someone vouched, the claim is social fact — it cannot be retracted while endorsements stand"
+                  >
+                    endorsed — social fact
+                  </span>
+                )
+              )}
+            </>
           ) : identity === null ? (
             <span style={{ fontSize: 11, color: "var(--text-dim)" }}>log in to endorse</span>
           ) : endorsed ? (
@@ -200,6 +236,7 @@ export function SkillsPanel({ client, identity, currentWorkId, works, onSelectWo
   const [formSkill, setFormSkill] = useState("");
   const [formSummary, setFormSummary] = useState("");
   const [formNote, setFormNote] = useState("");
+  const [formSupersedes, setFormSupersedes] = useState("");
   const [citeCurrent, setCiteCurrent] = useState(true);
 
   const myClub = identity?.club_id ?? null;
@@ -263,6 +300,21 @@ export function SkillsPanel({ client, identity, currentWorkId, works, onSelectWo
     }
   };
 
+  const retractClaim = async (claim: SkillClaimEntry) => {
+    if (!client) return;
+    if (!confirm("Retract this claim? It has no endorsements and will be removed.")) return;
+    setBusyClaim(claim.claim);
+    setError(null);
+    try {
+      await client.skillClaimRetract(claim.claim);
+      await Promise.all([refreshMine(), searchedSkill !== null ? runSearch() : Promise.resolve()]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyClaim(null);
+    }
+  };
+
   const submit = async () => {
     if (!client || myClub === null) return;
     setError(null);
@@ -280,12 +332,14 @@ export function SkillsPanel({ client, identity, currentWorkId, works, onSelectWo
         formSkill,
         formSummary,
         evidence,
+        formSupersedes.trim() || undefined,
       );
       setMyClaims((prev) => [created, ...prev.filter((c) => c.claim !== created.claim)]);
       setShowForm(false);
       setFormSkill("");
       setFormSummary("");
       setFormNote("");
+      setFormSupersedes("");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -354,6 +408,12 @@ export function SkillsPanel({ client, identity, currentWorkId, works, onSelectWo
                       ? `cite open work 0x${hexWorkId(currentWorkId)} as evidence`
                       : "cite the open work as evidence (none open)"}
                   </label>
+                  <input
+                    placeholder="replaces claim id (optional — the corrected claim points at the one it replaces)"
+                    value={formSupersedes}
+                    onChange={(e) => setFormSupersedes(e.target.value)}
+                    style={{ background: "#0d1117", border: "1px solid #30363d", borderRadius: 6, color: "#e8e6e0", padding: "4px 8px", fontSize: 12 }}
+                  />
                   <button
                     type="button"
                     className="ws-action-btn"
@@ -414,6 +474,7 @@ export function SkillsPanel({ client, identity, currentWorkId, works, onSelectWo
           onSelectWork={onSelectWork}
           onEndorse={(cl) => void endorse(cl)}
           onUnendorse={(cl) => void unendorse(cl)}
+          onRetractClaim={(cl) => void retractClaim(cl)}
         />
       ))}
     </div>

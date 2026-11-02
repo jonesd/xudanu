@@ -66,6 +66,7 @@ import type {
   WorkGraphPayload,
   TrailPayload,
   SkillClaimEntry,
+  SkillClaimRetractResult,
   SkillListResult,
   ChangeHighlight
 } from "./protocol";
@@ -1485,12 +1486,14 @@ export class CrdtSyncClient {
     skill: string,
     summary: string,
     evidence: Array<{ work_id: string; note: string }>,
+    supersedes?: string,
   ): Promise<SkillClaimEntry> {
     const resp = await this.sendRequest("skill_claim_submit", {
       subject,
       skill,
       summary,
       evidence,
+      ...(supersedes ? { supersedes } : {}),
     });
     return extractValue(resp) as SkillClaimEntry;
   }
@@ -1503,6 +1506,12 @@ export class CrdtSyncClient {
   async skillUnendorse(claim: string): Promise<SkillClaimEntry> {
     const resp = await this.sendRequest("skill_unendorse", { claim });
     return extractValue(resp) as SkillClaimEntry;
+  }
+
+  /** Retract your own claim — subject-only, zero endorsements. */
+  async skillClaimRetract(claim: string): Promise<SkillClaimRetractResult> {
+    const resp = await this.sendRequest("skill_claim_retract", { claim });
+    return extractValue(resp) as SkillClaimRetractResult;
   }
 
   // ── Blob / Image API ──

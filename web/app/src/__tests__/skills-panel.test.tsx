@@ -7,6 +7,7 @@ import {
   parseWorkHex,
   canEndorse,
   iHaveEndorsed,
+  canRetractClaim,
 } from "../components/SkillsPanel";
 import type { CrdtSyncClient, SkillClaimEntry, WorkListEntry } from "../api/crdt_sync";
 
@@ -23,6 +24,25 @@ const claimed: SkillClaimEntry = {
   endorsements: 0,
   endorsers: [],
   created_at: 1774000000,
+};
+
+const mineVerified: SkillClaimEntry = {
+  claim: "d".repeat(64),
+  subject: MY_CLUB,
+  skill: "rust",
+  grade: "verified",
+  summary: "",
+  evidence: [{ work_id: "3ee", note: "" }],
+  endorsements: 1,
+  endorsers: [1005],
+  created_at: 1774000003,
+};
+
+const corrected: SkillClaimEntry = {
+  ...claimed,
+  claim: "e".repeat(64),
+  summary: "corrected wording",
+  supersedes: "a".repeat(64),
 };
 
 const peerVerified: SkillClaimEntry = {
@@ -67,6 +87,7 @@ function makeClient(claims: SkillClaimEntry[]) {
     skillClaimSubmit: vi.fn().mockResolvedValue(claimed),
     skillEndorse: vi.fn().mockResolvedValue(peerVerified),
     skillUnendorse: vi.fn().mockResolvedValue(claimed),
+    skillClaimRetract: vi.fn().mockResolvedValue({ claim: claimed.claim, retracted: true }),
   } as unknown as CrdtSyncClient;
 }
 
@@ -86,6 +107,13 @@ describe("SkillsPanel helpers", () => {
   it("tracks whether I already endorsed", () => {
     expect(iHaveEndorsed(peerVerified, MY_CLUB)).toBe(true);
     expect(iHaveEndorsed(claimed, MY_CLUB)).toBe(false);
+  });
+
+  it("retract gate: own unendorsed claim only — social fact once endorsed", () => {
+    expect(canRetractClaim(claimed, MY_CLUB)).toBe(true);
+    expect(canRetractClaim(mineVerified, MY_CLUB)).toBe(false);
+    expect(canRetractClaim(peerClaimed, MY_CLUB)).toBe(false);
+    expect(canRetractClaim(claimed, null)).toBe(false);
   });
 });
 
@@ -235,7 +263,55 @@ describe("SkillsPanel", () => {
       "Rust",
       "systems work",
       [{ work_id: "3ee", note: "wrote the engine" }],
+      undefined,
     );
+  });
+
+  it("own unendorsed claim offers Retract claim, which calls skill_claim_retract", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const user = userEvent.setup();
+    const client = makeClient([claimed]);
+    render(
+      <SkillsPanel
+        client={client}
+        identity={identity}
+        currentWorkId={null}
+        works={works}
+        onSelectWork={() => {}}
+      />,
+    );
+    await user.click(await screen.findByText("Retract claim"));
+    await waitFor(() =>
+      expect(client.skillClaimRetract).toHaveBeenCalledWith(claimed.claim),
+    );
+    confirmSpy.mockRestore();
+  });
+
+  it("own endorsed claim is social fact — no retract button", async () => {
+    render(
+      <SkillsPanel
+        client={makeClient([mineVerified])}
+        identity={identity}
+        currentWorkId={null}
+        works={works}
+        onSelectWork={() => {}}
+      />,
+    );
+    expect(await screen.findByText("endorsed — social fact")).toBeInTheDocument();
+    expect(screen.queryByText("Retract claim")).not.toBeInTheDocument();
+  });
+
+  it("a corrected claim shows what it replaces", async () => {
+    render(
+      <SkillsPanel
+        client={makeClient([corrected])}
+        identity={identity}
+        currentWorkId={null}
+        works={works}
+        onSelectWork={() => {}}
+      />,
+    );
+    expect(await screen.findByText(/replaces claim 0xaaaaaaaa/)).toBeInTheDocument();
   });
 
   it("submit is disabled with no work open to cite", async () => {
