@@ -4060,6 +4060,8 @@ impl JsonCodec {
                     skill: String,
                     summary: String,
                     evidence: Vec<super::protocol::SkillEvidencePayload>,
+                    #[serde(default)]
+                    supersedes: Option<String>,
                 }
                 let args: Args = serde_json::from_value(p)
                     .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
@@ -4068,7 +4070,18 @@ impl JsonCodec {
                     skill: args.skill,
                     summary: args.summary,
                     evidence: args.evidence,
+                    supersedes: args.supersedes,
                 })
+            }
+            #[cfg(feature = "serde")]
+            OperationCode::SkillClaimRetract => {
+                #[derive(Deserialize)]
+                struct Args {
+                    claim: String,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::SkillClaimRetract { claim: args.claim })
             }
             #[cfg(feature = "serde")]
             OperationCode::SkillEndorse => {

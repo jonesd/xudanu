@@ -162,10 +162,18 @@ export interface SkillClaimEntry {
   skill: string;
   grade: string;
   summary: string;
+  /** The claim this one corrects (hex id), if any — may dangle
+   *  after the replaced claim is retracted. */
+  supersedes?: string | null;
   evidence: SkillEvidenceEntry[];
   endorsements: number;
   endorsers: number[];
   created_at: number;
+}
+
+export interface SkillClaimRetractResult {
+  claim: string;
+  retracted: boolean;
 }
 
 export interface SkillListResult {

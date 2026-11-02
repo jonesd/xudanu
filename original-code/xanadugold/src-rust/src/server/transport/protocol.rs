@@ -485,6 +485,7 @@ pub enum OperationCode {
     SkillEndorse,
     SkillUnendorse,
     SkillList,
+    SkillClaimRetract,
     AdminServerProbe,
     #[cfg(feature = "serde")]
     CrossServerResolve,
@@ -897,6 +898,7 @@ impl OperationCode {
         (0x0f35, OperationCode::SkillEndorse),
         (0x0f36, OperationCode::SkillUnendorse),
         (0x0f37, OperationCode::SkillList),
+        (0x0f38, OperationCode::SkillClaimRetract),
         (0x0f17, OperationCode::AdminClubsList),
         (0x0f18, OperationCode::AdminGrantAdmin),
         (0x0f19, OperationCode::AdminRevokeAdmin),
@@ -2330,12 +2332,17 @@ pub enum WireRequest {
     /// FR-158 Stage A: file a skills claim about yourself, anchored
     /// to evidence artifacts. Subject must be the caller (self-
     /// claims only in this stage); peers endorse via skill_endorse.
+    /// `supersedes` optionally points at the claim this one
+    /// corrects (the claim's id is its content, so a changed claim
+    /// is a different claim).
     #[cfg(feature = "serde")]
     SkillClaimSubmit {
         subject: u64,
         skill: String,
         summary: String,
         evidence: Vec<SkillEvidencePayload>,
+        #[cfg_attr(feature = "serde", serde(default))]
+        supersedes: Option<String>,
     },
     /// Endorse a skills claim (one per identity, two-person rule;
     /// moves it claimed → verified).
@@ -2356,6 +2363,14 @@ pub enum WireRequest {
         club: Option<u64>,
         #[cfg_attr(feature = "serde", serde(default))]
         skill: Option<String>,
+    },
+    /// Retract your own claim — subject-only, and only while it has
+    /// zero endorsements: once someone vouched, it is social fact,
+    /// not just the subject's assertion (the two-person rule's
+    /// symmetry).
+    #[cfg(feature = "serde")]
+    SkillClaimRetract {
+        claim: String,
     },
     #[cfg(feature = "serde")]
     AdminServerProbe {
@@ -5474,7 +5489,7 @@ mod lattice_shadow_wire_tests {
         let next = OperationCode::next_free_code(0x0f00, 0x0fff)
             .expect("the 0x0f00 block must not be exhausted");
         assert_eq!(
-            next, 0x0f38,
+            next, 0x0f39,
             "next free 0x0f-block code moved — update this expectation after registering"
         );
         // The helper's result is by construction absent from the table.
