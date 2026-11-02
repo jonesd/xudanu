@@ -136,6 +136,40 @@ validated without people is sociology (whether humans bother
 endorsing, whether the weights feel fair); the plumbing
 deliberately does not depend on it.
 
+## Trust-lab v0 (BUILT 2026-11-01, branch fr157/trust-lab)
+
+The bootstrapping table's harness row is real. `tests/trust_lab.rs`
+seeds a six-identity population on one server — a careful human
+(`honest`), an AI agent (`agent`, whose submissions carry
+`derived_from_model`), a liberal endorser (`sloppy`), and a
+three-identity colluding ring (`ring_a/b/c`) — and plays **both
+endorsement domains** end to end over a public-domain corpus work:
+FR-155 renditions (submit → endorse → retract → list) and FR-158
+skills claims (claim → endorse → retract → both list queries), each
+persona on its own `persona_session` WebSocket.
+
+Asserted, identically in both stores: the two-person rule
+(self-endorse rejected), one endorsement per identity (duplicates
+rejected), retraction (grades fall back, ids stable), derived
+grades, and best-first ordering (verified before claimed, more
+vouches first — timestamp-tie order deliberately not asserted).
+Mixed-case tags fold onto one skill, and the same club id appears
+as rendition submitter and claim subject — the fabric's join key.
+
+**The v0 pin: inflation measured, not suppressed.** Endorsements
+are unweighted, so the scenario records exactly what a ring can do
+today. In renditions, the ring's three vouches put a loose
+translation above the careful one's two (`translation_list` order
+pinned: ring 3 > honest 2 > unendorsed 0). In skills, two ring
+claims reach `verified` with `{ring_a}` as their entire endorser
+set — zero outside vouches (pinned via `skill_list`'s `endorsers`).
+These assertions are the baseline FR-157's work-weighting must
+invert: when pricing lands, the same scenario flips to ring
+suppression, and the harness is already there to catch it. The
+agent's claim staying `claimed` until a human vouches is the same
+lesson pointed the other way — standing is earned in, never
+assumed.
+
 ## Open questions (deliberately unanswered here)
 
 - Who may endorse: any verified identity, or club-membership-gated?

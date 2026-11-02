@@ -157,6 +157,13 @@ existence ≠ visibility stays the model for later scoping.
 endorsements, then newest — the comparator FR-155's `list_human`
 initially got backwards, written correctly here.
 
+**The trust-lab exercises it** (`tests/trust_lab.rs`, FR-157 v0,
+built 2026-11-01): a six-persona population — careful human, AI
+agent, sloppy endorser, colluding ring — files and vouches claims
+over the wire alongside rendition endorsements on the same server.
+The ring's self-verified claims (endorser set exactly `{ring_a}`)
+are the measured sybil baseline that work-weighting must invert.
+
 **Claims are not content:** not addressable, not transcludable —
 trust facts about people, riding their own structures, never the
 annotation system.
