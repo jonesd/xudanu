@@ -6,7 +6,10 @@ nohup.out
 /.dev-passphrase
 --data-dir
 *.key
+# legacy xudanu data-dir artifact (any depth); the repo-root
+# server.json is the MCP Registry manifest and must be tracked
 server.json
+!/server.json
 key_history.json
 *.cha
 .idea/
@@ -24,6 +27,7 @@ original-code/xanadugold/src-rust/.cargo/
 original-code/xanadugold/src-rust/data/
 original-code/xanadugold/src-rust/data.bak/
 original-code/xanadugold/src-rust/data.bak2/
+original-code/xanadugold/src-rust/data.backup-*/
 original-code/xanadugold/src-rust/data.old/
 original-code/xanadugold/src-rust/test-csrf/
 original-code/xanadugold/src-rust/--help/

@@ -5,6 +5,12 @@ edition = "2021"
 license = "Apache-2.0"
 authors = ["David Jones <david@dgjones.info>"]
 description = "Hypertext document store with collaborative CRDT editing"
+readme = "README.md"
+keywords = ["hypertext", "xanadu", "transclusion", "mcp", "crdt"]
+categories = ["text-processing"]
+# Never package data dirs (untracked-but-not-ignored files ship by
+# default) or local tool state.
+exclude = ["data.backup-*", "data", ".opencode", "docs/screenshots"]
 
 # Persistence bug pattern detection: the lints below catch the patterns
 # that caused 13 data-loss bugs (see docs/dev/bug-pattern-catalog.md).

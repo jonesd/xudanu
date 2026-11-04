@@ -24,6 +24,31 @@ No setup at all? Browse the hosted read-only instance: **[xudanu.com](https://xu
 
 Full walkthrough: **[The 90-Second Bidirectional-Links Demo](original-code/xanadugold/src-rust/docs/demo-bidirectional-links.md)**.
 
+## Point an AI agent at it (MCP)
+
+Every xudanu server speaks the [Model Context Protocol](https://modelcontextprotocol.io). The `xudanu-mcp` binary gives an MCP client **13 read tools** over a docuverse — search, read (transclusions resolve live), quote with revision-pinned `xudanu://work/<id>?rev=<n>#span=<s>,<e>` references, and confirm quotes with a verify tool — plus **6 write tools** behind `--enable-agent-writes`, where every agent revision is stamped as LLM-authored in the provenance chain.
+
+**Install** (or grab a [release binary](https://github.com/jonesd/xudanu/releases) — `xudanu-mcp` ships for all five platforms):
+
+```bash
+cargo install xudanu --features server
+```
+
+**Point the client at a running server** — same `mcpServers` shape for Claude Desktop, Cursor, and Claude Code:
+
+```json
+{
+  "mcpServers": {
+    "xudanu": {
+      "command": "xudanu-mcp",
+      "args": ["--server", "ws://127.0.0.1:8080"]
+    }
+  }
+}
+```
+
+Read-only by default; the server owns durability. Full tool list, the direct data-dir mode, the addressing scheme, and the risks in plain language: **[the MCP guide](https://dgjones.info/xudanu/mcp-guide.html)**.
+
 ## What it looks like
 
 | | |
@@ -116,6 +141,7 @@ The full documentation lives at **[dgjones.info/xudanu](https://dgjones.info/xud
 | [What People Said Killed Project Xanadu](https://dgjones.info/xudanu/xanadu-explainer.html) | The four standard objections to the 1960 design, answered by a running xanalogical system |
 | [From Udanax to Xudanu](https://dgjones.info/xudanu/udanax-to-xudanu.html) | The algorithms, the people, and the 35-year path from Nelson's vision to running Rust |
 | [Wire Protocol](https://dgjones.info/xudanu/wire-protocol.html) | The complete 140+ operation WebSocket API — the integration surface for building your own client. **Declared a compatibility contract**: within `api_version` 1, changes are additive-only and the op table is CI-pinned |
+| [The MCP Guide](https://dgjones.info/xudanu/mcp-guide.html) | The agent surface: 13 read tools + 6 attributable write tools over MCP, `xudanu://` span addressing, and the risks in plain language |
 
 Also worth knowing: the [User Guide](https://dgjones.info/xudanu/user-guide.html), the [Technical Architecture](https://dgjones.info/xudanu/technical-architecture.html) deep-dive (Big-O analysis of every data structure), and the [Gold Heritage concept map](https://dgjones.info/xudanu/gold-heritage.html) tracing every Udanax-Gold concept to its Rust descendant.
 

@@ -334,6 +334,23 @@ For automated backups, add a cron entry:
 
 The server will auto-migrate any legacy extensionless chunk files to `.xchunk` on startup.
 
+## MCP server for AI agents
+
+The crate ships `xudanu-mcp`, a [Model Context Protocol](https://modelcontextprotocol.io) server (stdio JSON-RPC):
+
+```
+xudanu-mcp --server ws://127.0.0.1:8080   # tools against a running server
+xudanu-mcp <data-dir>                     # direct store, read tools only
+```
+
+Read tools (search, read, span reads with revision pinning, quote verification,
+backlinks, transclusion sources, provenance, version diffs, watches) are on by
+default. `--enable-agent-writes` opts into the six mutation tools, and every
+agent revision is attributed as LLM-authored in the provenance chain.
+Guide: [dgjones.info/xudanu/mcp-guide.html](https://dgjones.info/xudanu/mcp-guide.html).
+
+- MCP Registry name: `mcp-name: io.github.jonesd/xudanu`
+
 ## License
 
 This Rust implementation is licensed under **Apache 2.0** (Copyright 2026 David G Jones and contributors).
