@@ -1,0 +1,22 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.jonesd/xudanu",
+  "title": "Xudanu",
+  "description": "Documents with verifiable citations for AI agents: typed two-way links, live transclusion, span-stable xudanu:// references, and per-quote verification over a xanalogical document store.",
+  "version": "1.21.0",
+  "packages": [
+    {
+      "registryType": "cargo",
+      "identifier": "xudanu",
+      "version": "1.21.0",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ],
+  "repository": {
+    "url": "https://github.com/jonesd/xudanu",
+    "source": "github",
+    "subfolder": "original-code/xanadugold/src-rust"
+  }
+}
