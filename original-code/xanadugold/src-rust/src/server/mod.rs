@@ -10,6 +10,8 @@ pub mod crdt_manager;
 pub mod detector;
 pub mod detectors;
 #[cfg(feature = "server")]
+pub mod epub;
+#[cfg(feature = "server")]
 pub mod error;
 #[cfg(feature = "server")]
 pub mod federation;

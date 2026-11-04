@@ -56,8 +56,9 @@ path = "src/bin/xudanu-verify.rs"
 default = []
 engine = ["serde", "serde_json", "postcard", "tracing", "sha2", "hex"]
 wasm = ["wasm-bindgen", "console_error_panic_hook", "serde", "serde_json", "js-sys", "engine"]
-server = ["engine", "tokio", "axum", "postcard", "tracing", "tracing-subscriber", "tracing-appender", "serde", "serde_json", "futures-util", "tokio-tungstenite", "chacha20poly1305", "x25519-dalek", "ed25519-dalek", "sha2", "hmac", "hkdf", "argon2", "subtle", "rand", "zeroize", "mime_guess", "axum-server", "rustls-pemfile", "rustls", "ring", "base64", "reqwest", "oauth2", "webpki-roots", "hex", "image", "oxipng", "fs4", "epub-parser"]
-# epub-parser (MIT) is part of the server feature — no GPL terms.
+server = ["engine", "tokio", "axum", "postcard", "tracing", "tracing-subscriber", "tracing-appender", "serde", "serde_json", "futures-util", "tokio-tungstenite", "chacha20poly1305", "x25519-dalek", "ed25519-dalek", "sha2", "hmac", "hkdf", "argon2", "subtle", "rand", "zeroize", "mime_guess", "axum-server", "rustls-pemfile", "rustls", "ring", "base64", "reqwest", "oauth2", "webpki-roots", "hex", "image", "oxipng", "fs4", "zip", "quick-xml"]
+# EPUB import is in-house (src/server/epub.rs) on zip 9 + quick-xml,
+# both MIT — no GPL terms.
 # The heif feature is a real opt-in: it links the LGPL-3.0-or-later
 # libheif C library into the binary (via MIT libheif-rs bindings),
 # opting the OPERATOR's build into LGPL terms for that code. Both
@@ -71,7 +72,8 @@ getrandom = { version = "0.2", features = ["js"] }
 [dependencies]
 blake3 = "1"
 unicode-normalization = "0.1"
-epub-parser = { version = "0.3", optional = true }
+zip = { version = "9", optional = true }
+quick-xml = { version = "0.36", optional = true }
 chrono = { version = "0.4", features = ["serde"] }
 wasm-bindgen = { version = "0.2", optional = true }
 console_error_panic_hook = { version = "0.1", optional = true }

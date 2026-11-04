@@ -4893,37 +4893,20 @@ fn dispatch_inner(
             skip_prefix_lines,
             skip_suffix_lines,
         } => {
-            #[cfg(not(feature = "epub-import"))]
-            {
-                let _ = (
-                    epub_data,
-                    title,
-                    author,
-                    skip_prefix_lines,
-                    skip_suffix_lines,
-                );
-                Err(crate::server::ServerError::InvalidArgument(
-                    "EPUB import not compiled in (GPL-licensed feature — rebuild with --features epub-import)"
-                        .into(),
-                ))
-            }
-            #[cfg(feature = "epub-import")]
-            {
-                let (work_id, auth_id, text_length, import_title) = srv.import_epub(
-                    session_id,
-                    &epub_data,
-                    title.as_deref(),
-                    author.as_deref(),
-                    skip_prefix_lines,
-                    skip_suffix_lines,
-                )?;
-                Ok(ResponseValue::ImportSourceWorkResult {
-                    work_id,
-                    author_id: auth_id,
-                    title: import_title,
-                    text_length,
-                })
-            }
+            let (work_id, auth_id, text_length, import_title) = srv.import_epub(
+                session_id,
+                &epub_data,
+                title.as_deref(),
+                author.as_deref(),
+                skip_prefix_lines,
+                skip_suffix_lines,
+            )?;
+            Ok(ResponseValue::ImportSourceWorkResult {
+                work_id,
+                author_id: auth_id,
+                title: import_title,
+                text_length,
+            })
         }
 
         WireRequest::SourceDetect { text } => {
