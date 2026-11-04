@@ -7467,8 +7467,8 @@ impl Server {
     }
 
     // ── EPUB import ──
-    // MIT-licensed (epub-parser) — part of the server feature with no
-    // GPL entanglement.
+    // In-house reader (server/epub.rs) over zip 9 + quick-xml, both
+    // MIT — no GPL entanglement.
 
     pub fn import_epub(
         &mut self,
@@ -7485,41 +7485,22 @@ impl Server {
         );
         self.ensure_logged_in(session_id)?;
 
-        // epub-parser works from a file — write to a temp path.
-        let tmp = std::env::temp_dir().join(format!(
-            "xudanu-epub-{}.epub",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos()
-        ));
-        std::fs::write(&tmp, epub_data)
-            .map_err(|e| ServerError::InvalidArgument(format!("EPUB temp write failed: {}", e)))?;
-        let parsed = epub_parser::Epub::parse(&tmp).map_err(|e| {
-            let _ = std::fs::remove_file(&tmp);
-            ServerError::InvalidArgument(format!("EPUB parse failed: {}", e))
-        });
-        let _ = std::fs::remove_file(&tmp);
-        let epub = parsed?;
+        let epub = crate::server::epub::parse(epub_data)
+            .map_err(|e| ServerError::InvalidArgument(format!("EPUB parse failed: {e}")))?;
 
         // 1. Extract metadata
         let title = title_override
             .map(String::from)
-            .or_else(|| epub.metadata.title.clone())
+            .or_else(|| epub.title.clone())
             .unwrap_or_else(|| "Untitled".to_string());
 
         let author_name = author_override
             .map(String::from)
-            .or_else(|| epub.metadata.author.clone())
+            .or_else(|| epub.author.clone())
             .unwrap_or_else(|| "Unknown Author".to_string());
 
         // 2. Extract text from pages (spine order)
-        let text: String = epub
-            .pages
-            .iter()
-            .map(|p| p.content.as_str())
-            .collect::<Vec<&str>>()
-            .join("\n\n");
+        let text: String = epub.pages.join("\n\n");
 
         if text.is_empty() {
             return Err(ServerError::InvalidArgument(
