@@ -18,7 +18,7 @@
 // After --confirm: non-manifest works deleted, manifest seeders re-run
 // (idempotent), content-sets.json stamped, snapshot tarball written to
 // the local directory before any deletion.
-import { execSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import WebSocket from "../web/app/node_modules/ws/index.js";
@@ -130,11 +130,16 @@ const main = async () => {
   console.log(`\n◆ Re-running ${MANIFEST.sets.length} seeders...`);
   for (const s of MANIFEST.sets) {
     try {
-      execSync(`node scripts/${path.basename(s.script)} "${URL_}"`, {
+      // spawnSync with array args — the URL from argv never passes
+      // through a shell, so it cannot inject shell syntax.
+      const res = spawnSync("node", [path.join("scripts", path.basename(s.script)), URL_], {
         env: { ...process.env, XUDANU_ADMIN_PASSPHRASE: PASS, SEED_WS: URL_, SEED_ORIGIN: ORIGIN },
         stdio: "pipe",
         cwd: path.resolve(new URL("..", import.meta.url).pathname),
       });
+      if (res.status !== 0) {
+        throw new Error(`seeder exited ${res.status}: ${String(res.stderr ?? "").slice(0, 60)}`);
+      }
       await request("content_set_record", { name: s.name, version: s.version });
       console.log(`  [ok] ${s.name} v${s.version}`);
     } catch (e) {

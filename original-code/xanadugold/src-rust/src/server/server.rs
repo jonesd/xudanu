@@ -32374,21 +32374,42 @@ mod tests_find_text {
     }
 }
 
-/// CodeQL hard-coded-crypto fixtures (alerts #263-#266, #325):
-/// fn returns are not tracked to crypto sinks; literals are.
+/// Test credentials are generated per run rather than hard-coded:
+/// `RandomState` is seeded unpredictably by the OS, so no fixed
+/// credential value exists in the source or the test binary. The
+/// OnceLock keeps the value stable within a run (hash at create,
+/// authenticate later).
+#[cfg(test)]
+fn test_credential_bytes(domain: &[u8]) -> Vec<u8> {
+    use std::hash::{BuildHasher, Hasher};
+    let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+    h.write(domain);
+    h.write(&std::process::id().to_le_bytes());
+    if let Ok(nanos) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+        h.write(&nanos.as_nanos().to_le_bytes());
+    }
+    h.finish().to_le_bytes().to_vec()
+}
+
 #[cfg(test)]
 fn test_reauth_credential() -> &'static [u8] {
-    b"test-pass"
+    static CRED: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    CRED.get_or_init(|| test_credential_bytes(b"reauth"))
+        .as_slice()
 }
 
 #[cfg(test)]
 fn test_locksmith_credential() -> &'static [u8] {
-    b"s3cret"
+    static CRED: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    CRED.get_or_init(|| test_credential_bytes(b"locksmith"))
+        .as_slice()
 }
 
 #[cfg(test)]
 fn test_user2_credential() -> &'static [u8] {
-    b"user2pass"
+    static CRED: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    CRED.get_or_init(|| test_credential_bytes(b"user2"))
+        .as_slice()
 }
 
 #[cfg(test)]

@@ -21,6 +21,13 @@
 import WebSocket from "ws";
 
 const args = process.argv.slice(2);
+
+// Log-forging guard: values derived from the server (ids, titles,
+// error messages) are stripped of control characters before they
+// reach console.log, so a hostile endpoint cannot forge log lines.
+function safe(v) {
+  return String(v).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
+}
 const HOST = "127.0.0.1:8080";
 const ORIGIN = `http://${HOST}`;
 const STAMP = Date.now().toString(36);
@@ -93,14 +100,14 @@ async function buildScene() {
     await robin.loginAs("Robin", ROBIN_PASSWORD);
     console.log("✓ Robin identity ready (password below — needed for Window B login)");
   } catch (e) {
-    console.log("! Robin login failed:", e.message, "— continuing as anonymous (attribution will not show a second author)");
+    console.log("! Robin login failed:", safe(e.message), "— continuing as anonymous (attribution will not show a second author)");
   }
 
   const t = `QA-VIDEO-${STAMP}`;
   const mk = async (title, text, n) => {
     const wid = await robin.call("work_create", { edition: { text } });
     await robin.call("work_set_title", { work_id: wid, title: `${title} (${t})` });
-    console.log(`✓ ${title} → 0x${wid.toString(16)}`);
+    console.log(`✓ ${safe(title)} → 0x${safe(wid.toString(16))}`);
     return wid;
   };
 
@@ -138,7 +145,7 @@ async function buildScene() {
         excerpt: "", start_position: 0, end_position: 0 },
     });
     if (types?.length) await robin.call("link_set_types", { link_id: lid, link_types: types });
-    console.log(`✓ link ${lid} (types ${types ?? []}) on the quotable sentence`);
+    console.log(`✓ link ${safe(lid)} (types ${safe(types ?? [])}) on the quotable sentence`);
   };
   await mkLink(third, [2]);      // Reference → On Paths
   await mkLink(notes, [3]);      // Disagreement → Reading Notes (stack on same span)
@@ -149,7 +156,7 @@ async function buildScene() {
   console.log("✓ one archived work on the shelf");
 
   console.log("\n─ scene ready ─");
-  console.log(`  Garden Essay 0x${garden.toString(16)} · Reading Notes 0x${notes.toString(16)} · On Paths 0x${third.toString(16)}`);
+  console.log(`  Garden Essay 0x${safe(garden.toString(16))} · Reading Notes 0x${safe(notes.toString(16))} · On Paths 0x${safe(third.toString(16))}`);
   console.log(`  Window B (incognito): login as "Robin" / ${ROBIN_PASSWORD}`);
   console.log("  On camera: you type in Garden Essay, Robin types in Reading Notes,");
   console.log("  then Gather→Place Robin's paragraph, then paste-as-transclusion.");
@@ -162,7 +169,7 @@ async function reset() {
   const entries = list?.entries ?? list ?? [];
   const mine = entries.filter((w) => (w.title || "").includes("QA-VIDEO-"));
   for (const w of mine) await s.call("work_archive", { work_id: w.work_id }).catch(() => {});
-  console.log(`archived ${mine.length} previous scene works`);
+  console.log(`archived ${safe(mine.length)} previous scene works`);
   s.close();
 }
 
