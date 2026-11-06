@@ -1,6 +1,11 @@
 #!/bin/bash
 # deploy.sh — update xudanu.com to latest main.
 #
+# RUN FROM THE LAPTOP: the script drives the server over ssh from
+# this machine (build, flip, and verify all happen remotely). Do not
+# run it on the server itself — the laptop-side steps get skipped
+# and you get a misleading partial run.
+#
 # TOPOLOGY (the part that bit us once): production is a HOST SYSTEMD
 # SERVICE (xudanu.service → /opt/xudanu/xudanu-server on 127.0.0.1:8080,
 # data at /var/lib/xudanu) behind a HOST CADDY owning 80/443. The

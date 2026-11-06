@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The xudanu:// URI Scheme — naming works, revisions, and spans</title>
+<meta name="description" content="Formal specification of the xudanu URI scheme: grammar, canonical form, comparison rules, dereferencing with BLAKE3 verification, security considerations, and IANA registration.">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.65}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.warning{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warning strong{color:#f85149}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+code{font-family:'JetBrains Mono',monospace}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+</style>
+</head>
+<body>
+<div style="background:#161b22;border-bottom:1px solid #30363d;color:#8b949e;font-size:13px;padding:6px 16px;text-align:center">An independent interpretation of the released Udanax Gold source &middot; not Project Xanadu documentation &middot; <a href="provenance.html" style="color:#58a6ff;text-decoration:none">about this documentation</a></div>
+<div class="content-wrap">
+
+<h1>The <code>xudanu://</code> URI Scheme</h1>
+<p class="subtitle">Version 1.0 &middot; 5 November 2026 &middot; specification for the provisional IANA registration</p>
+
+<p>A <code>xudanu:</code> URI identifies a <strong>work</strong>, a <strong>revision</strong> of a work, or a <strong>character span</strong> within one, in a Xudanu docuverse. Because positions are tumblers — addresses, not offsets — a span reference survives edits elsewhere in the document, and because every read returns a BLAKE3 content hash, every citation is verifiable after the fact.</p>
+
+<pre>xudanu://work/42                     the current edition of work 42
+xudanu://work/42?rev=3              revision 3 of work 42 (pinned, immutable)
+xudanu://work/42#span=10,150        characters 10&ndash;150 of the current edition
+xudanu://work/42?rev=3#span=10,150  the same span in the pinned revision</pre>
+
+<p>The key words MUST, MUST NOT, SHOULD, and MAY are to be interpreted as described in RFC 2119. This version describes exactly what the reference implementation emits and accepts today; forms under design are named in <a href="#future">Future forms</a> and deliberately given no grammar.</p>
+
+<div class="toc">
+<a href="#identifies">1. What a xudanu URI identifies</a>
+<a href="#syntax">2. Syntax</a>
+<a href="#semantics">3. Component semantics</a>
+<a href="#authority">4. Naming authority and scope</a>
+<a href="#canonical">5. Canonical form and tolerated input</a>
+<a href="#comparison">6. Comparison</a>
+<a href="#dereference">7. Dereferencing and verification</a>
+<a href="#security">8. Security considerations</a>
+<a href="#iana">9. IANA considerations</a>
+<a href="#future">10. Future forms</a>
+</div>
+
+<h2 id="identifies">1. What a xudanu URI identifies</h2>
+
+<p>A work is a document in a docuverse: an evolving sequence of <em>editions</em>, each a snapshot of its full content. A xudanu URI therefore identifies one of three things:</p>
+
+<table>
+<tr><th>Form</th><th>Identifies</th><th>Stability</th></tr>
+<tr><td><code>xudanu://work/42</code></td><td>The <em>current</em> edition of work 42 at dereference time</td><td>Time-dependent: the target moves as the work is revised</td></tr>
+<tr><td><code>xudanu://work/42?rev=3</code></td><td>Revision 3 of work 42</td><td>Immutable: a pinned edition</td></tr>
+<tr><td><code>…#span=10,150</code></td><td>Characters 10&ndash;150 of the identified edition</td><td>Span-stable: survives edits before character 10 or after 150</td></tr>
+</table>
+
+<p>This one scheme covers both halves of citation that other systems split across two: the unpinned form is a living pointer (&ldquo;what it says now&rdquo;), the <code>?rev=</code> form is a permanent pin (&ldquo;exactly what it said then&rdquo;).</p>
+
+<h2 id="syntax">2. Syntax</h2>
+
+<p>The grammar uses the ABNF notation of RFC 5234; <code>DIGIT</code> is defined there.</p>
+
+<pre>xudanu-URI = "xudanu://work/" 1*DIGIT [ rev ] [ span ]
+
+rev        = "?rev=" 1*DIGIT
+span       = "#span=" 1*DIGIT "," 1*DIGIT</pre>
+
+<p>Additional constraints, expressed here and normative:</p>
+
+<ul style="max-width:780px;margin:0 0 12px 20px">
+<li style="margin-bottom:8px">In <code>span</code>, the first integer MUST be strictly less than the second. A zero-length or reversed span is invalid.</li>
+<li style="margin-bottom:8px">All integers MUST be representable as unsigned 64-bit values.</li>
+<li style="margin-bottom:8px">When both are present, <code>rev</code> precedes <code>span</code>. There is exactly one query component and one fragment component; additional query parameters or fragment content make the URI invalid.</li>
+</ul>
+
+<h2 id="semantics">3. Component semantics</h2>
+
+<table>
+<tr><th>Component</th><th>Meaning</th></tr>
+<tr><td><code>xudanu</code></td><td>The scheme name. Registered provisionally with IANA; see <a href="#iana">section 9</a>. Emitters MUST produce it in lowercase.</td></tr>
+<tr><td><code>work</code></td><td>A fixed type discriminator occupying the authority position. It is not a hostname and MUST be the literal string <code>work</code>. See <a href="#authority">section 4</a>.</td></tr>
+<tr><td>path digits</td><td>The server-local numeric identifier of the work, assigned by the docuverse server at creation. Emitters MUST NOT produce leading zeros.</td></tr>
+<tr><td><code>?rev=</code></td><td>If absent, the URI identifies the current edition — a time-dependent address. If present, it identifies exactly one revision: revisions are immutable once created, so the URI is a permanent pin. Revision numbers are assigned by the server; nothing guarantees they are contiguous or that any particular number exists.</td></tr>
+<tr><td><code>#span=</code></td><td>A character range in the identified edition, half-open <code>[start, end)</code>: the first integer is the first character included, the second is one past the last. Coordinates are positions in the tumbler coordinate system — addresses, not byte offsets — so a span continues to identify the same passage when text elsewhere in the work changes.</td></tr>
+</table>
+
+<h2 id="authority">4. Naming authority and scope</h2>
+
+<p>The authority slot of a v1 xudanu URI holds the literal string <code>work</code>, which names a <em>type</em>, not a host. The actual naming authority is <strong>the docuverse session in which the URI is interpreted</strong>: work identifiers are assigned by a server, and the same identifier may name unrelated works on two different servers.</p>
+
+<p>A v1 xudanu URI is therefore <em>context-local</em>, like a relative reference in HTTP: it is meaningful between parties that already share a session with the same docuverse server. This is the form every tool emits today, for the good reason that it is the form every tool can resolve. Two further forms — naming the origin server, and naming content directly by hash — are under design; see <a href="#future">Future forms</a>. Until specified, a consumer MUST NOT infer server or content addresses from a v1 URI.</p>
+
+<h2 id="canonical">5. Canonical form and tolerated input</h2>
+
+<p>Emitters MUST produce the canonical form:</p>
+
+<ul style="max-width:780px;margin:0 0 12px 20px">
+<li style="margin-bottom:8px">lowercase scheme and literal <code>work</code>; plain decimal integers without leading zeros, signs, or whitespace</li>
+<li style="margin-bottom:8px">query before fragment; no other components</li>
+</ul>
+
+<p>The reference implementation's parser additionally tolerates surrounding whitespace (the input is trimmed) and leading zeros (<code>xudanu://work/007</code> identifies work 7). It rejects everything else outside the grammar: a missing identifier, a non-decimal or signed integer (<code>?rev=abc</code>, <code>?rev=</code>, <code>/+7</code>), a reversed or zero-length span, unknown query parameters, and any fragment not matching <code>span=s,e</code>. Malformed components are rejected, never repaired: an implementation MUST NOT silently drop a <code>rev</code> it cannot parse.</p>
+
+<div class="note"><strong>Reference implementation.</strong> <code>WorkRef::parse</code> and <code>WorkRef::to_uri</code> in <a href="https://github.com/jonesd/xudanu/blob/main/original-code/xanadugold/src-rust/src/server/mcp.rs">src/server/mcp.rs</a>, with round-trip and rejection tests in the same file. This specification documents that grammar; if the two ever disagree, the tests fail.</div>
+
+<h2 id="comparison">6. Comparison</h2>
+
+<p>Two xudanu URIs identify the same resource if and only if their canonical forms are identical: same work identifier, same <code>rev</code> (present or absent), same span (present or absent). Leading zeros and surrounding whitespace are not significant.</p>
+
+<p>One deliberate asymmetry: <code>xudanu://work/42</code> and <code>xudanu://work/42?rev=3</code> are <strong>different URIs even when revision 3 is currently the latest edition</strong> — the first is a pointer that will follow future revisions, the second is a pin that never will. For citations that must not drift, consumers SHOULD use the pinned form.</p>
+
+<h2 id="dereference">7. Dereferencing and verification</h2>
+
+<p>Dereferencing happens through the tools of the session the URI is used in: read and search tools accept these URIs, resolve transclusions live, and return span content together with its BLAKE3 fingerprint. A verify tool exists for the citation discipline: given a URI and quoted text, it confirms the quote against the docuverse.</p>
+
+<p>Constructing or parsing a xudanu URI performs no network or filesystem I/O — URIs are inert addresses. All authority checks happen at dereference time on the server (see <a href="#security">section 8</a>).</p>
+
+<p>Consumers who need durable citations SHOULD record and compare the BLAKE3 fingerprint returned at read time. Content hashes are what make a pinned reference checkable years later: trust the hash, not the citation.</p>
+
+<h2 id="security">8. Security considerations</h2>
+
+<ul style="max-width:780px;margin:0 0 12px 20px">
+<li style="margin-bottom:8px"><strong>URIs are inert.</strong> Parsing triggers no network action. A URI embedded in a document does not cause fetches, tracking, or callbacks; the dereferencing party always acts explicitly.</li>
+<li style="margin-bottom:8px"><strong>A URI grants no authority.</strong> Dereferencing remains subject to the server's permission model. Passing a URI to a party without read access to the work does not give them access.</li>
+<li style="margin-bottom:8px"><strong>No injection surface in the grammar.</strong> Every component is decimal digits with a fixed delimiter set; there is no escaping, no percent-decoding of semantic content, and no way to smuggle additional query or fragment parameters past a conformant parser.</li>
+<li style="margin-bottom:8px"><strong>Verify cited content.</strong> A URI proves nothing about bytes. The BLAKE3 fingerprint returned by read operations is the verification mechanism; consumers relying on quoted content SHOULD compare fingerprints rather than trust the quote.</li>
+</ul>
+
+<h2 id="iana">9. IANA considerations</h2>
+
+<p>The scheme name <code>xudanu</code> is registered in the &ldquo;Uniform Resource Identifier (URI) Schemes&rdquo; registry with <strong>provisional</strong> status (RFC 7595, First Come First Served). This document is the specification the registration points at. Registration fields:</p>
+
+<table>
+<tr><th>Field</th><th>Value</th></tr>
+<tr><td>Scheme name</td><td><code>xudanu</code></td></tr>
+<tr><td>Status</td><td>Provisional</td></tr>
+<tr><td>Applications/protocols that use this scheme name</td><td>Emitted and parsed by the Xudanu wire protocol and its Model Context Protocol (MCP) agent surface to cite content with span-stable, revision-pinnable addresses</td></tr>
+<tr><td>Contact</td><td>David Jones &lt;david@dgjones.info&gt;</td></tr>
+<tr><td>Change controller</td><td>David Jones &lt;david@dgjones.info&gt;</td></tr>
+<tr><td>References</td><td>This specification; <a href="mcp-guide.html">Xudanu MCP Guide, &sect;5 &ldquo;Addressing&rdquo;</a></td></tr>
+</table>
+
+<h2 id="future">10. Future forms</h2>
+
+<p>This version defines only the context-local form, because it is the only form tools emit today. Two further authority forms are planned, each of which corresponds to an operation that already exists in the shipped wire protocol. They will be specified — grammar and semantics — in a future revision of this document at this URL; the registered scheme name does not change when it does.</p>
+
+<table>
+<tr><th>Planned form</th><th>Names</th><th>Shipped operation it will map to</th></tr>
+<tr><td>Origin-server form</td><td>Which server owns the work — provenance, permissions, the current-edition pointer</td><td><code>CrossServerFetchWork</code> (wire op 0x0f06)</td></tr>
+<tr><td>Content-hash form</td><td>The content itself, wherever it is held: any server holding the bytes can serve it, and the hash is the verification</td><td><code>FederatedTransclusionQuery</code> (0x1701), <code>FederatedContentFetch</code> (0x1702)</td></tr>
+</table>
+
+<p>Until a form appears in a published revision of this document, implementations MUST NOT extend the grammar by inference. The content-hash form is the deeper of the two — location-independent addressing over BLAKE3 content — and is the direction of the federated docuverse: works are named locally, content is found by hash anywhere it lives.</p>
+
+<p style="margin-top:48px;font-size:13px;color:#484f58">Reference implementation: <a href="https://github.com/jonesd/xudanu">Xudanu</a> (Apache-2.0), an independent project in the Udanax Gold lineage — not affiliated with Project Xanadu. Companion document: <a href="mcp-guide.html">the MCP guide</a>, &sect;5. Revision history: v1.0, 5 November 2026 — initial specification of the context-local form.</p>
+
+</div>
+</body>
+</html>
