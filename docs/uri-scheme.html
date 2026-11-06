@@ -169,6 +169,8 @@ span       = "#span=" 1*DIGIT "," 1*DIGIT</pre>
 <tr><td>Content-hash form</td><td>The content itself, wherever it is held: any server holding the bytes can serve it, and the hash is the verification</td><td><code>FederatedTransclusionQuery</code> (0x1701), <code>FederatedContentFetch</code> (0x1702)</td></tr>
 </table>
 
+<p>Both planned forms keep v1 addresses valid and unambiguous by construction: the authority literal <code>work</code> is reserved for the context-local form, permanently. An origin-server URI will carry the server's name in the authority position with its path beginning <code>/work/</code> — a consumer distinguishes the two from the authority slot alone, and no v1 URI can ever be reinterpreted as naming a server.</p>
+
 <p>Until a form appears in a published revision of this document, implementations MUST NOT extend the grammar by inference. The content-hash form is the deeper of the two — location-independent addressing over BLAKE3 content — and is the direction of the federated docuverse: works are named locally, content is found by hash anywhere it lives.</p>
 
 <p style="margin-top:48px;font-size:13px;color:#484f58">Reference implementation: <a href="https://github.com/jonesd/xudanu">Xudanu</a> (Apache-2.0), an independent project in the Udanax Gold lineage — not affiliated with Project Xanadu. Companion document: <a href="mcp-guide.html">the MCP guide</a>, &sect;5. Revision history: v1.0, 5 November 2026 — initial specification of the context-local form.</p>
