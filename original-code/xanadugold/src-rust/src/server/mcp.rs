@@ -78,11 +78,24 @@ impl AgentSession {
 /// `xudanu://work/<id>#span=<s>,<e>`, or both query and fragment.
 /// Char offsets, half-open `[start, end)`, matching the transclusion
 /// element coordinate system.
+/// Grammar and semantics: the xudanu URI scheme specification
+/// (docs/uri-scheme.html).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkRef {
     pub work_id: u64,
     pub revision: Option<u64>,
     pub span: Option<(usize, usize)>,
+}
+
+/// Strict decimal integer per the URI scheme grammar: non-empty,
+/// ASCII digits only (no sign, no whitespace), and within `u64`.
+/// Reference: docs/uri-scheme.html, "Canonical form and tolerated
+/// input" — malformed components are rejected, never repaired.
+fn parse_decimal_u64(s: &str) -> Option<u64> {
+    if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    s.parse().ok()
 }
 
 impl WorkRef {
@@ -123,16 +136,16 @@ impl WorkRef {
             None => (rest, None),
         };
         let (main, revision) = match main.split_once("?rev=") {
-            Some((m, r)) => (m, r.parse::<u64>().ok()),
+            Some((m, r)) => (m, Some(parse_decimal_u64(r)?)),
             None => (main, None),
         };
-        let work_id: u64 = main.parse().ok()?;
+        let work_id = parse_decimal_u64(main)?;
         let span = fragment
             .and_then(|f| f.strip_prefix("span="))
             .and_then(|p| {
                 let (a, b) = p.split_once(',')?;
-                let start: usize = a.parse().ok()?;
-                let end: usize = b.parse().ok()?;
+                let start = usize::try_from(parse_decimal_u64(a)?).ok()?;
+                let end = usize::try_from(parse_decimal_u64(b)?).ok()?;
                 (start < end).then_some((start, end))
             });
         if fragment.is_some() {
@@ -1748,6 +1761,26 @@ mod tests {
         assert_eq!(WorkRef::parse("xudanu://work/7#span=5,3"), None);
         assert_eq!(WorkRef::parse("xudanu://work/"), None);
         assert_eq!(WorkRef::parse("xan://other/1.2"), None);
+        // Grammar conformance (docs/uri-scheme.html): malformed
+        // components are rejected, never repaired.
+        assert_eq!(WorkRef::parse("xudanu://work/7?rev=abc"), None);
+        assert_eq!(WorkRef::parse("xudanu://work/7?rev="), None);
+        assert_eq!(WorkRef::parse("xudanu://work/+7"), None);
+        assert_eq!(WorkRef::parse("xudanu://work/7#span=10,150;x"), None);
+        assert_eq!(WorkRef::parse("xudanu://work/7?filter=hot"), None);
+        // Tolerated input: surrounding whitespace, leading zeros.
+        assert_eq!(
+            WorkRef::parse(" xudanu://work/7 "),
+            Some(WorkRef {
+                work_id: 7,
+                revision: None,
+                span: None
+            })
+        );
+        assert_eq!(
+            WorkRef::parse("xudanu://work/007").map(|r| r.work_id),
+            Some(7)
+        );
     }
 
     #[test]

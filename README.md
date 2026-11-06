@@ -47,6 +47,8 @@ cargo install xudanu --features server
 }
 ```
 
+**Zero-install:** the hosted demo speaks MCP over TLS — point a client at `wss://xudanu.com` and the same 13 read tools work with nothing installed (read-only, sandbox data).
+
 Read-only by default; the server owns durability. Full tool list, the direct data-dir mode, the addressing scheme, and the risks in plain language: **[the MCP guide](https://dgjones.info/xudanu/mcp-guide.html)**.
 
 ## What it looks like
@@ -105,6 +107,43 @@ One binary, one command — and a community has a place to write together: live 
 > It is not affiliated with, endorsed by, or sponsored by Ted Nelson,
 > Project Xanadu&trade;, the Xanadu Operating Company, Autodesk Inc., or the
 > Udanax development team. All trademarks belong to their respective owners.
+
+---
+
+## The whole system on one page
+
+One codebase — a Rust server and a TypeScript web app — deploys four ways, and every deployment exposes the same four surfaces:
+
+```mermaid
+flowchart LR
+    CB["One codebase<br/>Rust server + TypeScript web app"]
+
+    subgraph deploys["Deployment shapes — all shipping today"]
+        PS["Personal notes<br/>server"]
+        TS["Team / lab / class<br/>server"]
+        HD["Hosted demo<br/>xudanu.com"]
+        FS["Federation cluster<br/>opt-in"]
+    end
+
+    subgraph surfaces["Access surfaces — all shipping today"]
+        WU["Web app<br/>collaborative editing"]
+        MCP["MCP agent tools<br/>13 read + 6 write"]
+        XCP["Wire protocol<br/>postcard over WebSocket"]
+        CLI["CLI and<br/>direct data-dir"]
+    end
+
+    OV["The overlay — direction:<br/>content found by hash,<br/>any server holding it can serve"]
+
+    CB --> PS & TS & HD & FS
+    PS & TS & HD & FS --> WU & MCP & XCP & CLI
+    FS -.-> OV
+    MCP -.-> OV
+```
+
+How to read it:
+
+- **Every solid box ships today** — the same server binary and web app in four deployment postures; the Quick Start scenarios below walk through each one.
+- **Dashed is direction, not shipping**: the federated overlay where works are named locally and content is found by hash on any server that holds it. The wire operations for it already exist (`CrossServerFetchWork`, `FederatedContentFetch`); the addressing surface does not yet. Addressing today is DNS-anchored and key-verified; scheme registration and content-hash resolution are the path — see **[the xudanu URI scheme spec](https://dgjones.info/xudanu/uri-scheme.html)**.
 
 ---
 

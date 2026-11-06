@@ -112,12 +112,14 @@ model. Instead of "search every time" (O(docuverse) per query),
 you register "tell me when X" (O(1) registration, O(match) per
 event). The Observer pattern at docuverse scale.
 
-### Layer 5: Bloom filters (BUILT, NOT CONNECTED)
+### Layer 5: Bloom filters (BUILT — wire ops 0x0f0f/0x0f10)
 
 `ServerBloomFilter` exists in the server — probabilistic membership
 testing (configurable false-positive rate, ~1 MB for millions of
-items). **Not yet published in the server directory or used for
-cross-server query routing.**
+items). **Update (2026-11-05): wired into the contract —
+`BloomFilterGet`/`BloomFilterCheck` are pinned wire ops, and the
+network fan-out (`dispatch_network.rs`) learns bloom facts during
+peer folds.**
 
 **The purpose**: before an expensive cross-server lookup, check the
 bloom filter locally. If it says "no," skip the network round-trip.
