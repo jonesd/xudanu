@@ -4,7 +4,9 @@
 // Uses Playwright page.pdf on the generated HTML.
 import { chromium } from "../web/app/node_modules/playwright/index.mjs";
 import fs from "node:fs";
-import { execSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
+import path from "node:path";
+import os from "node:os";
 
 const resolved = JSON.parse(fs.readFileSync("/tmp/resolve.json", "utf8"));
 // Server domain: same chain the app uses — advertised public address,
@@ -24,24 +26,27 @@ const data = {
 };
 
 // transpile the TS renderer once with esbuild (devDependency of vite)
-const OUT = "/tmp/export-document.mjs";
-execSync(`npx esbuild web/app/src/export-document.ts --format=esm --outfile=${OUT}`, { stdio: "pipe" });
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "xudanu-brief-"));
+const OUT = path.join(TMP, "export-document.mjs");
+const esbuild = spawnSync("npx", ["esbuild", "web/app/src/export-document.ts", "--format=esm", `--outfile=${OUT}`], { stdio: "pipe" });
+if (esbuild.status !== 0) throw new Error(`esbuild failed: ${String(esbuild.stderr ?? "")}`);
 const { buildExportHtml } = await import(OUT);
 
 const html = buildExportHtml(
   { title: "Memorandum — Data Retention Obligations", serverDomain, workId: 0x6e8 },
   data,
 );
-fs.writeFileSync("/tmp/brief-export.html", html);
+fs.writeFileSync(path.join(TMP, "brief-export.html"), html);
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage();
 await page.setContent(html, { waitUntil: "load" });
+const PDF = path.join(TMP, "xudanu-brief.pdf");
 await page.pdf({
-  path: "/tmp/xudanu-brief.pdf",
+  path: PDF,
   format: "Letter",
   margin: { top: "0.9in", bottom: "0.9in", left: "0.9in", right: "0.9in" },
   printBackground: true,
 });
 await browser.close();
-console.log("✓ /tmp/xudanu-brief.pdf (" + Math.round(fs.statSync("/tmp/xudanu-brief.pdf").size / 1024) + "KB)");
+console.log("✓ " + PDF + " (" + Math.round(fs.statSync(PDF).size / 1024) + "KB)");

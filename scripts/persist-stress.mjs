@@ -21,7 +21,7 @@
 // The tool manages its own server lifecycle (start/kill/restart) using
 // a temp data dir. It does NOT touch the main dev server.
 import { execSync, spawn } from "node:child_process";
-import { mkdtempSync, rmSync, readdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, readdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import WebSocket from "../web/app/node_modules/ws/index.js";
@@ -132,35 +132,63 @@ async function loginAdmin() {
 }
 
 // ── Chaos helpers ────────────────────────────────────────────────
+// All helpers act-then-catch instead of existsSync-then-act: the
+// pre-check races with the server (file removed between check and
+// write → ENOENT crash instead of a skipped chaos step).
 function corruptWalLine() {
   const walPath = join(dataDir, "wal.log");
-  if (!existsSync(walPath)) return false;
-  const lines = readFileSync(walPath, "utf8").split("\n").filter(l => l.trim());
+  let lines;
+  try {
+    lines = readFileSync(walPath, "utf8").split("\n").filter(l => l.trim());
+  } catch (e) {
+    if (e.code === "ENOENT") return false;
+    throw e;
+  }
   if (lines.length === 0) return false;
   // Corrupt a random line
   const idx = Math.floor(Math.random() * lines.length);
   lines[idx] = '{"type":"GARBAGE_CORRUPT';
-  writeFileSync(walPath, lines.join("\n") + "\n");
+  try {
+    writeFileSync(walPath, lines.join("\n") + "\n");
+  } catch (e) {
+    if (e.code === "ENOENT") return false;
+    throw e;
+  }
   return true;
 }
 
 function truncateSidecar(name) {
   const path = join(dataDir, name);
-  if (!existsSync(path)) return false;
-  writeFileSync(path, "{corrupt");
+  try {
+    writeFileSync(path, "{corrupt");
+  } catch (e) {
+    if (e.code === "ENOENT") return false;
+    throw e;
+  }
   return true;
 }
 
 function deleteRandomChunk() {
   const chunksDir = join(dataDir, "chunks");
-  if (!existsSync(chunksDir)) return false;
-  const prefixes = readdirSync(chunksDir).filter(d => d.length === 2);
+  let prefixes;
+  try {
+    prefixes = readdirSync(chunksDir).filter(d => d.length === 2);
+  } catch (e) {
+    if (e.code === "ENOENT") return false;
+    throw e;
+  }
   if (prefixes.length === 0) return false;
   const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
-  const files = readdirSync(join(chunksDir, prefix)).filter(f => f.endsWith(".xchunk"));
+  let files;
+  try {
+    files = readdirSync(join(chunksDir, prefix)).filter(f => f.endsWith(".xchunk"));
+  } catch (e) {
+    if (e.code === "ENOENT") return false;
+    throw e;
+  }
   if (files.length === 0) return false;
   const file = files[Math.floor(Math.random() * files.length)];
-  try { require("node:fs").unlinkSync(join(chunksDir, prefix, file)); return true; } catch { return false; }
+  try { unlinkSync(join(chunksDir, prefix, file)); return true; } catch { return false; }
 }
 
 // ── Test suites (one per data type) ─────────────────────────────
