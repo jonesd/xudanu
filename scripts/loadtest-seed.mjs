@@ -76,7 +76,6 @@ const main = async () => {
 
   const BATCH = 100;
   for (let batch = 0; batch < COUNT / BATCH; batch++) {
-    const bt = Date.now();
     const promises = [];
     for (let i = 0; i < BATCH; i++) {
       const idx = baseCount + batch * BATCH + i;
@@ -101,7 +100,6 @@ const main = async () => {
       const listRes = V(await request("work_list", { offset: 0, limit: 100 }));
       const listMs = (performance.now() - listStart).toFixed(0);
       const entries = listRes?.entries ?? [];
-      const listCount = listRes?.total_count ?? entries.length;
 
       // Measure text search latency
       const searchStart = performance.now();

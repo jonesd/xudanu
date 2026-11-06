@@ -96,8 +96,6 @@ async function main() {
 
   // ── 3. Trigger the link detector (the WidgetPerfect step) ───────
   // Dan links his requirement to the passage in Ruth's plan.
-  const reqText = valueOf(await request("work_get_edition", { work_id: reqDoc }));
-  const planText = valueOf(await request("work_get_edition", { work_id: plan }));
   const link = valueOf(await request("link_create", {
     origin: reqDoc, destination: plan,
     origin_ref: { kind: "single", work_context: reqDoc, excerpt: "the requirement", start_position: 0, end_position: 12 },

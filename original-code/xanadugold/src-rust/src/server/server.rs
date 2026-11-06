@@ -32573,7 +32573,7 @@ mod tests {
 
     #[test]
     fn server_create_work() {
-        let (server, session) = setup_logged_in_server();
+        let (server, _session) = setup_logged_in_server();
         drop(server);
         let mut server = Server::new();
         let sid = server.connect();
@@ -34628,7 +34628,7 @@ mod tests {
         assert_eq!(endorsements_a[0].0, fp);
         assert_eq!(endorsements_a[0].1.len(), 1);
 
-        let (mut server_b, sid_b) = setup_logged_in_server();
+        let (mut server_b, _sid_b) = setup_logged_in_server();
         let alt_b = crate::server::federation::AlternativeEdition::new(
             "server-b-id",
             0,
@@ -34773,7 +34773,7 @@ mod tests {
 
     #[test]
     fn reconcile_counter_persisted_no_tag_collision() {
-        let (mut server, sid) = setup_logged_in_server();
+        let (mut server, _sid) = setup_logged_in_server();
         server.reconcile_next_tag();
         server.reconcile_next_tag();
         server.reconcile_next_tag();
@@ -53460,7 +53460,7 @@ mod tests_persistence_roundtrip {
 
     #[test]
     fn edit_policy_roundtrip() {
-        let (mut server, sid, dir) = setup_with_dir();
+        let (mut server, _sid, dir) = setup_with_dir();
         // Set policy to Frozen (museum mode)
         server.set_edit_policy(EditPolicy::Frozen);
         server.checkpoint_to_store().unwrap();

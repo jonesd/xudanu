@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 
 /** Wire-level helper: create scratch works and typed links through
  *  the same session the page uses. Returns created ids. */

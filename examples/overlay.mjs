@@ -18,7 +18,6 @@
 //
 import WebSocket from "../web/app/node_modules/ws/index.js";
 import http from "node:http";
-import crypto from "node:crypto";
 
 const WS_URL = process.argv[2] ?? "ws://127.0.0.1:8080/xudanu?format=json";
 const HTTP_BASE = WS_URL.replace(/^ws/, "http").replace(/\/xudanu.*$/, "");

@@ -929,42 +929,28 @@ pub fn read_root_as_manifest(
     }
 
     // ── Admin ──────────────────────────────────────────────────────────────────
-    let (admin_entry, accepting, shutdown, grants, server_name, server_desc, ns_id, pub_addr) =
-        if let Some(h) = root.admin_hash {
-            match read_admin_chunk(&h, store) {
-                Ok(ac) => (
-                    ac.admin,
-                    ac.accepting_connections,
-                    ac.shutdown_requested,
-                    ac.grants,
-                    ac.server_name,
-                    ac.server_description,
-                    ac.server_namespace_id,
-                    ac.public_address,
-                ),
-                Err(_) => (
-                    crate::persist::manifest::AdminEntry {
-                        accepting_connections: false,
-                        shutdown_requested: false,
-                        grants: vec![],
-
-                        network_enabled: false,
-
-                        external_links_enabled: false,
-
-                        edit_policy: String::new(),
-                    },
-                    false,
-                    false,
-                    vec![],
-                    None,
-                    None,
-                    None,
-                    None,
-                ),
-            }
-        } else {
-            (
+    let (
+        admin_entry,
+        _accepting,
+        _shutdown,
+        _grants,
+        _server_name,
+        _server_desc,
+        _ns_id,
+        _pub_addr,
+    ) = if let Some(h) = root.admin_hash {
+        match read_admin_chunk(&h, store) {
+            Ok(ac) => (
+                ac.admin,
+                ac.accepting_connections,
+                ac.shutdown_requested,
+                ac.grants,
+                ac.server_name,
+                ac.server_description,
+                ac.server_namespace_id,
+                ac.public_address,
+            ),
+            Err(_) => (
                 crate::persist::manifest::AdminEntry {
                     accepting_connections: false,
                     shutdown_requested: false,
@@ -983,8 +969,30 @@ pub fn read_root_as_manifest(
                 None,
                 None,
                 None,
-            )
-        };
+            ),
+        }
+    } else {
+        (
+            crate::persist::manifest::AdminEntry {
+                accepting_connections: false,
+                shutdown_requested: false,
+                grants: vec![],
+
+                network_enabled: false,
+
+                external_links_enabled: false,
+
+                edit_policy: String::new(),
+            },
+            false,
+            false,
+            vec![],
+            None,
+            None,
+            None,
+            None,
+        )
+    };
 
     // ── System Clubs ──────────────────────────────────────────────────────
     let system_clubs = if let Some(h) = root.system_clubs_hash {

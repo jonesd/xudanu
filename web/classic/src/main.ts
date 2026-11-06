@@ -479,7 +479,6 @@ function beginLinkFromSelection(from: Col = "a"): void {
 
   // Find which work in the stack contains the selection
   const sel = window.getSelection();
-  let targetIdx = -1; void targetIdx;
   let targetPane: Pane | null = null;
   let start = 0;
   let end = 0;
@@ -488,7 +487,6 @@ function beginLinkFromSelection(from: Col = "a"): void {
     for (let i = 0; i < stack.length; i++) {
       const bodyEl = document.getElementById(`scroll-${from}-${i}`);
       if (bodyEl && bodyEl.contains(sel.anchorNode)) {
-        targetIdx = i;
         targetPane = stack[i];
         // compute offsets within this work's text
         const pre = bodyEl.querySelector("pre");

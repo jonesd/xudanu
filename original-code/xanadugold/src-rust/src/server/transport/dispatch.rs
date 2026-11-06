@@ -282,7 +282,7 @@ fn execute_cross_server_notify(
             ("X-Xudanu-Signature".to_string(), sig_hex),
         ],
     ) {
-        Ok((status, resp_body)) if (200..300).contains(&status) => {
+        Ok((status, _)) if (200..300).contains(&status) => {
             state
                 .server
                 .with_server(|srv| srv.set_link_cross_server_notify(pending.link_id, true, None));
@@ -1125,7 +1125,7 @@ fn dispatch_narration(
         }
     };
 
-    if let Some((text, attestation)) = &narration_result {
+    if let Some((text, _)) = &narration_result {
         narration = text.clone();
     }
 
@@ -5611,7 +5611,7 @@ fn dispatch_inner_read(
     srv: &Server,
     session_id: crate::server::SessionId,
     request: WireRequest,
-    state: &SharedState,
+    _state: &SharedState,
 ) -> Result<ResponseValue, crate::server::ServerError> {
     match request {
         WireRequest::SessionConnect => Ok(ResponseValue::Id(session_id.as_u64())),

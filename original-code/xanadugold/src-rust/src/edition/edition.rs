@@ -3941,7 +3941,7 @@ mod tests {
                     let char_len = text.chars().count();
                     let mut char_pos = 0usize;
 
-                    for (byte_idx, ch) in text.char_indices() {
+                    for (byte_idx, _ch) in text.char_indices() {
                         let global_char = next_split.saturating_sub(split_interval) + char_pos;
 
                         if char_pos > 0 && global_char >= next_split {
@@ -4262,7 +4262,7 @@ mod tests {
     fn chunk_diff_finds_changed_blocks() {
         let e1 = Edition::from_text("abcdefghij");
         let e2 = Edition::from_text("abXdefghij");
-        let (matching, differing) = e1.chunk_diff(&e2, 3);
+        let (_matching, differing) = e1.chunk_diff(&e2, 3);
         assert!(
             !differing.is_empty(),
             "different editions should have differing blocks"

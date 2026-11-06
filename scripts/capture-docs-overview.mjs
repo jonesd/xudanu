@@ -6,7 +6,6 @@
 //   default: https://dgjones.info/xudanu/
 // Output: docs/screenshots/docs-overview.png (2x for crispness)
 import { chromium } from "../web/app/node_modules/playwright/index.mjs";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
