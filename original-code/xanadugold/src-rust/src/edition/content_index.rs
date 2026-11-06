@@ -130,7 +130,7 @@ impl ContentMatchIndex {
         let mut sharing_works: HashMap<u64, usize> = HashMap::new();
 
         // For each fingerprint in this work, find other works that have it
-        for (fp, locations) in &self.index {
+        for (_fp, locations) in &self.index {
             let has_work = locations.iter().any(|l| l.work_id == work_id);
             if !has_work {
                 continue;

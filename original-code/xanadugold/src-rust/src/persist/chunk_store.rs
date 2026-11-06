@@ -1264,7 +1264,7 @@ mod tests {
 
         store.reset_stats();
         let read_b = store.read_chunk(&h_b);
-        let (hits_after_b, misses_after_b, _, _) = store.cache_stats();
+        let (_, misses_after_b, _, _) = store.cache_stats();
         assert!(read_b.is_ok());
         assert!(
             misses_after_b >= 1,

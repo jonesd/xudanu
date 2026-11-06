@@ -79,7 +79,7 @@ const main = async () => {
   const entries = res?.entries ?? [];
   console.log(`◆ Total works: ${entries.length}`);
 
-  const KEEP = [], REMOVE = [], REVIEW = [];
+  const KEEP = [], REVIEW = [];
   for (const w of entries) {
     const title = w.title ?? "";
     // Core set + manifest-produced patterns + system works

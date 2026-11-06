@@ -2001,7 +2001,7 @@ async fn security_test(base_url: &str) -> Result<(), Box<dyn std::error::Error>>
                  detail: &str,
                  passed: &mut u32,
                  failed: &mut u32,
-                 warnings: &mut u32| {
+                 _warnings: &mut u32| {
         if condition {
             println!("  [PASS] {} - {}", name, detail);
             *passed += 1;

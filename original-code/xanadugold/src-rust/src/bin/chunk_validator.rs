@@ -429,7 +429,7 @@ fn validate_root_tree_typed(
             continue;
         }
         match try_deserialize_chunk(store, hash) {
-            Ok((tag, name)) => report.ok(format!(
+            Ok((_tag, name)) => report.ok(format!(
                 "{}: {} ({})",
                 &bytes_to_hex(hash)[..16],
                 label,
@@ -573,7 +573,7 @@ fn try_deserialize_chunk(
 
 fn find_orphans_naive(
     store: &xudanu::persist::chunk_store::ChunkStore,
-    data_dir: &std::path::Path,
+    _data_dir: &std::path::Path,
     root_hash: &[u8; 32],
     all_hashes: &HashSet<[u8; 32]>,
     report: &mut Report,

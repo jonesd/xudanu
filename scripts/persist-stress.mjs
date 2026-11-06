@@ -20,7 +20,7 @@
 //
 // The tool manages its own server lifecycle (start/kill/restart) using
 // a temp data dir. It does NOT touch the main dev server.
-import { execSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, readdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";

@@ -343,7 +343,7 @@ mod tests {
         let start = Instant::now();
         for (text_idx, text) in texts.iter().enumerate() {
             let edition = Edition::from_text(text);
-            for copy in 0..editions_per_shared_text {
+            for _copy in 0..editions_per_shared_text {
                 let t0 = Instant::now();
                 let chunk_ref = edition_to_chunks_durable(&edition, &store, false).unwrap();
                 write_stats.record(t0.elapsed().as_micros() as f64);
@@ -1622,7 +1622,7 @@ mod tests {
             }
         }
 
-        let (seq_hits, seq_misses, seq_rate, _) = store.cache_stats();
+        let (_, _, seq_rate, _) = store.cache_stats();
 
         let total_revisions: u64 = work_refs.iter().map(|r| r.revision_count).sum();
         let history_chunks: usize = work_refs.iter().map(|r| r.history.len()).sum();

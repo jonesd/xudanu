@@ -364,7 +364,7 @@ mod wasm_tests {
 
     #[test]
     fn wasm_add_valid_payload() {
-        let (dw, pos, mut store) = make_store_with_doc(0);
+        let (_dw, pos, mut store) = make_store_with_doc(0);
         store
             .add(&pos, r#"{"CreateNode":{"node_id":1,"kind":"document"}}"#)
             .unwrap();
@@ -373,7 +373,7 @@ mod wasm_tests {
 
     #[test]
     fn wasm_add_rejects_unknown_variant() {
-        let (dw, pos, mut store) = make_store_with_doc(0);
+        let (_dw, pos, mut store) = make_store_with_doc(0);
         let result = store.add(&pos, r#"{"NotARealThing":{"node_id":1}}"#);
         assert!(result.is_err());
         let msg = format!("{:?}", result.unwrap_err());
@@ -386,7 +386,7 @@ mod wasm_tests {
 
     #[test]
     fn wasm_add_rejects_missing_field() {
-        let (dw, pos, mut store) = make_store_with_doc(0);
+        let (_dw, pos, mut store) = make_store_with_doc(0);
         let result = store.add(&pos, r#"{"CreateNode":{"node_id":1}}"#);
         assert!(result.is_err());
         let msg = format!("{:?}", result.unwrap_err());
@@ -399,7 +399,7 @@ mod wasm_tests {
 
     #[test]
     fn wasm_add_rejects_wrong_type() {
-        let (dw, pos, mut store) = make_store_with_doc(0);
+        let (_dw, pos, mut store) = make_store_with_doc(0);
         let result = store.add(
             &pos,
             r#"{"CreateNode":{"node_id":"not_a_number","kind":"doc"}}"#,
@@ -409,7 +409,7 @@ mod wasm_tests {
 
     #[test]
     fn wasm_add_rejects_invalid_json() {
-        let (dw, pos, mut store) = make_store_with_doc(0);
+        let (_dw, pos, mut store) = make_store_with_doc(0);
         let result = store.add(&pos, r#"not json at all"#);
         assert!(result.is_err());
     }
@@ -431,7 +431,7 @@ mod wasm_tests {
 
     #[test]
     fn wasm_assertion_count_tracks_adds() {
-        let (dw, pos, mut store) = make_store_with_doc(0);
+        let (_dw, pos, mut store) = make_store_with_doc(0);
         assert_eq!(store.assertion_count(), 0);
         store
             .add(&pos, r#"{"CreateNode":{"node_id":1,"kind":"document"}}"#)

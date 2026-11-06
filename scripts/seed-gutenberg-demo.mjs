@@ -60,22 +60,6 @@ function stripGutenberg(raw) {
   return text.trim();
 }
 
-function extractOpening(text, chars = 500) {
-  // Get the first meaningful paragraph after any chapter heading
-  const lines = text.split("\n");
-  let started = false;
-  let result = [];
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!started && trimmed.length > 50) started = true;
-    if (started) {
-      result.push(trimmed);
-      if (result.join(" ").length > chars) break;
-    }
-  }
-  return result.join(" ").slice(0, chars);
-}
-
 // ── Main ──────────────────────────────────────────────────────────
 
 async function main() {
@@ -157,10 +141,6 @@ async function main() {
     const ywContent = (val(ywText) || ywText)?.current_text || "";
     const hlText = val(await request("crdt_sync_open", { work_id: workIds["Herland"] }));
     const hlContent = (val(hlText) || hlText)?.current_text || "";
-
-    // Find "the resting cure" or similar theme in Yellow Wallpaper
-    const ywTheme = "I am absolutely forbidden to \"work\" until I am well again";
-    const hlTheme = "This is a land of women";
 
     const ywThemePos = ywContent.indexOf("forbidden");
     const hlThemePos = hlContent.indexOf("land of women");

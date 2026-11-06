@@ -1702,7 +1702,7 @@ pub(crate) async fn process_federation_frame(
         }
         FederationFrame::ProvJsonExportResult { .. } => vec![],
         FederationFrame::FederationProvBundle { bundle } => {
-            state.server.with_server(|srv| {
+            state.server.with_server(|_srv| {
                 // Handle incoming federation provenance bundle
                 tracing::info!(
                     "Received federation provenance bundle: {}",
@@ -1735,7 +1735,7 @@ pub(crate) async fn process_federation_frame(
         }
         FederationFrame::FederationAttestationResponse {
             attestation,
-            accepted,
+            accepted: _,
         } => {
             if let Some(attestation) = attestation {
                 let verified = state
@@ -1759,7 +1759,7 @@ pub(crate) async fn process_federation_frame(
                         timestamp,
                         consensus_type: consensus_type.clone(),
                     },
-                    Err(e) => FederationFrame::ClusterVerificationProv {
+                    Err(_e) => FederationFrame::ClusterVerificationProv {
                         timestamp,
                         consensus_type: format!("Error: {}", consensus_type),
                     },
