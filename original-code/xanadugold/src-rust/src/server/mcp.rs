@@ -221,7 +221,7 @@ pub fn tool_descriptors(writes_enabled: bool) -> Vec<Value> {
         }),
         json!({
             "name": "who_transcluded",
-            "description": "Find works reusing content of the given work (transclusion reuse graph). Answers: where does this passage's content also appear?",
+            "description": "Find works reusing content of the given work (transclusion reuse graph). Answers: where does this passage's content also appear? Recipe: search_works matches a work's own text only, so run it first to find candidate works, then call this on each to map reuse.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
