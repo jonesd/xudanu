@@ -748,6 +748,42 @@ mod tests {
     use super::*;
 
     #[test]
+    fn seed_gallery_makes_reuse_graph_answer() {
+        // FR-161: the Live Window's transclusions must be findable by
+        // source work — the reuse graph demo depends on it.
+        let mut server = Server::new();
+        seed_gallery(&mut server);
+        let sid = server.connect();
+        let _ = server.login_public(sid);
+
+        let gene = server
+            .works
+            .iter()
+            .find(|(_, ws)| ws.cached_title().contains("Pronouncement"))
+            .map(|(id, _)| *id)
+            .expect("genealogy source work");
+        let reusers = server.find_transcluders_for_session(sid, gene).unwrap();
+        assert!(
+            reusers.iter().any(|(kind, _, _)| kind == "work"),
+            "who_transcluded on the 1965 pronouncement must find the Live Window, got {:?}",
+            reusers
+        );
+
+        let rebuttal = server
+            .works
+            .iter()
+            .find(|(_, ws)| ws.cached_title() == "Gallery Annex — The Rebuttal")
+            .map(|(id, _)| *id)
+            .expect("rebuttal source work");
+        let reusers_r = server.find_transcluders_for_session(sid, rebuttal).unwrap();
+        assert!(
+            reusers_r.iter().any(|(kind, _, _)| kind == "work"),
+            "who_transcluded on the rebuttal must find the Live Window, got {:?}",
+            reusers_r
+        );
+    }
+
+    #[test]
     fn seed_creates_gallery_trail_and_links() {
         let mut server = Server::new();
         seed_gallery(&mut server);

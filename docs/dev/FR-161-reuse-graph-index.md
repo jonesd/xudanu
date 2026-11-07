@@ -69,7 +69,12 @@ MCP (`who_transcluded`), raw wire (`find_transcluders`).
 
 - Corpus-wide `find_transclusions` MCP tool over the same index
   (by span, direct vs nested, paginated) — the original FR-161 sketch.
-- Seed example transclusions in `--seed-links-demo` (a Gallery
-  "Transclusion Room") so a fresh install demonstrates the reuse graph.
-- Access guide doc (`docs/access-guide.html`): the operation-by-
-  mechanism matrix (app / CLI / MCP / raw wire).
+- ~~Seed example transclusions~~ — done differently than sketched: the
+  Gallery already seeds them (Room 9 "The Live Window", the Genealogy
+  rooms); what was missing was the index. A seed test now locks the
+  reuse graph in (`seed_gallery_makes_reuse_graph_answer`). Production
+  servers pick the answers up on restart under the new binary (restore
+  re-registers with work-granular keys).
+- ~~Access guide doc~~ — shipped as `docs/access-guide.html`: the
+  operation-by-mechanism matrix (app / CLI / MCP / raw wire) with real
+  commands and an honest gaps section feeding this roadmap.
