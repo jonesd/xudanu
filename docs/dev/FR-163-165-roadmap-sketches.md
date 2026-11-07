@@ -48,7 +48,7 @@ fallback paths (placement, refresh).
 # FR-164: Corpus-Wide Reuse Map — Making the Two Graphs Visible
 
 - **ID:** FR-164
-- **Status:** Sketch (reviewed 2026-11-07)
+- **Status:** Implemented 2026-11-07 — see `FR-164-corpus-reuse-map.md`
 - **Parent:** FR-161 (reuse graph index); absorbs the FR-161
   follow-up `find_transclusions` sketch
 

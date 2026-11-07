@@ -231,6 +231,20 @@ pub fn tool_descriptors(writes_enabled: bool) -> Vec<Value> {
             }
         }),
         json!({
+            "name": "find_transclusions",
+            "description": "Corpus-wide reuse map (FR-164): every work-to-work transclusion edge {reuser, source, span_count, origin_server}. Recipe: who_transcluded answers one source work; this maps the whole corpus — filter by source or reuser, or page through everything to draw the two graphs (links vs reuse).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "source": {"type": "integer", "description": "Only edges quoting this source work id"},
+                    "reuser": {"type": "integer", "description": "Only edges by this reusing work id"},
+                    "direct_only": {"type": "boolean", "description": "Only directly-placed transclusions (default false)"},
+                    "offset": {"type": "integer", "description": "Pagination offset (default 0)"},
+                    "limit": {"type": "integer", "description": "Page size (default 200, max 1000)"}
+                }
+            }
+        }),
+        json!({
             "name": "get_prov",
             "description": "Export a work's provenance as W3C PROV-JSON: authors (human/LLM agents), attributions, derivations, signatures.",
             "inputSchema": {
@@ -779,6 +793,39 @@ fn call_tool(agent: &mut AgentSession, name: &str, args: &Value) -> Result<Value
                 })
                 .collect();
             Ok(json!({ "reusers": entries, "total": entries.len() }))
+        }
+        "find_transclusions" => {
+            let u64_arg = |name: &str| args.get(name).and_then(|v| v.as_u64());
+            let source = u64_arg("source");
+            let reuser = u64_arg("reuser");
+            let direct_only = args
+                .get("direct_only")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let offset = u64_arg("offset").unwrap_or(0);
+            let limit = u64_arg("limit").unwrap_or(0);
+            let payload =
+                server.reuse_graph_for_session(session, source, reuser, direct_only, offset, limit);
+            let edges: Vec<Value> = payload
+                .edges
+                .iter()
+                .map(|e| {
+                    json!({
+                        "reuser": e.reuser,
+                        "reuser_uri": if e.origin_server.is_none() {
+                            json!(WorkRef::work(e.reuser).to_uri())
+                        } else {
+                            Value::Null
+                        },
+                        "source": e.source,
+                        "source_uri": WorkRef::work(e.source).to_uri(),
+                        "is_direct": e.is_direct,
+                        "span_count": e.span_count,
+                        "origin_server": e.origin_server.clone().map(Value::String).unwrap_or(Value::Null)
+                    })
+                })
+                .collect();
+            Ok(json!({ "total": payload.total, "edges": edges }))
         }
         "get_prov" => {
             let work = work_arg(args)?;
@@ -2239,6 +2286,42 @@ mod tests {
         // The source itself is not its own reuser.
         let self_check = call(&mut agent, "who_transcluded", json!({"work": reuser})).unwrap();
         assert_eq!(self_check["total"], 0);
+    }
+
+    #[test]
+    fn find_transclusions_maps_corpus_reuse() {
+        let (mut agent, works) = writable_agent();
+        let placed = call(
+            &mut agent,
+            "transclude",
+            json!({"source_work": works[0], "start": 6, "end": 10}),
+        )
+        .unwrap();
+        let reuser = placed["work_id"].as_u64().unwrap();
+        call(
+            &mut agent,
+            "transclude",
+            json!({"source_work": works[0], "start": 0, "end": 5, "into_work": reuser, "at": 0}),
+        )
+        .unwrap();
+
+        let v = call(&mut agent, "find_transclusions", json!({})).unwrap();
+        assert_eq!(v["total"], 1, "one reuser-source pair in the corpus");
+        let edge = &v["edges"][0];
+        assert_eq!(edge["reuser"].as_u64().unwrap(), reuser);
+        assert_eq!(edge["source"].as_u64().unwrap(), works[0]);
+        assert_eq!(edge["span_count"], 2, "both placed spans counted");
+        assert!(edge["is_direct"].as_bool().unwrap());
+        assert!(edge["origin_server"].is_null());
+        assert!(edge["reuser_uri"]
+            .as_str()
+            .unwrap()
+            .starts_with("xudanu://work/"));
+
+        let by_reuser = call(&mut agent, "find_transclusions", json!({"reuser": reuser})).unwrap();
+        assert_eq!(by_reuser["total"], 1);
+        let none = call(&mut agent, "find_transclusions", json!({"source": reuser})).unwrap();
+        assert_eq!(none["total"], 0, "nobody quotes the reuser");
     }
 
     #[test]

@@ -323,6 +323,7 @@ pub enum OperationCode {
     CompoundFollowBack,
     CompoundResolveSegments,
     WorkDiffRegions,
+    ReuseGraph,
 
     ServerStats,
     MetricsSnapshot,
@@ -724,6 +725,7 @@ impl OperationCode {
         (0x0808, OperationCode::CompoundFollowBack),
         (0x080a, OperationCode::CompoundResolveSegments),
         (0x0805, OperationCode::WorkDiffRegions),
+        (0x080b, OperationCode::ReuseGraph),
         (0x0601, OperationCode::ServerStats),
         (0x0602, OperationCode::MetricsSnapshot),
         (0x0901, OperationCode::BlobUpload),
@@ -1713,6 +1715,20 @@ pub enum WireRequest {
         work_a: BeId,
         work_b: BeId,
     },
+    /// FR-164: corpus-wide reuse graph — invert the reuse index into
+    /// work-to-work transclusion edges (reuser, source, is_direct,
+    /// span_count, origin_server for remote reusers), filterable by
+    /// endpoint work and directness, paginated.
+    ReuseGraph {
+        source: Option<BeId>,
+        reuser: Option<BeId>,
+        #[cfg_attr(feature = "serde", serde(default))]
+        direct_only: bool,
+        #[cfg_attr(feature = "serde", serde(default))]
+        offset: u64,
+        #[cfg_attr(feature = "serde", serde(default))]
+        limit: u64,
+    },
 
     ServerStats,
     MetricsSnapshot,
@@ -2492,6 +2508,7 @@ impl WireRequest {
                 | Self::WorkEndorsements { .. }
                 | Self::WorkSummary { .. }
                 | Self::WorkVersionTimeline { .. }
+                | Self::ReuseGraph { .. }
                 | Self::EditionGet { .. }
                 | Self::EditionEndorsements { .. }
                 | Self::EditionVisibleEndorsements { .. }
@@ -2697,6 +2714,7 @@ pub enum ResponseValue {
     CrossServerBacklinksResult(Vec<CrossServerBacklinkPayload>),
     ExcerptPositions(Vec<ExcerptPositionPayload>),
     TransclusionResults(Vec<TransclusionResultPayload>),
+    ReuseGraphResult(ReuseGraphPayload),
     WorkIds(Vec<BeId>),
     TextTransclusionResults(Vec<TextTransclusionResultPayload>),
     RenderedTransclusions(Vec<RenderedElementPayload>),
@@ -4705,6 +4723,23 @@ pub struct TransclusionResultPayload {
     pub element_type: String,
     pub element_id: BeId,
     pub is_direct: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReuseEdgePayload {
+    pub reuser: BeId,
+    pub source: BeId,
+    pub is_direct: bool,
+    pub span_count: u64,
+    /// Present when the reuser is a remote work (the id names a work
+    /// on `origin_server`, not a local one).
+    pub origin_server: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReuseGraphPayload {
+    pub total: u64,
+    pub edges: Vec<ReuseEdgePayload>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
