@@ -26,7 +26,9 @@ const args = process.argv.slice(2);
 // error messages) are stripped of control characters before they
 // reach console.log, so a hostile endpoint cannot forge log lines.
 function safe(v) {
-  return String(v).replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
+  // \n and \r listed explicitly (already inside the range) so the
+  // sanitization is legible to CodeQL's log-injection taint model
+  return String(v).replace(/[\n\r\u0000-\u001f\u007f-\u009f]/g, " ");
 }
 const HOST = "127.0.0.1:8080";
 const ORIGIN = `http://${HOST}`;
