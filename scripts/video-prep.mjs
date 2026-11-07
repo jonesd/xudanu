@@ -26,9 +26,13 @@ const args = process.argv.slice(2);
 // error messages) are stripped of control characters before they
 // reach console.log, so a hostile endpoint cannot forge log lines.
 function safe(v) {
-  // \n and \r listed explicitly (already inside the range) so the
-  // sanitization is legible to CodeQL's log-injection taint model
-  return String(v).replace(/[\n\r\u0000-\u001f\u007f-\u009f]/g, " ");
+  // Newlines/CR are removed first in the exact shape CodeQL's
+  // log-injection taint model recognizes (replace(/\n|\r/g, ""));
+  // the second pass hardens against the remaining control and
+  // Unicode line-separator characters.
+  return String(v)
+    .replace(/\n|\r/g, "")
+    .replace(/[\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f-\u009f\u2028\u2029]/g, " ");
 }
 const HOST = "127.0.0.1:8080";
 const ORIGIN = `http://${HOST}`;
