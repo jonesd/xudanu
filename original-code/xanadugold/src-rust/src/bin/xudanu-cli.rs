@@ -28,6 +28,9 @@ fn usage() {
     eprintln!("  list-links <work-id>                    List links involving a work");
     eprintln!("  delete-link <link-id>                   Delete a link");
     eprintln!("  find-content <be-id>                    Find works containing content");
+    eprintln!(
+        "  who-transcluded <work-id>               Find works quoting this work (reuse graph)"
+    );
     eprintln!("  club-create [name]                      Create a club (optionally named)");
     eprintln!("  club-list                               List all clubs");
     eprintln!("  info                                    Server info");
@@ -792,6 +795,49 @@ async fn run_command(
                 }
             }
         }
+        "who-transcluded" => {
+            client.ensure_login().await;
+            let id: u64 = args
+                .first()
+                .ok_or("usage: who-transcluded <work-id>")?
+                .parse()?;
+            let resp = client
+                .request(
+                    "find_transcluders",
+                    Some(serde_json::json!({
+                        "content_be_id": id
+                    })),
+                )
+                .await;
+            let results = extract_value(&resp)["value"].as_array();
+            if let Some(results) = results {
+                if results.is_empty() {
+                    println!("No works quote this content.");
+                } else {
+                    for r in results {
+                        let kind = r["element_type"].as_str().unwrap_or("unknown");
+                        let eid = r["element_id"].as_u64().unwrap_or(0);
+                        let direct = r["is_direct"].as_bool().unwrap_or(false);
+                        if kind == "work" {
+                            println!(
+                                "{} 0x{:x} (xudanu://work/{}){}",
+                                kind,
+                                eid,
+                                eid,
+                                if direct { " direct" } else { " nested" }
+                            );
+                        } else {
+                            println!(
+                                "{} 0x{:x}{}",
+                                kind,
+                                eid,
+                                if direct { " direct" } else { " nested" }
+                            );
+                        }
+                    }
+                }
+            }
+        }
         "club-create" => {
             client.ensure_login().await;
             let name = args.first();
@@ -850,7 +896,7 @@ async fn run_command(
             }
         }
         "help" => {
-            println!("Commands: login, login-admin, create-work, get-work, list-works, grab, revise, release, history, fetch-revision, create-link, get-link, list-links, delete-link, find-content, club-create, club-list, info, quit");
+            println!("Commands: login, login-admin, create-work, get-work, list-works, grab, revise, release, history, fetch-revision, create-link, get-link, list-links, delete-link, find-content, who-transcluded, club-create, club-list, info, quit");
         }
         "quit" | "exit" => {
             std::process::exit(0);

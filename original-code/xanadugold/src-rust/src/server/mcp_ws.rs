@@ -350,7 +350,20 @@ pub fn call_tool_remote(ws: &mut WsDocuverse, name: &str, args: &Value) -> Resul
             let resp = extract_value(
                 &ws.request("find_transcluders", Some(json!({"content_be_id": work})))?,
             );
-            let reusers = resp.as_array().cloned().unwrap_or_default();
+            let triples = resp.as_array().cloned().unwrap_or_default();
+            let reusers: Vec<Value> = triples
+                .iter()
+                .map(|r| {
+                    let kind = r.get("element_type").and_then(|v| v.as_str()).unwrap_or("unknown");
+                    let id = r.get("element_id").and_then(|v| v.as_u64()).unwrap_or(0);
+                    json!({
+                        "kind": kind,
+                        "id": id,
+                        "uri": if kind == "work" { json!(format!("xudanu://work/{}", id)) } else { Value::Null },
+                        "is_direct": r.get("is_direct").and_then(|v| v.as_bool()).unwrap_or(false)
+                    })
+                })
+                .collect();
             Ok(json!({ "reusers": reusers, "total": reusers.len() }))
         }
         "get_prov" => {
@@ -410,9 +423,9 @@ pub fn call_tool_remote(ws: &mut WsDocuverse, name: &str, args: &Value) -> Resul
                 .ok_or("missing end")? as usize;
             let element = json!({
                 "type": "transclusion",
-                "work_id": source,
-                "char_start": start,
-                "char_end": end
+                "transclusion_source": source,
+                "transclusion_start": start,
+                "transclusion_end": end
             });
             let (work, created) = match args.get("into_work").and_then(|v| v.as_u64()) {
                 Some(existing) => (existing, false),

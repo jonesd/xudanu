@@ -316,11 +316,12 @@ impl TransclusionIndex {
     pub fn register_work(&mut self, edition: &Edition, work_element: &RangeElement) {
         let entries = edition.fetch_all();
         for (_pos, carrier) in &entries {
-            let key = element_key(&carrier.element);
-            self.content_to_editions
-                .entry(key)
-                .or_default()
-                .push((work_element.clone(), true));
+            for key in registration_keys(&carrier.element) {
+                self.content_to_editions
+                    .entry(key)
+                    .or_default()
+                    .push((work_element.clone(), true));
+            }
         }
     }
 
@@ -433,11 +434,12 @@ impl TransclusionIndex {
     pub fn unregister_work(&mut self, edition: &Edition, work_element: &RangeElement) {
         let entries = edition.fetch_all();
         for (_pos, carrier) in &entries {
-            let key = element_key(&carrier.element);
-            if let Some(vec) = self.content_to_editions.get_mut(&key) {
-                vec.retain(|(elem, _)| elem != work_element);
-                if vec.is_empty() {
-                    self.content_to_editions.remove(&key);
+            for key in registration_keys(&carrier.element) {
+                if let Some(vec) = self.content_to_editions.get_mut(&key) {
+                    vec.retain(|(elem, _)| elem != work_element);
+                    if vec.is_empty() {
+                        self.content_to_editions.remove(&key);
+                    }
                 }
             }
         }
@@ -463,6 +465,25 @@ fn is_link_label_of(elem: &RangeElement, link_id: u64) -> bool {
         elem,
         RangeElement::Label { label_id, .. } if label_id.0 == link_id
     )
+}
+
+/// Registration keys under which an element enters the reuse index:
+/// the exact content-fingerprint key plus, for transclusions, a
+/// work-granular key on the SOURCE work, so "who quotes work W?"
+/// queries hit without knowing the exact span.
+pub fn registration_keys(element: &RangeElement) -> Vec<String> {
+    let mut keys = vec![element_key(element)];
+    match element {
+        RangeElement::Transclusion { source_work_id, .. }
+        | RangeElement::StructuralTransclusion { source_work_id, .. } => {
+            let work_key = element_key(&RangeElement::work(*source_work_id));
+            if !keys.contains(&work_key) {
+                keys.push(work_key);
+            }
+        }
+        _ => {}
+    }
+    keys
 }
 
 pub fn element_key(element: &RangeElement) -> String {
@@ -546,6 +567,36 @@ mod tests {
         let q = TransclusionQuery::all();
         let results = idx.find_transcluders(&RangeElement::text("hello"), &q);
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn transclusion_registers_under_source_work_key() {
+        let mut idx = TransclusionIndex::new();
+        let edition = Edition::from_one(0, RangeElement::transclusion(42, 0, 5));
+        let reuser = RangeElement::work(7);
+        idx.register_work(&edition, &reuser);
+
+        // Work-granular query on the SOURCE work must hit without
+        // knowing the span.
+        let q = TransclusionQuery::all();
+        let by_work = idx.find_transcluders(&RangeElement::work(42), &q);
+        assert_eq!(by_work.len(), 1);
+        assert_eq!(by_work[0].element.as_work_id(), Some(7));
+        assert!(by_work[0].is_direct);
+
+        // Exact-span query still hits.
+        let by_span = idx.find_transcluders(&RangeElement::transclusion(42, 0, 5), &q);
+        assert_eq!(by_span.len(), 1);
+
+        // A different span of the same work is invisible to the exact
+        // key but visible via the work key.
+        let other_span = idx.find_transcluders(&RangeElement::transclusion(42, 9, 20), &q);
+        assert!(other_span.is_empty());
+
+        // Unregister removes the work-key entry too.
+        idx.unregister_work(&edition, &reuser);
+        let after = idx.find_transcluders(&RangeElement::work(42), &q);
+        assert!(after.is_empty());
     }
 
     #[test]

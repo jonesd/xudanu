@@ -2218,6 +2218,30 @@ mod tests {
     }
 
     #[test]
+    fn who_transcluded_returns_reuser_after_transclude() {
+        let (mut agent, works) = writable_agent();
+        let placed = call(
+            &mut agent,
+            "transclude",
+            json!({"source_work": works[0], "start": 6, "end": 10}),
+        )
+        .unwrap();
+        let reuser = placed["work_id"].as_u64().unwrap();
+        let v = call(&mut agent, "who_transcluded", json!({"work": works[0]})).unwrap();
+        assert_eq!(v["total"], 1, "reuser must be findable by source work");
+        assert_eq!(v["reusers"][0]["kind"], "work");
+        assert_eq!(v["reusers"][0]["id"].as_u64().unwrap(), reuser);
+        assert!(v["reusers"][0]["is_direct"].as_bool().unwrap());
+        assert!(v["reusers"][0]["uri"]
+            .as_str()
+            .unwrap()
+            .starts_with("xudanu://work/"));
+        // The source itself is not its own reuser.
+        let self_check = call(&mut agent, "who_transcluded", json!({"work": reuser})).unwrap();
+        assert_eq!(self_check["total"], 0);
+    }
+
+    #[test]
     fn transclude_into_existing_work() {
         let (mut agent, works) = writable_agent();
         let target = call(&mut agent, "create_work", json!({"text": "quote: "})).unwrap()

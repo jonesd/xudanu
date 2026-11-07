@@ -413,13 +413,17 @@ impl BackfollowEngine {
         old_edition
             .orgl
             .crum_diff_visit(&new_edition.orgl, &mut |carrier, removed| {
-                let key = super::transclusion::element_key(&carrier.element);
                 let fp = carrier.element.content_fingerprint();
+                for key in super::transclusion::registration_keys(&carrier.element) {
+                    if removed {
+                        *old_keys.entry(key).or_default() += 1;
+                    } else {
+                        *new_keys.entry(key).or_default() += 1;
+                    }
+                }
                 if removed {
-                    *old_keys.entry(key).or_default() += 1;
                     *old_fps.entry(fp).or_default() += 1;
                 } else {
-                    *new_keys.entry(key).or_default() += 1;
                     *new_fps.entry(fp).or_default() += 1;
                 }
             });
