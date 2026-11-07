@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Access Guide — four ways to touch a Xudanu server</title>
+<meta name="description" content="Every common Xudanu operation through each of the four access mechanisms: the web app, xudanu-cli, MCP agents, and the raw WebSocket wire — real commands, honest gaps.">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.65}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+p{margin-bottom:12px;max-width:780px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.9em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.content-wrap{max-width:1060px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.warning{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warning strong{color:#f85149}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+code{font-family:'JetBrains Mono',monospace}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.gap{color:#f85149;font-size:12px;font-weight:600}
+.mono{font-family:'JetBrains Mono',monospace;font-size:13px}
+</style>
+</head>
+<body>
+<div style="background:#161b22;border-bottom:1px solid #30363d;color:#8b949e;font-size:13px;padding:6px 16px;text-align:center">An independent interpretation of the released Udanax Gold source &middot; not Project Xanadu documentation &middot; <a href="provenance.html" style="color:#58a6ff;text-decoration:none">about this documentation</a></div>
+<div class="content-wrap">
+
+<h1>Access Guide</h1>
+<p class="subtitle">One server, four doors — every operation through the app, the CLI, an MCP agent, and the raw wire</p>
+
+<p>Everything a Xudanu server can do is reachable four ways. Under all four sits the same WebSocket wire protocol and, below it, the same permission gates: a work you cannot read in the browser cannot be read by a script or an agent either. This page shows each common operation through each mechanism, with commands you can paste.</p>
+
+<div class="note"><strong>The examples are real.</strong> Every command on this page was executed against a running server (a public-sandbox demo and xudanu.com itself); outputs shown are actual outputs, trimmed for space.</div>
+
+<div class="toc">
+<a href="#matrix">1. The operation matrix</a>
+<a href="#app">2. Web app</a>
+<a href="#cli">3. Command line (xudanu-cli)</a>
+<a href="#mcp">4. Agents (MCP)</a>
+<a href="#wire">5. Raw wire protocol</a>
+<a href="#gates">6. Writes and the gates</a>
+<a href="#gaps">7. Honest gaps</a>
+</div>
+
+<h2 id="matrix">1. The operation matrix</h2>
+
+<table>
+<tr><th>Operation</th><th>Web app</th><th>CLI</th><th>MCP tool</th><th>Wire op</th></tr>
+<tr><td><strong>Open a session</strong></td><td>load the page (session auto-connects)</td><td class="mono">xudanu-cli &lt;url&gt; &lt;cmd&gt;<br>(auto-login)</td><td class="mono">xudanu-mcp --server &lt;url&gt;<br>(session_connect)</td><td class="mono">session_connect<br>session_login_public</td></tr>
+<tr><td><strong>Read a work</strong><br><span style="color:#8b949e">transclusions resolved inline</span></td><td>the editor canvas</td><td class="mono">get-work &lt;id&gt;</td><td class="mono">read_work {work}</td><td class="mono">resolve_inline_transclusions</td></tr>
+<tr><td><strong>Read an exact span</strong><br><span style="color:#8b949e">with BLAKE3 content hash</span></td><td>select text (tooltip shows the span)</td><td class="mono">—</td><td class="mono">read_span {work, start, end, rev?}</td><td class="mono">work_get_edition</td></tr>
+<tr><td><strong>Search locally</strong></td><td>SearchOverlay (Ctrl-K)</td><td class="mono">—</td><td class="mono">search_works {query}</td><td class="mono">global_text_search</td></tr>
+<tr><td><strong>Search across servers</strong><br><span style="color:#8b949e">federated fan-out</span></td><td><span class="gap">gap</span></td><td><span class="gap">gap</span></td><td class="mono">search_federated {query}</td><td class="mono">federated_search</td></tr>
+<tr><td><strong>Quote live</strong><br><span style="color:#8b949e">place a transclusion</span></td><td>select text &rarr; transclude (placement bar)</td><td><span class="gap">gap</span></td><td class="mono">transclude {source_work, start, end}</td><td class="mono">element_insert</td></tr>
+<tr><td><strong>Connect two passages</strong><br><span style="color:#8b949e">typed link</span></td><td>select &rarr; LinkCreator wizard</td><td class="mono">create-link &lt;origin&gt; &lt;dest&gt;</td><td class="mono">create_link {origin, destination, link_type}</td><td class="mono">link_create</td></tr>
+<tr><td><strong>Find reuse</strong><br><span style="color:#8b949e">who quotes this work?</span></td><td>Connections panel &rarr; Transclusions</td><td class="mono">who-transcluded &lt;work&gt;</td><td class="mono">who_transcluded {work}</td><td class="mono">find_transcluders</td></tr>
+<tr><td><strong>Find works by content id</strong></td><td>via Connections</td><td class="mono">find-content &lt;be-id&gt;</td><td>covered by who_transcluded</td><td class="mono">find_works_for_content</td></tr>
+<tr><td><strong>Find backlinks</strong><br><span style="color:#8b949e">links pointing here</span></td><td>Connections panel &rarr; Backlinks</td><td class="mono">list-links &lt;work&gt;</td><td class="mono">find_backlinks {work}</td><td class="mono">link_backlinks</td></tr>
+<tr><td><strong>Walk a trail</strong><br><span style="color:#8b949e">curated sequence</span></td><td>TrailsPanel / trail view</td><td><span class="gap">gap</span></td><td class="mono">read_trails {category?}</td><td class="mono">trail_list_published</td></tr>
+<tr><td><strong>Check the license</strong></td><td>license badge on the work</td><td><span class="gap">gap</span></td><td class="mono">get_license {work}</td><td class="mono">work_license_get</td></tr>
+<tr><td><strong>Audit provenance</strong></td><td>Attribution panel (authorship spans)</td><td><span class="gap">gap</span></td><td class="mono">get_prov {work} &middot; verify_work {work}</td><td class="mono">prov_json_export</td></tr>
+<tr><td><strong>List peer servers</strong><br><span style="color:#8b949e">trust directory</span></td><td><span class="gap">gap</span></td><td><span class="gap">gap</span></td><td class="mono">list_servers</td><td class="mono">server_directory_list</td></tr>
+<tr><td><strong>Watch for changes</strong></td><td>live via the editor (presence)</td><td><span class="gap">gap</span></td><td class="mono">watch_work &middot; unwatch_work</td><td class="mono">detector ops</td></tr>
+</table>
+
+<p>Read a row left to right and you are seeing the same server function four times: the app panel calls the wire op; the CLI calls the wire op; the MCP tool calls the wire op (or the server function directly in data-dir mode). Fixes and features land once, below all four doors — when the reuse index gained work-granular keys (FR-161), the app, CLI, MCP, and wire answers all appeared the same day.</p>
+
+<h2 id="app">2. Web app</h2>
+<p>The full human surface: the editor with inline link lanes and attribution, the right-hand Context panel (connections, docuverse map, presence), trails, compound builders, import. <strong>xudanu.com</strong> runs the production instance; <strong>demo.xudanu.com</strong> is a public sandbox needing no account.</p>
+<p>For local development, <code class="mono">./scripts/restart.sh</code> from the workspace root brings up the backend on :8080 and Vite on :5173.</p>
+<div class="gold"><strong>Where transclusion lives in the UI:</strong> select text in a source work and the placement bar offers a live window; existing transclusions render inline with colour-coding and a badge showing their source. The Connections panel lists them per work.</div>
+
+<h2 id="cli">3. Command line (xudanu-cli)</h2>
+<p>The scripting and operations surface. One-shot commands take <code class="mono">&lt;server-url&gt; &lt;command&gt; [args...]</code>; <code class="mono">repl</code> gives an interactive session.</p>
+<pre>xudanu-cli ws://127.0.0.1:8093 who-transcluded 1004
+work 0x3ed (xudanu://work/1005) direct</pre>
+<p>The reuse graph in one line: work <code class="mono">0x3ed</code> (1005) quotes work 1004, directly (not through an intermediate). Other commands: <code class="mono">list-works</code>, <code class="mono">get-work</code>, <code class="mono">create-work</code>, <code class="mono">revise</code>, <code class="mono">create-link</code>, <code class="mono">find-content</code>, <code class="mono">grab</code>/<code class="mono">release</code>, <code class="mono">club-*</code>, <code class="mono">registry-*</code>, <code class="mono">info</code>. Run bare for the list.</p>
+
+<h2 id="mcp">4. Agents (MCP)</h2>
+<p><code class="mono">xudanu-mcp</code> speaks the Model Context Protocol on stdio and translates to the same wire ops — any MCP host (Claude Desktop, Cursor, OpenCode) becomes a docuverse researcher. Configuration lives in the <a href="mcp-guide.html">MCP guide</a>; the tool catalog arrives via the standard <code class="mono">tools/list</code>.</p>
+<pre>xudanu-mcp --server wss://xudanu.com</pre>
+<p>A minimal session over stdio (newline-delimited JSON-RPC):</p>
+<pre>{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"1.0"}}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"who_transcluded","arguments":{"work":1004}}}</pre>
+<pre>{"reusers":[{"kind":"work","id":1005,"is_direct":true,"uri":"xudanu://work/1005"}],"total":1}</pre>
+<p>Reads need no flag. Writes are doubly gated — see <a href="#gates">section 6</a>. Recipes for chaining tools (the reuse chain, citation pinning, provenance audits) ship as Agent Skills in the repository and as recipes embedded in tool descriptions; see the MCP guide's tool catalog.</p>
+
+<h2 id="wire">5. Raw wire protocol</h2>
+<p>Everything above is a translation of this. Connect a WebSocket to <code class="mono">/xudanu</code>, send versioned JSON frames, await the matching id:</p>
+<pre>{"v":2,"type":"request","id":1,"op":"find_transcluders","payload":{"content_be_id":1004}}</pre>
+<p>The response carries the same triples the CLI and MCP reshape:</p>
+<pre>{"type":"response","id":1,"value":{"type":"transclusion_results","value":[
+  {"element_type":"work","element_id":1005,"is_direct":true}]}}</pre>
+<p>Op names are snake-case wire ops (<code class="mono">trail_list_published</code>, <code class="mono">work_license_get</code>, <code class="mono">server_directory_list</code>, <code class="mono">federated_search</code>, 140+ more) — the full reference is the <a href="wire-protocol.html">wire protocol</a> page, regenerated from source by <code class="mono">scripts/gen-wire-doc.py</code>.</p>
+
+<h2 id="gates">6. Writes and the gates</h2>
+<p>All four mechanisms pass the same server-side checks — <code class="mono">ensure_can_read</code> for reads, <code class="mono">ensure_can_edit</code> for writes — against the same club system. There is no door with weaker locks.</p>
+<table>
+<tr><th>Mechanism</th><th>How a write is authorized</th></tr>
+<tr><td>Web app</td><td>login (identity or public sandbox policy); world-editable works on sandbox servers</td></tr>
+<tr><td>CLI</td><td><code class="mono">login</code> / <code class="mono">login-admin</code>; the session carries your clubs</td></tr>
+<tr><td>MCP</td><td>operator starts the bridge with <code class="mono">--enable-agent-writes</code> <em>and</em> every mutation still passes <code class="mono">ensure_can_edit</code>; in practice agents only touch world-editable works on public-sandbox servers</td></tr>
+<tr><td>Wire</td><td>session authentication (tickets, OAuth, or public session); same gates</td></tr>
+</table>
+<div class="warning"><strong>Agent attribution is structural.</strong> Everything an agent writes is signed as LLM-authored with its model identity in the provenance chain. It cannot claim to be you.</div>
+
+<h2 id="gaps">7. Honest gaps</h2>
+<p>Where the matrix says <span class="gap">gap</span>, the mechanism genuinely lacks the operation today:</p>
+<ul style="max-width:780px;margin:0 0 12px 20px">
+<li><strong>CLI</strong>: no span reads with hashes, no trail walking, no license/provenance checks, no transclusion placement, no federated search. The highest-value candidates for a small CLI refresh.</li>
+<li><strong>Web app</strong>: federated search and the server directory are not surfaced; reuse connections exist per work but there is no corpus-wide reuse browser.</li>
+<li><strong>Agents</strong>: no delegated reads (an agent cannot read what only you can read, even when you ask it to) — read-delegation tokens are the designed answer, not yet built.</li>
+</ul>
+<p>Gaps are tracked in the FR cards under <code class="mono">docs/dev/</code>; the follow-up list in FR-161's card is the current roadmap for this surface.</p>
+
+<p style="margin-top:48px;color:#8b949e;font-size:13px">Related: <a href="mcp-guide.html">MCP guide</a> &middot; <a href="wire-protocol.html">wire protocol</a> &middot; <a href="transclusion-engine.html">transclusion engine</a> &middot; <a href="gold-link-model.html">the Gold link model</a></p>
+
+</div>
+</body>
+</html>

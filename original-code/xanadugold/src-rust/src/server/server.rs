@@ -21517,9 +21517,18 @@ impl Server {
     // === Transclusion queries ===
 
     pub fn find_transcluders(&self, content_be_id: BeId) -> Vec<(String, BeId, bool)> {
-        let content = RangeElement::edition(content_be_id);
         let query = TransclusionQuery::all();
-        self.find_transcluders_with_query(&content, &query)
+        // Dual query: the work-granular key is where transclusion
+        // elements register on their source work; the edition key
+        // covers recorder-path editions. Merge and dedupe.
+        let mut out = Vec::new();
+        for content in [
+            RangeElement::work(content_be_id),
+            RangeElement::edition(content_be_id),
+        ] {
+            out.extend(self.find_transcluders_with_query(&content, &query));
+        }
+        Self::dedupe_reusers(out)
     }
 
     pub fn find_transcluders_for_session(
@@ -21527,7 +21536,6 @@ impl Server {
         session_id: SessionId,
         content_be_id: BeId,
     ) -> Result<Vec<(String, BeId, bool)>, ServerError> {
-        let content = RangeElement::edition(content_be_id);
         let mut query = TransclusionQuery::all();
         if let Ok(session) = self.session(session_id) {
             let authority: Vec<u64> = session.authority_clubs().into_iter().collect();
@@ -21537,7 +21545,14 @@ impl Server {
                     query.with_permissions(crate::edition::props::FilterRegion::new(perm_region));
             }
         }
-        Ok(self.find_transcluders_with_query(&content, &query))
+        let mut out = Vec::new();
+        for content in [
+            RangeElement::work(content_be_id),
+            RangeElement::edition(content_be_id),
+        ] {
+            out.extend(self.find_transcluders_with_query(&content, &query));
+        }
+        Ok(Self::dedupe_reusers(out))
     }
 
     fn find_transcluders_with_query(
@@ -21566,9 +21581,28 @@ impl Server {
     }
 
     pub fn find_works_for_content(&self, content_be_id: BeId) -> Vec<BeId> {
-        let content = RangeElement::edition(content_be_id);
         let query = WorkQuery::all();
-        self.backfollow.find_works_for_content(&content, &query)
+        let mut out = Vec::new();
+        for content in [
+            RangeElement::work(content_be_id),
+            RangeElement::edition(content_be_id),
+        ] {
+            out.extend(self.backfollow.find_works_for_content(&content, &query));
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    fn dedupe_reusers(v: Vec<(String, BeId, bool)>) -> Vec<(String, BeId, bool)> {
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::with_capacity(v.len());
+        for (kind, id, is_direct) in v {
+            if seen.insert((kind.clone(), id, is_direct)) {
+                out.push((kind, id, is_direct));
+            }
+        }
+        out
     }
 
     pub fn find_text_transcluders(

@@ -322,6 +322,47 @@ pub fn tool_descriptors(writes_enabled: bool) -> Vec<Value> {
                 "required": ["work"]
             }
         }),
+        json!({
+            "name": "get_license",
+            "description": "License terms of a work (FR-24). Check before quoting or transcluding: all-rights-reserved needs the rightsholder's terms; transcopyright is designed for quotation and live transclusion.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "work": {"type": "integer", "description": "Work id"}
+                },
+                "required": ["work"]
+            }
+        }),
+        json!({
+            "name": "read_trails",
+            "description": "List published trails — curated sequences of works (courses, tours). Walk a trail's works in order for a guided path through the docuverse. Optional category filter.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "category": {"type": "string", "description": "Optional category filter"}
+                }
+            }
+        }),
+        json!({
+            "name": "list_servers",
+            "description": "List this server's federation directory: known peer servers with trust and quarantine state. The trust graph for cross-server content.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        }),
+        json!({
+            "name": "search_federated",
+            "description": "Search the local corpus plus public works on trusted peer servers (bloom-routed fan-out, signed responses). Results carry their origin server. Single-call docuverse-wide search. Rate-limited to 10 queries/min.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "All terms must appear in a work"},
+                    "max_results": {"type": "integer", "description": "Cap (1-100, default 20)"}
+                },
+                "required": ["query"]
+            }
+        }),
     ];
     if writes_enabled {
         tools.extend(vec![
@@ -877,6 +918,91 @@ fn call_tool(agent: &mut AgentSession, name: &str, args: &Value) -> Result<Value
                 .detector_delete(session, detector_id)
                 .map_err(|e| format!("delete failed: {}", e))?;
             Ok(json!({"detector_id": detector_id, "deleted": deleted}))
+        }
+        "get_license" => {
+            let work = work_arg(args)?;
+            server
+                .ensure_can_read(session, work)
+                .map_err(|e| format!("work {} not readable: {}", work, e))?;
+            let license = server
+                .work_license_get(work)
+                .map_err(|e| format!("work {} not found: {}", work, e))?;
+            let (id, guidance) = match license {
+                crate::edition::License::AllRightsReserved => (
+                    "all-rights-reserved",
+                    "Reserved. Quote only under fair use or fair dealing; transclusion requires the rightsholder's terms.",
+                ),
+                crate::edition::License::Transcopyright => (
+                    "transcopyright",
+                    "Designed for quotation and live transclusion; reuse under the server's transcopyright terms.",
+                ),
+                crate::edition::License::CreativeCommonsBy => (
+                    "cc-by",
+                    "Attribution required; derivatives allowed under any terms.",
+                ),
+                crate::edition::License::CreativeCommonsBySa => (
+                    "cc-by-sa",
+                    "Attribution required; derivatives must use the same license.",
+                ),
+                crate::edition::License::PublicDomain => (
+                    "public-domain",
+                    "No restrictions; attribution is courtesy, not obligation.",
+                ),
+            };
+            Ok(json!({
+                "work_id": work,
+                "uri": WorkRef::work(work).to_uri(),
+                "license": id,
+                "guidance": guidance
+            }))
+        }
+        "read_trails" => {
+            let category = args
+                .get("category")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let trails = server
+                .trail_list_published(session, category.as_deref())
+                .map_err(|e| format!("trail list failed: {}", e))?;
+            let entries: Vec<Value> = trails
+                .iter()
+                .map(|t| serde_json::to_value(t).unwrap_or(Value::Null))
+                .collect();
+            Ok(json!({ "trails": entries, "total": entries.len() }))
+        }
+        "list_servers" => {
+            let entries: Vec<Value> = server
+                .server_directory()
+                .list()
+                .iter()
+                .map(|e| {
+                    json!({
+                        "server_id": e.server_id,
+                        "name": e.name,
+                        "description": e.description,
+                        "address": e.address,
+                        "port": e.port,
+                        "trusted": e.trusted,
+                        "quarantined": e.quarantined,
+                        "last_seen": e.last_seen,
+                    })
+                })
+                .collect();
+            Ok(json!({ "servers": entries, "total": entries.len() }))
+        }
+        "search_federated" => {
+            let query = args
+                .get("query")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "missing query".to_string())?;
+            let max = args
+                .get("max_results")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(20)
+                .clamp(1, 100) as usize;
+            let all = server.federated_search(query);
+            let results: Vec<Value> = all.into_iter().take(max).collect();
+            Ok(json!({ "results": results, "total": results.len() }))
         }
         "verify_work" => {
             let work = work_arg(args)?;
@@ -1742,6 +1868,44 @@ mod tests {
     }
 
     #[test]
+    fn get_license_reports_default_transcopyright() {
+        let (mut agent, works) = agent_with_works();
+        let v = call(&mut agent, "get_license", json!({"work": works[0]})).unwrap();
+        assert_eq!(v["license"], "transcopyright");
+        assert!(v["guidance"].as_str().unwrap().contains("transclusion"));
+        assert!(v["uri"].as_str().unwrap().starts_with("xudanu://work/"));
+    }
+
+    #[test]
+    fn get_license_enforces_read_permission_on_unknown_work() {
+        let (mut agent, _) = agent_with_works();
+        assert!(call(&mut agent, "get_license", json!({"work": 99999})).is_err());
+    }
+
+    #[test]
+    fn read_trails_and_list_servers_fresh_server_empty() {
+        let (mut agent, _) = agent_with_works();
+        let t = call(&mut agent, "read_trails", json!({})).unwrap();
+        assert_eq!(t["total"], 0);
+        let s = call(&mut agent, "list_servers", json!({})).unwrap();
+        assert_eq!(s["total"], 0);
+    }
+
+    #[test]
+    fn search_federated_includes_local_matches() {
+        let (mut agent, _) = agent_with_works();
+        let v = call(&mut agent, "search_federated", json!({"query": "alpha"})).unwrap();
+        assert_eq!(v["total"], 2);
+        let none = call(
+            &mut agent,
+            "search_federated",
+            json!({"query": "absent-term-xyz"}),
+        )
+        .unwrap();
+        assert_eq!(none["total"], 0);
+    }
+
+    #[test]
     fn work_ref_uri_roundtrip() {
         let full = WorkRef {
             work_id: 42,
@@ -2051,6 +2215,30 @@ mod tests {
         assert_eq!(read_back["text"], "beta");
         assert_eq!(read_back["span_range_count"], 1);
         assert_eq!(read_back["span_ranges"][0]["resolved_content"], "beta");
+    }
+
+    #[test]
+    fn who_transcluded_returns_reuser_after_transclude() {
+        let (mut agent, works) = writable_agent();
+        let placed = call(
+            &mut agent,
+            "transclude",
+            json!({"source_work": works[0], "start": 6, "end": 10}),
+        )
+        .unwrap();
+        let reuser = placed["work_id"].as_u64().unwrap();
+        let v = call(&mut agent, "who_transcluded", json!({"work": works[0]})).unwrap();
+        assert_eq!(v["total"], 1, "reuser must be findable by source work");
+        assert_eq!(v["reusers"][0]["kind"], "work");
+        assert_eq!(v["reusers"][0]["id"].as_u64().unwrap(), reuser);
+        assert!(v["reusers"][0]["is_direct"].as_bool().unwrap());
+        assert!(v["reusers"][0]["uri"]
+            .as_str()
+            .unwrap()
+            .starts_with("xudanu://work/"));
+        // The source itself is not its own reuser.
+        let self_check = call(&mut agent, "who_transcluded", json!({"work": reuser})).unwrap();
+        assert_eq!(self_check["total"], 0);
     }
 
     #[test]
