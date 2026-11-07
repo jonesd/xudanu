@@ -2589,9 +2589,12 @@ export function WorkspaceShell() {
         .then((g) => {
         if (cancelled) return;
         useWorkStore.getState().setGraph(g.nodes, g.edges);
-        // Compute inbound link count per concept
+        // Compute inbound link count per concept (FR-164: only real
+        // link edges count — reuse and similarity edges are separate
+        // connection systems, not citations)
         const linkCounts = new Map<number, number>();
         for (const edge of g.edges) {
+          if (edge.edge_type !== "link") continue;
           linkCounts.set(edge.target, (linkCounts.get(edge.target) || 0) + 1);
         }
         const conceptList = g.nodes
@@ -2622,6 +2625,7 @@ export function WorkspaceShell() {
       useWorkStore.getState().setGraph(g.nodes, g.edges);
       const linkCounts = new Map<number, number>();
       for (const edge of g.edges) {
+        if (edge.edge_type !== "link") continue;
         linkCounts.set(edge.target, (linkCounts.get(edge.target) || 0) + 1);
       }
       const conceptList = g.nodes

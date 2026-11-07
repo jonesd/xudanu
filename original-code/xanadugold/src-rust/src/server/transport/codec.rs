@@ -2054,6 +2054,28 @@ impl JsonCodec {
                     content_be_id: args.content_be_id,
                 })
             }
+            OperationCode::ReuseGraph => {
+                #[derive(Deserialize)]
+                struct Args {
+                    source: Option<BeId>,
+                    reuser: Option<BeId>,
+                    #[serde(default)]
+                    direct_only: bool,
+                    #[serde(default)]
+                    offset: u64,
+                    #[serde(default)]
+                    limit: u64,
+                }
+                let args: Args = serde_json::from_value(p)
+                    .map_err(|e| ProtocolError::Serialization(e.to_string()))?;
+                Ok(WireRequest::ReuseGraph {
+                    source: args.source,
+                    reuser: args.reuser,
+                    direct_only: args.direct_only,
+                    offset: args.offset,
+                    limit: args.limit,
+                })
+            }
             OperationCode::FindWorksForContent => {
                 #[derive(Deserialize)]
                 struct Args {

@@ -366,6 +366,42 @@ pub fn call_tool_remote(ws: &mut WsDocuverse, name: &str, args: &Value) -> Resul
                 .collect();
             Ok(json!({ "reusers": reusers, "total": reusers.len() }))
         }
+        "find_transclusions" => {
+            let mut params = serde_json::Map::new();
+            for name in ["source", "reuser", "direct_only", "offset", "limit"] {
+                if let Some(v) = args.get(name).filter(|v| !v.is_null()) {
+                    params.insert(name.to_string(), v.clone());
+                }
+            }
+            let resp = extract_value(&ws.request("reuse_graph", Some(Value::Object(params)))?);
+            let total = resp.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
+            let edges: Vec<Value> = resp
+                .get("edges")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|e| {
+                    let origin = e.get("origin_server").cloned().unwrap_or(Value::Null);
+                    let reuser = e.get("reuser").and_then(|v| v.as_u64()).unwrap_or(0);
+                    let source = e.get("source").and_then(|v| v.as_u64()).unwrap_or(0);
+                    json!({
+                        "reuser": reuser,
+                        "reuser_uri": if origin.is_null() {
+                            json!(format!("xudanu://work/{}", reuser))
+                        } else {
+                            Value::Null
+                        },
+                        "source": source,
+                        "source_uri": format!("xudanu://work/{}", source),
+                        "is_direct": e.get("is_direct").and_then(|v| v.as_bool()).unwrap_or(false),
+                        "span_count": e.get("span_count").and_then(|v| v.as_u64()).unwrap_or(0),
+                        "origin_server": origin
+                    })
+                })
+                .collect();
+            Ok(json!({ "total": total, "edges": edges }))
+        }
         "get_prov" => {
             let work = work_arg(args)?;
             let resp = extract_value(&ws.request(

@@ -13623,6 +13623,34 @@ impl Server {
             let _ = link_id;
         }
 
+        // FR-164: reuse edges — the second xanalogical connection
+        // system made visible in the work graph. Directed reuser ->
+        // source, weight = span count (clamped like similarity).
+        // Remote-origin reuse is skipped: remote works are not nodes
+        // here. Deduped per pair separately from links so a pair can
+        // carry both a link edge and a reuse edge.
+        let mut reuse_seen: HashSet<(BeId, BeId)> = HashSet::new();
+        for edge in self.reuse_graph_edges(None, None, false) {
+            if edge.origin_server.is_none()
+                && visible.contains(&edge.reuser)
+                && visible.contains(&edge.source)
+            {
+                let key = if edge.reuser < edge.source {
+                    (edge.reuser, edge.source)
+                } else {
+                    (edge.source, edge.reuser)
+                };
+                if reuse_seen.insert(key) {
+                    edges.push((
+                        edge.reuser,
+                        edge.source,
+                        "transclusion".to_string(),
+                        edge.span_count.min(100),
+                    ));
+                }
+            }
+        }
+
         let stop_words: HashSet<&str> = [
             "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with",
             "by", "from", "is", "was", "are", "were", "be", "been", "being", "have", "has", "had",
@@ -21603,6 +21631,139 @@ impl Server {
             }
         }
         out
+    }
+
+    /// FR-164: invert the reuse index into corpus-wide transclusion
+    /// edges. Local edges come from the work-granular keys of the
+    /// transclusion index — every entry under `fp(work(S))` owned by
+    /// `work(R)` is one placed span of S inside R, so counting the
+    /// owner's entries yields span_count directly. Federated entries
+    /// under the same keys carry remote reusers. Edges are sorted
+    /// deterministically (source, reuser, origin) so pagination is
+    /// stable across calls. The `_for_session` variant hides edges
+    /// that touch works this session cannot read.
+    pub fn reuse_graph(
+        &self,
+        source: Option<BeId>,
+        reuser: Option<BeId>,
+        direct_only: bool,
+        offset: u64,
+        limit: u64,
+    ) -> super::transport::protocol::ReuseGraphPayload {
+        let filtered = self.reuse_graph_edges(source, reuser, direct_only);
+        let total = filtered.len() as u64;
+        let limit = if limit == 0 { 200 } else { limit.min(1000) } as usize;
+        let edges = filtered
+            .into_iter()
+            .skip(offset as usize)
+            .take(limit)
+            .collect();
+        super::transport::protocol::ReuseGraphPayload { total, edges }
+    }
+
+    /// Session-filtered reuse graph: local edges require both endpoint
+    /// works readable; remote-origin edges require only the local
+    /// source readable (the reuser names a work on another server).
+    pub fn reuse_graph_for_session(
+        &self,
+        session_id: SessionId,
+        source: Option<BeId>,
+        reuser: Option<BeId>,
+        direct_only: bool,
+        offset: u64,
+        limit: u64,
+    ) -> super::transport::protocol::ReuseGraphPayload {
+        let readable = |id: BeId| {
+            self.work(id)
+                .map(|w| self.work_is_readable(session_id, w))
+                .unwrap_or(false)
+        };
+        let filtered: Vec<_> = self
+            .reuse_graph_edges(source, reuser, direct_only)
+            .into_iter()
+            .filter(|e| match &e.origin_server {
+                Some(_) => readable(e.source),
+                None => readable(e.source) && readable(e.reuser),
+            })
+            .collect();
+        let total = filtered.len() as u64;
+        let limit = if limit == 0 { 200 } else { limit.min(1000) } as usize;
+        let edges = filtered
+            .into_iter()
+            .skip(offset as usize)
+            .take(limit)
+            .collect();
+        super::transport::protocol::ReuseGraphPayload { total, edges }
+    }
+
+    fn reuse_graph_edges(
+        &self,
+        source: Option<BeId>,
+        reuser: Option<BeId>,
+        direct_only: bool,
+    ) -> Vec<super::transport::protocol::ReuseEdgePayload> {
+        let index = self.backfollow.transclusion_index();
+        let mut work_keys: std::collections::HashMap<String, BeId> =
+            std::collections::HashMap::with_capacity(self.works.len());
+        for id in self.works.keys() {
+            let key = crate::edition::transclusion::element_key(&RangeElement::work(*id));
+            work_keys.insert(key, *id);
+        }
+
+        let mut edges: Vec<super::transport::protocol::ReuseEdgePayload> = Vec::new();
+        for (key, entries) in index.content_map() {
+            let Some(&source_id) = work_keys.get(key.as_str()) else {
+                continue;
+            };
+            let mut per_reuser: std::collections::HashMap<BeId, (u64, bool)> =
+                std::collections::HashMap::new();
+            for (owner, is_direct) in entries {
+                let Some(reuser_id) = owner.as_work_id() else {
+                    continue;
+                };
+                if reuser_id == source_id {
+                    continue;
+                }
+                let entry = per_reuser.entry(reuser_id).or_insert((0, true));
+                entry.0 += 1;
+                entry.1 = entry.1 && *is_direct;
+            }
+            for (reuser_id, (span_count, all_direct)) in per_reuser {
+                edges.push(super::transport::protocol::ReuseEdgePayload {
+                    reuser: reuser_id,
+                    source: source_id,
+                    is_direct: all_direct,
+                    span_count,
+                    origin_server: None,
+                });
+            }
+        }
+        for (key, entries) in index.federated_map() {
+            let Some(&source_id) = work_keys.get(key.as_str()) else {
+                continue;
+            };
+            for remote in entries {
+                edges.push(super::transport::protocol::ReuseEdgePayload {
+                    reuser: remote.local_id,
+                    source: source_id,
+                    is_direct: remote.is_direct,
+                    span_count: 1,
+                    origin_server: Some(remote.origin_server_id.clone()),
+                });
+            }
+        }
+        edges.sort_by(|a, b| {
+            a.source
+                .cmp(&b.source)
+                .then(a.reuser.cmp(&b.reuser))
+                .then(a.origin_server.cmp(&b.origin_server))
+        });
+        edges
+            .into_iter()
+            .filter(|e| source.is_none_or(|s| e.source == s))
+            .filter(|e| reuser.is_none_or(|r| e.reuser == r))
+            .filter(|e| !direct_only || e.is_direct)
+            .collect()
     }
 
     pub fn find_text_transcluders(
@@ -41680,6 +41841,140 @@ mod tests {
         let server = Server::new();
         let result = server.work_summary(99999);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn reuse_graph_inverts_index_into_edges() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let a = server
+            .create_work(sid, Edition::from_text("alpha beta gamma"))
+            .unwrap();
+        let b = server
+            .create_work(sid, Edition::from_text("container"))
+            .unwrap();
+        server
+            .element_insert(
+                sid,
+                b,
+                0,
+                crate::edition::RangeElement::transclusion(a, 0usize, 5usize),
+            )
+            .unwrap();
+        server
+            .element_insert(
+                sid,
+                b,
+                0,
+                crate::edition::RangeElement::transclusion(a, 6usize, 11usize),
+            )
+            .unwrap();
+
+        let payload = server.reuse_graph(None, None, false, 0, 0);
+        assert_eq!(payload.total, 1, "one reuser-source pair");
+        assert_eq!(payload.edges.len(), 1);
+        let e = &payload.edges[0];
+        assert_eq!(e.reuser, b);
+        assert_eq!(e.source, a);
+        assert!(e.is_direct);
+        assert_eq!(e.span_count, 2, "both placed spans counted");
+        assert!(e.origin_server.is_none());
+
+        let by_source = server.reuse_graph(Some(a), None, false, 0, 0);
+        assert_eq!(by_source.total, 1);
+        let wrong_source = server.reuse_graph(Some(b), None, false, 0, 0);
+        assert_eq!(wrong_source.total, 0, "no one quotes b");
+        let by_reuser = server.reuse_graph(None, Some(b), false, 0, 0);
+        assert_eq!(by_reuser.total, 1);
+        let direct = server.reuse_graph(None, None, true, 0, 0);
+        assert_eq!(direct.total, 1);
+
+        let page = server.reuse_graph(None, None, false, 1, 10);
+        assert_eq!(page.total, 1);
+        assert!(page.edges.is_empty(), "offset past the single edge");
+    }
+
+    #[test]
+    fn reuse_graph_session_hides_unreadable_endpoints() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let a = server
+            .create_work(sid, Edition::from_text("alpha beta gamma"))
+            .unwrap();
+        let b = server
+            .create_work(sid, Edition::from_text("container"))
+            .unwrap();
+        server
+            .element_insert(
+                sid,
+                b,
+                0,
+                crate::edition::RangeElement::transclusion(a, 0usize, 5usize),
+            )
+            .unwrap();
+
+        // Restrict the reuser to a club the public session is not in,
+        // then query as a fresh public session: the edge must vanish
+        // (it names b). Both clubs must move — under PublicSandbox the
+        // public edit club would still grant read via the edit
+        // fall-through.
+        let owner_club = server
+            .create_club(sid, Edition::from_text("owner club"))
+            .unwrap();
+        server
+            .club_set_password(sid, owner_club, test_club_password())
+            .unwrap();
+        let lock = server.login(sid, owner_club).unwrap();
+        server
+            .authenticate(
+                sid,
+                &*lock,
+                &LockCredential::Password(test_club_password().to_vec()),
+            )
+            .unwrap();
+        server.work_set_read_club(sid, b, Some(owner_club)).unwrap();
+        server.work_set_edit_club(sid, b, Some(owner_club)).unwrap();
+        let outsider = server.connect();
+        server.login_public(outsider).unwrap();
+        let payload = server.reuse_graph_for_session(outsider, None, None, false, 0, 0);
+        assert_eq!(
+            payload.total, 0,
+            "edge naming an unreadable reuser is hidden"
+        );
+        let owner_payload = server.reuse_graph_for_session(sid, None, None, false, 0, 0);
+        assert_eq!(owner_payload.total, 1, "the owner still sees the edge");
+    }
+
+    #[test]
+    fn work_graph_emits_transclusion_edges() {
+        let mut server = Server::new();
+        let sid = server.connect();
+        server.login_public(sid).unwrap();
+        let a = server
+            .create_work(sid, Edition::from_text("alpha beta gamma"))
+            .unwrap();
+        let b = server
+            .create_work(sid, Edition::from_text("container"))
+            .unwrap();
+        server
+            .element_insert(
+                sid,
+                b,
+                0,
+                crate::edition::RangeElement::transclusion(a, 0usize, 5usize),
+            )
+            .unwrap();
+
+        let (_nodes, edges) = server.build_work_graph_filtered(sid, None, 0);
+        assert!(
+            edges.iter().any(|(s, t, kind, w)| {
+                *kind == "transclusion" && *s == b && *t == a && *w >= 1
+            }),
+            "reuse edge reuser->source must appear, got {:?}",
+            edges
+        );
     }
 
     #[test]

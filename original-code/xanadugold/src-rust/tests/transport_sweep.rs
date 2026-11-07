@@ -526,6 +526,7 @@ fn op_name_list() -> Vec<String> {
         "find_text_transcluders",
         "find_shared_regions",
         "work_diff_regions",
+        "reuse_graph",
         "server_stats",
         "metrics_snapshot",
         "blob_upload",

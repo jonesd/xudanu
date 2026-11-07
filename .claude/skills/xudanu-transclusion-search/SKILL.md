@@ -12,6 +12,7 @@ directions, two tools:
 |---|---|
 | Who transcluded this work? (where does its content also appear?) | `who_transcluded` |
 | What does this work quote? (its live windows onto other works) | `read_work` — resolved spans come back in `span_ranges` |
+| Map reuse across the whole corpus? (every work-to-work quoting edge) | `find_transclusions` |
 
 ## Recipe: reuse by topic
 
@@ -23,6 +24,15 @@ not indexed), so to answer "where else does this passage appear?":
    `xudanu://work/<id>` URI
 3. `read_work(reuser)` → `span_ranges` shows exactly what was quoted, with
    source spans
+
+## Recipe: the corpus reuse map
+
+`find_transclusions` returns every transclusion edge at once — each edge
+names a `reuser` and a `source` work plus `span_count` (how many placed
+spans), optionally filtered: `{"source": <id>}`, `{"reuser": <id>}`,
+`{"direct_only": true}`, paginated with `offset`/`limit`. Use it to draw
+or summarize the reuse graph without per-work fan-out; edges with an
+`origin_server` name a work on that remote server, not a local one.
 
 ## Output
 

@@ -5027,6 +5027,17 @@ fn dispatch_inner(
             srv.ensure_can_read(session_id, work_id)?;
             srv.work_version_timeline(work_id)
         }
+        WireRequest::ReuseGraph {
+            source,
+            reuser,
+            direct_only,
+            offset,
+            limit,
+        } => {
+            let payload =
+                srv.reuse_graph_for_session(session_id, source, reuser, direct_only, offset, limit);
+            Ok(ResponseValue::ReuseGraphResult(payload))
+        }
 
         WireRequest::PassageComposition {
             work_id,
@@ -6493,6 +6504,17 @@ fn dispatch_inner_read(
             srv.ensure_can_read(session_id, work_id)?;
             srv.work_version_timeline(work_id)
         }
+        WireRequest::ReuseGraph {
+            source,
+            reuser,
+            direct_only,
+            offset,
+            limit,
+        } => {
+            let payload =
+                srv.reuse_graph_for_session(session_id, source, reuser, direct_only, offset, limit);
+            Ok(ResponseValue::ReuseGraphResult(payload))
+        }
         WireRequest::GlobalTextSearch { query, max_results } => {
             srv.ensure_session(session_id)?;
             let max = max_results.unwrap_or(50) as usize;
@@ -6907,6 +6929,30 @@ mod tests {
                 );
             }
             other => panic!("expected LinkTypes, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn dispatch_reuse_graph_roundtrip() {
+        let state = make_state();
+        let sid = fresh_session(&state);
+        let result = dispatch(
+            &state,
+            sid,
+            WireRequest::ReuseGraph {
+                source: None,
+                reuser: None,
+                direct_only: false,
+                offset: 0,
+                limit: 0,
+            },
+        );
+        match result {
+            Ok(ResponseValue::ReuseGraphResult(payload)) => {
+                assert_eq!(payload.total, 0);
+                assert!(payload.edges.is_empty());
+            }
+            other => panic!("expected ReuseGraphResult, got {:?}", other),
         }
     }
 

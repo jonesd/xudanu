@@ -412,6 +412,14 @@ impl TransclusionIndex {
         self.federated_entries.values().map(|v| v.len()).sum()
     }
 
+    /// Snapshot accessor for the federated (remote-reuse) half of the
+    /// index — key: content fingerprint hex, value: remote holders.
+    pub fn federated_map(
+        &self,
+    ) -> &std::collections::HashMap<String, Vec<FederatedTransclusionResult>> {
+        &self.federated_entries
+    }
+
     pub fn unregister_edition(
         &mut self,
         edition: &Edition,

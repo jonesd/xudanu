@@ -180,6 +180,7 @@ const PINNED: &[(u16, &str)] = &[
     (0x0807, "SpanKeyResolve"),
     (0x0808, "CompoundFollowBack"),
     (0x0809, "ProvenanceAncestry"),
+    (0x080b, "ReuseGraph"),
     (0x080a, "CompoundResolveSegments"),
     (0x0901, "BlobUpload"),
     (0x0902, "BlobGet"),

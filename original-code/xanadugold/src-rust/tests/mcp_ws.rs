@@ -106,7 +106,15 @@ fn remote_read_tools_roundtrip() {
     );
     assert!(search["total"].as_u64().unwrap() >= 1);
 
-    let first = search["results"][0]["work_id"].as_u64().unwrap();
+    // Pick the "alpha beta gamma" work deterministically — "gamma"
+    // matches only that fixture work (search result order is not
+    // guaranteed; "beta" matches both).
+    let gamma = call(
+        &mut target,
+        "search_works",
+        serde_json::json!({"query": "gamma", "max_results": 5}),
+    );
+    let first = gamma["results"][0]["work_id"].as_u64().unwrap();
     let span = call(
         &mut target,
         "read_span",
@@ -118,6 +126,16 @@ fn remote_read_tools_roundtrip() {
 
     let read = call(&mut target, "read_work", serde_json::json!({"work": first}));
     assert!(read["total_chars"].as_u64().unwrap() >= 10);
+
+    let reuse = call(&mut target, "find_transclusions", serde_json::json!({}));
+    assert!(reuse["total"].is_u64(), "fresh corpus answers zero edges");
+    assert!(reuse["edges"].as_array().unwrap().is_empty());
+    let filtered = call(
+        &mut target,
+        "find_transclusions",
+        serde_json::json!({"source": first}),
+    );
+    assert_eq!(filtered["total"], 0);
 }
 
 #[test]
@@ -174,4 +192,26 @@ fn remote_write_tools_roundtrip() {
     assert!(revised["revision"].is_number());
     let after = call(&mut target, "read_work", serde_json::json!({"work": brief}));
     assert_eq!(after["text"], "agent brief v2");
+
+    let placed = call(
+        &mut target,
+        "transclude",
+        serde_json::json!({"source_work": source, "start": 0, "end": 5}),
+    );
+    assert!(placed["work_id"].is_number());
+    let reuse = call(
+        &mut target,
+        "find_transclusions",
+        serde_json::json!({"source": source}),
+    );
+    assert_eq!(reuse["total"], 1, "remote path must see the placed edge");
+    assert_eq!(
+        reuse["edges"][0]["reuser"].as_u64().unwrap(),
+        placed["work_id"].as_u64().unwrap()
+    );
+    assert_eq!(reuse["edges"][0]["span_count"], 1);
+    assert!(reuse["edges"][0]["reuser_uri"]
+        .as_str()
+        .unwrap()
+        .starts_with("xudanu://work/"));
 }

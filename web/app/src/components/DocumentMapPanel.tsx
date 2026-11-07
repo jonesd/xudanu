@@ -3,6 +3,8 @@ import type { CrdtSyncClient, GraphEdge } from "../api/crdt_sync";
 import {
   computeNodeScores,
   selectTopNodes,
+  edgeVisual,
+  normalizeEdgeType,
   KIND_ICON,
   KIND_COLOR,
   KIND_ICON_COLOR,
@@ -265,8 +267,12 @@ export function DocumentMapPanel({ client, onSelectWork, currentWorkId, onClose,
                 const a = nodeMap.get(e.source);
                 const b = nodeMap.get(e.target);
                 if (!a || !b) return null;
-                // All edges: simple light dotted line
+                // FR-164: reuse edges (transclusion) render solid blue
+                // so the two connection systems — links and reuse —
+                // read as distinct; other edges stay dotted grey.
                 const involvesCurrent = a.id === currentWorkId || b.id === currentWorkId;
+                const kind = normalizeEdgeType(e.edge_type, e.weight);
+                const isReuse = kind === "transclusion" || kind === "cross_server_transclusion";
                 return (
                   <line
                     key={`e-${i}`}
@@ -274,10 +280,10 @@ export function DocumentMapPanel({ client, onSelectWork, currentWorkId, onClose,
                     y1={a.y}
                     x2={b.x}
                     y2={b.y}
-                    stroke="#94a3b8"
-                    strokeWidth={involvesCurrent ? 1 : 0.5}
-                    strokeDasharray="3 4"
-                    opacity={involvesCurrent ? 0.7 : 0.4}
+                    stroke={isReuse ? "#3b82f6" : "#94a3b8"}
+                    strokeWidth={isReuse ? (involvesCurrent ? 1.5 : 1) : involvesCurrent ? 1 : 0.5}
+                    strokeDasharray={isReuse ? undefined : "3 4"}
+                    opacity={isReuse ? (involvesCurrent ? 0.8 : 0.5) : involvesCurrent ? 0.7 : 0.4}
                   />
                 );
               })}
@@ -341,6 +347,8 @@ export function DocumentMapPanel({ client, onSelectWork, currentWorkId, onClose,
               <span className="ws-legend-item"><span className="ws-legend-dot" style={{ background: KIND_COLOR.concept }} />💡 Concept</span>
               <span className="ws-legend-item"><span className="ws-legend-dot" style={{ background: KIND_COLOR.collection }} />● Collection</span>
               <span className="ws-legend-item"><span className="ws-legend-dot" style={{ background: KIND_COLOR.commentary }} />💬 Commentary</span>
+              <span className="ws-legend-item"><span className="ws-legend-dot" style={{ background: "#3b82f6" }} />↔ Reuse</span>
+              <span className="ws-legend-item"><span className="ws-legend-dot" style={{ background: "#94a3b8" }} />┄ Link</span>
             </div>
           </>
         )}
@@ -354,7 +362,7 @@ export function DocumentMapPanel({ client, onSelectWork, currentWorkId, onClose,
         <div className="document-map-header">
           <span className="document-map-title">Document Map</span>
           <span className="document-map-stats">
-            {nodes.length} docs, {edges.filter(e => e.edge_type !== "similarity").length} links, {edges.filter(e => e.edge_type === "similarity").length} similarities
+            {nodes.length} docs, {edges.filter(e => e.edge_type !== "similarity" && e.edge_type !== "transclusion").length} links, {edges.filter(e => e.edge_type === "transclusion").length} reuse, {edges.filter(e => e.edge_type === "similarity").length} similarities
           </span>
           <button type="button" className="document-map-close" onClick={onClose}>{"\u00d7"}</button>
         </div>
@@ -378,7 +386,10 @@ export function DocumentMapPanel({ client, onSelectWork, currentWorkId, onClose,
               const a = nodeMap.get(e.source);
               const b = nodeMap.get(e.target);
               if (!a || !b) return null;
-              const isSimilarity = e.edge_type === "similarity";
+              const involvesCurrent = a.id === currentWorkId || b.id === currentWorkId;
+              // FR-164: per-kind styling — reuse (transclusion) edges
+              // blue and thick, links grey solid, similarity dashed.
+              const vis = edgeVisual(e.edge_type, e.weight, involvesCurrent);
               return (
                 <line
                   key={`e-${i}`}
@@ -386,11 +397,11 @@ export function DocumentMapPanel({ client, onSelectWork, currentWorkId, onClose,
                   y1={a.y}
                   x2={b.x}
                   y2={b.y}
-                  stroke={isSimilarity ? "#ddd" : "#ccc"}
-                  strokeWidth={1.5}
-                  strokeDasharray={isSimilarity ? "4 4" : undefined}
-                  opacity={isSimilarity ? 0.3 + (e.weight / 100) * 0.7 : 1}
-                  markerEnd={isSimilarity ? undefined : "url(#arrowhead)"}
+                  stroke={vis.stroke}
+                  strokeWidth={vis.strokeWidth}
+                  strokeDasharray={vis.dash}
+                  opacity={vis.opacity}
+                  markerEnd={vis.markerEnd ? "url(#arrowhead)" : undefined}
                 />
               );
             })}
