@@ -592,6 +592,70 @@ pub fn call_tool_remote(ws: &mut WsDocuverse, name: &str, args: &Value) -> Resul
             );
             Ok(json!({"detector_id": detector_id, "deleted": resp.as_bool().unwrap_or(false)}))
         }
+        "get_license" => {
+            let work = work_arg(args)?;
+            let resp =
+                extract_value(&ws.request("work_license_get", Some(json!({"work_id": work})))?);
+            let code = resp
+                .as_u64()
+                .ok_or("work_license_get returned no license code")?;
+            let (id, guidance) = match code {
+                0 => ("all-rights-reserved",
+                    "Reserved. Quote only under fair use or fair dealing; transclusion requires the rightsholder's terms."),
+                1 => ("transcopyright",
+                    "Designed for quotation and live transclusion; reuse under the server's transcopyright terms."),
+                2 => ("cc-by",
+                    "Attribution required; derivatives allowed under any terms."),
+                3 => ("cc-by-sa",
+                    "Attribution required; derivatives must use the same license."),
+                _ => ("public-domain",
+                    "No restrictions; attribution is courtesy, not obligation."),
+            };
+            Ok(json!({
+                "work_id": work,
+                "uri": format!("xudanu://work/{}", work),
+                "license": id,
+                "guidance": guidance
+            }))
+        }
+        "read_trails" => {
+            let payload = match args.get("category").and_then(|v| v.as_str()) {
+                Some(c) => json!({"category": c}),
+                None => json!({}),
+            };
+            let resp = extract_value(&ws.request("trail_list_published", Some(payload))?);
+            let trails = resp.as_array().cloned().unwrap_or_default();
+            Ok(json!({ "trails": trails, "total": trails.len() }))
+        }
+        "list_servers" => {
+            let resp = extract_value(&ws.request("server_directory_list", None)?);
+            let servers = resp
+                .get("servers")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            Ok(json!({ "servers": servers, "total": servers.len() }))
+        }
+        "search_federated" => {
+            let query = args
+                .get("query")
+                .and_then(|v| v.as_str())
+                .ok_or("missing query")?;
+            let resp =
+                extract_value(&ws.request("federated_search", Some(json!({"query": query})))?);
+            let all = resp
+                .get("results")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            let max = args
+                .get("max_results")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(20)
+                .clamp(1, 100) as usize;
+            let results: Vec<Value> = all.into_iter().take(max).collect();
+            Ok(json!({ "results": results, "total": results.len() }))
+        }
         other => Err(format!("unknown tool: {}", other)),
     }
 }
