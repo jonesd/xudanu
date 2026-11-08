@@ -52,6 +52,16 @@
 //   after journal      durable.
 //   fsync
 //
+// [Caps & GC] The pending map is bounded (with_limits; defaults 65,536
+// entries / 32 MiB): a spill that would cross a cap commits the pending
+// batch first, so the W3 loss window is bounded by configuration at
+// unchanged amortized cost — the flushing spill pays one barrier.
+// open() runs gc(), deleting chunk files the journal no longer
+// references (respills orphan their previous packs; journal compaction
+// drops locators, not bytes) — the original's dismantle() role,
+// shephx.cxx line 143 onward. Failure to GC is tidiness-loss, never
+// availability-loss.
+//
 // [Legacy] Journals written by the per-spill adapter point at per-branch
 // chunks. fetch() distinguishes by magic: a chunk without the pack magic
 // IS the entry (solo form). Dev-era journals only; kept for graceful
@@ -70,7 +80,7 @@
 // report them). Crash paths skip Drop, which is exactly the documented
 // loss window. Tests that need crash semantics use std::mem::forget.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{File, OpenOptions};
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -80,6 +90,8 @@ use crate::persist::chunk_store::{hash_to_hex, ChunkStore};
 
 const JOURNAL_NAME: &str = "spill-journal.log";
 const PACK_MAGIC: &[u8; 8] = b"XUSPILL1";
+const DEFAULT_MAX_PENDING_ENTRIES: usize = 65_536;
+const DEFAULT_MAX_PENDING_BYTES: usize = 32 * 1024 * 1024;
 
 pub struct ChunkStoreSpill {
     store: ChunkStore,
@@ -88,6 +100,10 @@ pub struct ChunkStoreSpill {
     index: HashMap<u64, [u8; 32]>,
     // admitted, not yet durable; respills coalesce (last wins)
     pending: HashMap<u64, Vec<u8>>,
+    // running sum of pending value lengths, for the byte cap
+    pending_bytes: usize,
+    max_pending_entries: usize,
+    max_pending_bytes: usize,
     journal: File,
 }
 
@@ -167,13 +183,23 @@ impl ChunkStoreSpill {
                 .map_err(|e| format!("spill journal truncate: {}", e))?;
         }
 
-        Ok(ChunkStoreSpill {
+        let mut spill = ChunkStoreSpill {
             store,
             dir: dir.to_path_buf(),
             index,
             pending: HashMap::new(),
+            pending_bytes: 0,
+            max_pending_entries: DEFAULT_MAX_PENDING_ENTRIES,
+            max_pending_bytes: DEFAULT_MAX_PENDING_BYTES,
             journal: open_append(&journal_path)?,
-        })
+        };
+        // Startup is the natural GC cadence: respills orphan their previous
+        // packs, and compaction drops locators, not bytes. Failure is
+        // tidiness-loss, not availability-loss.
+        if let Err(e) = spill.gc() {
+            tracing::warn!("spill gc on open: {}", e);
+        }
+        Ok(spill)
     }
 
     pub fn entry_count(&self) -> usize {
@@ -186,6 +212,78 @@ impl ChunkStoreSpill {
 
     pub fn dir(&self) -> &Path {
         &self.dir
+    }
+
+    // Bound the crash loss window (W3). A spill that would cross a cap
+    // commits the pending batch first, so at most max_entries entries /
+    // max_bytes bytes of admitted-not-durable state can exist. Amortized
+    // cost is unchanged; the flushing spill pays one barrier. An entry
+    // larger than max_bytes still admits alone (the next spill commits
+    // it), so the window is bounded by count and typical bytes.
+    pub fn with_limits(mut self, max_entries: usize, max_bytes: usize) -> Self {
+        self.max_pending_entries = max_entries;
+        self.max_pending_bytes = max_bytes;
+        self
+    }
+
+    // Remove chunk files the journal no longer references. Respills
+    // orphan their previous packs; journal compaction drops locators, not
+    // bytes — this is the bytes half. Safe because the store is a
+    // dedicated instance: every hex-named file under chunks/ is a spill
+    // pack (or a legacy solo chunk) whose only liveness is the journal.
+    // Gold lineage: the original's dismantle() played this role
+    // (shephx.cxx line 143 onward). Flushes pending first so a
+    // just-superseded pack is not still the durable locator for its keys.
+    // Tidiness-loss only under the eviction invariant (FR-166): every
+    // spilled branch must remain re-derivable from the record.
+    pub fn gc(&mut self) -> Result<usize, String> {
+        if !self.pending.is_empty() {
+            self.flush_pending()?;
+        }
+        let live: HashSet<[u8; 32]> = self.index.values().copied().collect();
+        let chunks_dir = self.dir.join("chunks");
+        let entries = match std::fs::read_dir(&chunks_dir) {
+            Ok(e) => e,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+            Err(e) => return Err(format!("spill gc {}: {}", chunks_dir.display(), e)),
+        };
+        let mut removed = 0usize;
+        for entry in entries {
+            let path = entry.map_err(|e| format!("spill gc: {}", e))?.path();
+            let candidates: Vec<PathBuf> = if path.is_dir() {
+                std::fs::read_dir(&path)
+                    .map_err(|e| format!("spill gc {}: {}", path.display(), e))?
+                    .map(|f| f.map_err(|e| format!("spill gc: {}", e)).map(|f| f.path()))
+                    .collect::<Result<Vec<_>, _>>()?
+            } else {
+                vec![path]
+            };
+            for cand in candidates {
+                // Real chunks are <64-hex>.xchunk (legacy extensionless
+                // chunks are migrated to that shape at store open);
+                // anything else under chunks/ (e.g. the store's README)
+                // is not ours to judge.
+                let Some(name) = cand.file_name().and_then(|n| n.to_str()) else {
+                    continue;
+                };
+                let Some(stem) = name.strip_suffix(".xchunk") else {
+                    continue;
+                };
+                let Ok(raw) = hex::decode(stem) else {
+                    continue;
+                };
+                let Ok(hash) = <[u8; 32]>::try_from(raw.as_slice()) else {
+                    continue;
+                };
+                if live.contains(&hash) {
+                    continue;
+                }
+                std::fs::remove_file(&cand)
+                    .map_err(|e| format!("spill gc remove {}: {}", cand.display(), e))?;
+                removed += 1;
+            }
+        }
+        Ok(removed)
     }
 
     // The durability barrier. Returns the number of entries committed.
@@ -213,6 +311,7 @@ impl ChunkStoreSpill {
             self.index.insert(*key, hash);
         }
         self.pending.clear();
+        self.pending_bytes = 0;
         Ok(count)
     }
 }
@@ -309,7 +408,16 @@ fn scan_pack(data: &[u8], key: u64) -> Option<Vec<u8>> {
 
 impl BranchSpill for ChunkStoreSpill {
     fn spill(&mut self, key: u64, bytes: &[u8]) -> Result<(), String> {
+        let next_entries = self.pending.len() + 1;
+        let next_bytes = self.pending_bytes + bytes.len();
+        if next_entries > self.max_pending_entries || next_bytes > self.max_pending_bytes {
+            self.flush_pending()?;
+        }
+        if let Some(old) = self.pending.get(&key) {
+            self.pending_bytes -= old.len();
+        }
         self.pending.insert(key, bytes.to_vec());
+        self.pending_bytes += bytes.len();
         Ok(())
     }
 
@@ -351,6 +459,31 @@ mod tests {
         std::fs::read_to_string(dir.join(JOURNAL_NAME))
             .map(|t| t.lines().count())
             .unwrap_or(0)
+    }
+
+    fn chunk_file_count(dir: &Path) -> usize {
+        let mut n = 0;
+        if let Ok(entries) = std::fs::read_dir(dir.join("chunks")) {
+            for e in entries.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    n += std::fs::read_dir(&p)
+                        .map(|it| {
+                            it.flatten()
+                                .filter(|f| f.file_name().to_string_lossy().ends_with(".xchunk"))
+                                .count()
+                        })
+                        .unwrap_or(0);
+                } else if p
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.ends_with(".xchunk"))
+                {
+                    n += 1;
+                }
+            }
+        }
+        n
     }
 
     // T: chunkstore_spill_roundtrip — evict through BranchStore, fault
@@ -623,6 +756,86 @@ mod tests {
             );
         }
         assert!(reopened.fetch(0xdead_beef_0000_0000).unwrap().is_none());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // T: gc_removes_orphaned_packs — a respill across flushes orphans the
+    // previous pack; gc deletes exactly the unreferenced chunks and every
+    // live key still fetches.
+    #[test]
+    fn gc_removes_orphaned_packs() {
+        let dir = temp_dir("gc-direct");
+        let mut spill = ChunkStoreSpill::open(&dir).unwrap();
+        spill.spill(1, b"one-v1").unwrap();
+        spill.spill(2, b"two-v1").unwrap();
+        spill.flush_pending().unwrap();
+        spill.spill(1, b"one-v2").unwrap();
+        spill.spill(2, b"two-v2").unwrap();
+        spill.flush_pending().unwrap();
+        assert_eq!(chunk_file_count(&dir), 2);
+        assert_eq!(spill.gc().unwrap(), 1);
+        assert_eq!(chunk_file_count(&dir), 1);
+        assert_eq!(spill.fetch(1).unwrap().unwrap(), b"one-v2");
+        assert_eq!(spill.fetch(2).unwrap().unwrap(), b"two-v2");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // T: gc_runs_on_reopen — open() is the GC cadence, so a dir handed
+    // across restarts stays bounded without operator action.
+    #[test]
+    fn gc_runs_on_reopen() {
+        let dir = temp_dir("gc-reopen");
+        {
+            let mut spill = ChunkStoreSpill::open(&dir).unwrap();
+            spill.spill(1, b"one-v1").unwrap();
+            spill.flush_pending().unwrap();
+            spill.spill(1, b"one-v2").unwrap();
+            spill.flush_pending().unwrap();
+            assert_eq!(chunk_file_count(&dir), 2);
+        }
+        let mut reopened = ChunkStoreSpill::open(&dir).unwrap();
+        assert_eq!(chunk_file_count(&dir), 1);
+        assert_eq!(reopened.entry_count(), 1);
+        assert_eq!(reopened.fetch(1).unwrap().unwrap(), b"one-v2");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // T: pending_entry_cap_auto_flushes — crossing the entry cap commits
+    // the pending batch first; the loss window never exceeds the cap.
+    #[test]
+    fn pending_entry_cap_auto_flushes() {
+        let dir = temp_dir("cap-entries");
+        let mut spill = ChunkStoreSpill::open(&dir)
+            .unwrap()
+            .with_limits(2, usize::MAX);
+        spill.spill(1, b"one").unwrap();
+        spill.spill(2, b"two").unwrap();
+        assert_eq!(spill.pending_count(), 2);
+        spill.spill(3, b"three").unwrap();
+        assert_eq!(spill.entry_count(), 2);
+        assert_eq!(spill.pending_count(), 1);
+        assert_eq!(journal_line_count(&dir), 2);
+        assert_eq!(spill.fetch(1).unwrap().unwrap(), b"one");
+        assert_eq!(spill.fetch(3).unwrap().unwrap(), b"three");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // T: pending_byte_cap_auto_flushes — same contract in bytes: the
+    // third 10-byte spill crosses a 24-byte cap and commits the first two.
+    #[test]
+    fn pending_byte_cap_auto_flushes() {
+        let dir = temp_dir("cap-bytes");
+        let mut spill = ChunkStoreSpill::open(&dir)
+            .unwrap()
+            .with_limits(usize::MAX, 24);
+        spill.spill(1, b"0123456789").unwrap();
+        spill.spill(2, b"0123456789").unwrap();
+        assert_eq!(spill.pending_count(), 2);
+        spill.spill(3, b"0123456789").unwrap();
+        assert_eq!(spill.entry_count(), 2);
+        assert_eq!(spill.pending_count(), 1);
+        assert_eq!(spill.fetch(2).unwrap().unwrap(), b"0123456789");
+        assert_eq!(spill.fetch(3).unwrap().unwrap(), b"0123456789");
         std::fs::remove_dir_all(&dir).ok();
     }
 
