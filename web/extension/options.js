@@ -45,9 +45,22 @@ $("enable").addEventListener("click", async () => {
     return;
   }
   await chrome.storage.local.set({ serverUrl: url });
+  // permissions.request MUST run here, inside the click's user-gesture
+  // context: a gesture does not survive the sendMessage hop to the
+  // service worker, and the SW-side call fails with "This function
+  // must be called during a user gesture" (the bug that blocked the
+  // production-manifest flow — see MANUAL-TEST.md).
+  const granted = await chrome.permissions.request({
+    origins: ["http://*/*", "https://*/*"],
+  });
+  if (!granted) {
+    status("Overlay needs host permission to run — Enable was cancelled.", false);
+    refreshStatus();
+    return;
+  }
   const res = await send({ type: "enable" });
   if (res?.ok) {
-    status("Overlay enabled. Visit a page your shadows point at.", true);
+    status("Overlay enabled. Reload any open tabs, then visit a page your shadows point at.", true);
   } else {
     status("Enable failed: " + (res?.error || "unknown"), false);
   }

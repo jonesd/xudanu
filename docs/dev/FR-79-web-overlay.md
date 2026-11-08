@@ -184,8 +184,19 @@ return the mark descriptors. Rate-limited; no session needed.
       the content script (render → mutation → re-render churn).
 - [ ] manual: the production-manifest flow (options UI: server URL,
       Test connection, Enable → dynamic permission grant +
-      registration) — the one path automation can't gesture through
-- [ ] extension store review hygiene pass (permissions audit)
+      registration) — the one path automation can't gesture through.
+      Code fixed: `permissions.request` now runs in the options-page
+      click handler (an MV3 user gesture does not survive the
+      sendMessage hop to the worker, so the SW-side call always threw
+      "This function must be called during a user gesture"); the SW
+      guards with `permissions.contains` before registering. The
+      save/test-connection path is harness-covered
+      (overlay.test.mjs §7); walkthrough: web/extension/MANUAL-TEST.md
+      — remaining: one human click through Chrome's native prompt
+- [x] extension store review hygiene pass (permissions audit):
+      web/extension/STORE.md (per-permission justification, privacy
+      statement, listing copy, pre-submission checklist); manifest
+      gains icons (16/32/48/128) and homepage_url
 
 ---
 

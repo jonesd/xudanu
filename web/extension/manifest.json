@@ -3,6 +3,13 @@
   "name": "Xudanu Overlay",
   "version": "0.2.0",
   "description": "See Xudanu marks on ordinary web pages. Read-only: the server resolves every anchor; marks that cannot prove their passage do not render.",
+  "homepage_url": "https://dgjones.info/xudanu/",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
   "permissions": ["storage", "scripting"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
   "background": {

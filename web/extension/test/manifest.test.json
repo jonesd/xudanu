@@ -8,6 +8,7 @@
   "background": {
     "service_worker": "background.js"
   },
+  "options_page": "options.html",
   "content_scripts": [
     {
       "matches": ["http://127.0.0.1:8899/*"],
