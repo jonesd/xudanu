@@ -47,6 +47,24 @@ This is why `spill()` is admission (an insert into a pending map,
 The pre-barrier design (PR #249's per-spill fsync, ~4.2 ms/op) was
 buying durability this layer never needed.
 
+### The eviction invariant
+
+The cache verdict holds only while one claim holds: **a branch may be
+evicted only if a re-derivation path exists for it** — the record
+(canonical chunks + WAL) must be able to reconstruct the branch
+independently of the spill store. While the invariant holds, `gc()`
+is tidiness-loss class: deleting any or every spill pack costs
+re-derivation time, never data.
+
+The invariant is true today by construction (nothing in `server/`
+uses `BranchStore`; the ent layer derives from the record). The step
+that could break it is Phase 2 residency: a policy that evicts a
+branch whose only copy is the spill pack flips spill GC from
+tidiness-loss to data-loss class. The residency design must prove the
+invariant for every evictable branch; if it ever cannot, the parked
+audit-coverage item becomes mandatory (tamper or GC error would then
+be a loss/DoS vector, not an availability event).
+
 ## Interruption ledger — moving OUT (RAM → store)
 
 | # | Crash point | State after restart | Outcome |
@@ -121,7 +139,8 @@ because of that number.
 
 - **Residency**: who calls evict, flush cadence at checkpoint
   boundaries, op-boundary interactions, async wiring (the adapter is
-  synchronous `std::fs`; a tokio host must `spawn_blocking`).
+  synchronous `std::fs`; a tokio host must `spawn_blocking`). Must
+  prove the eviction invariant for every evictable branch.
 - **Subtree-locality packs** (the full flock model — group evictions by
   enfilade subtree for locality-aligned packs).
 - **Audit coverage**: the spill dir is outside the chained security log

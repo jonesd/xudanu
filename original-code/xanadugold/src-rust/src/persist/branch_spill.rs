@@ -234,6 +234,8 @@ impl ChunkStoreSpill {
     // Gold lineage: the original's dismantle() played this role
     // (shephx.cxx line 143 onward). Flushes pending first so a
     // just-superseded pack is not still the durable locator for its keys.
+    // Tidiness-loss only under the eviction invariant (FR-166): every
+    // spilled branch must remain re-derivable from the record.
     pub fn gc(&mut self) -> Result<usize, String> {
         if !self.pending.is_empty() {
             self.flush_pending()?;
