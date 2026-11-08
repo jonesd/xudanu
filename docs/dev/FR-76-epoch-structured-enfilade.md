@@ -3,6 +3,7 @@
 **Status:** design draft
 **Created:** 2026-09-21
 **Depends on:** FR-34 (enfilade-native), FR-36 (chunk GC), FR-50 (performance verification), XPS spec (§2 core operations)
+**Related:** FR-166 (enfilade overflow — per-branch eviction/spill/fault-in and memory residency; epochs persist the tree over time, FR-166 moves cold branches out of RAM)
 **Author:** David Jones
 
 ---
