@@ -1,6 +1,6 @@
 # FR-166: Enfilade Overflow — Spill Safety and Fault-In
 
-**Status:** Phase 1 landed (PRs #248, #249 merged; #250 in review); Phase 2 parked
+**Status:** Phase 1 landed (PRs #248–#251); Phase 2 parked
 **Created:** 2026-11-08
 **Depends on:** FR-34 (enfilade-native substrate), FR-142 (storage durability)
 **Siblings:** FR-76 (epoch-structured enfilade — epochs persist the tree over time; this FR moves cold branches out of RAM without losing them)
@@ -53,7 +53,7 @@ buying durability this layer never needed.
 |---|---|---|---|
 | W1 | before `spill()` returns | branch still Materialized; no stub | nothing happened |
 | W2 | `spill()` itself errors | evict aborts; branch stays Materialized | clean retry (Gold's "should this ensure that the flock is not dirty?", shephx.cxx 127, answered structurally) |
-| W3 | spill admitted, not yet flushed (crash skips Drop) | stub present, pending bytes gone | fault-in → `SpillMiss` → re-derive. **The documented loss window** — availability, never correctness |
+| W3 | spill admitted, not yet flushed (crash skips Drop) | stub present, pending bytes gone | fault-in → `SpillMiss` → re-derive. **The documented loss window** — availability, never correctness; bounded by the pending caps (a spill that crosses a cap commits the batch first; defaults 65,536 entries / 32 MiB, `with_limits`) |
 | W4 | during the flush's pack write | torn or absent pack; no locator lines appended yet | orphan chunk, harmless and GC-able; no dangling locator. Chunks land via tmp + atomic rename, so no partial file ever exists at a final path; stale `.tmp` files are swept at store open |
 | W5 | during the flush's journal append (one multi-line write + fsync) | torn final line | replay drops the incomplete last line and truncates the file so appends land on clean boundaries; a complete line missing only its newline is accepted; an unparsable **interior** line remains fatal (real corruption should not be silently skipped) |
 | W6 | after the journal fsync | pack and locators both durable | committed |
@@ -84,6 +84,10 @@ fsync). A crash can orphan a chunk; it can never dangle a locator.
 - **PR #250** — admission/barrier durability, packs with a sorted key
   directory (binary-search fetch), torn-tail tolerance, legacy
   solo-chunk fallback.
+- **PR #251** — spill GC (the `dismantle()` role: deletes chunk files the
+  journal no longer references; runs at open) and pending caps (a spill
+  that would cross a cap commits the batch first, bounding W3 by
+  configuration at unchanged amortized cost).
 
 ### Measured (P7, 5k branches, APFS external SSD)
 
@@ -111,7 +115,7 @@ because of that number.
 | Batched disk writes | Gold principle, briefly lost | the packer wrote flocks in sweeps; #249 diverged (per-spill fsync), #250 returns to the batched shape via packs |
 | Durability lives above the spill layer | Gold principle | the original's commit discipline; Xudanu's form is the per-op-fsync WAL, with the spill store explicitly a cache |
 | Granularity: per-branch today | Divergence, scale-bounded | Gold spilled flocks (subtrees); packs make subtree grouping a policy choice, parked for Phase 2 |
-| Spill garbage collection | Gold had it (`dismantle()`, shephx.cxx 143+) | parked (Phase 2) |
+| Spill garbage collection | Gold had it (`dismantle()`, shephx.cxx 143+) | landed (PR #251): `gc()` runs at store open; failure is tidiness-loss, never availability-loss |
 
 ## Phase 2 (parked)
 
@@ -120,13 +124,15 @@ because of that number.
   synchronous `std::fs`; a tokio host must `spawn_blocking`).
 - **Subtree-locality packs** (the full flock model — group evictions by
   enfilade subtree for locality-aligned packs).
-- **Spill GC**: respills orphan old packs; journal compaction drops
-  locators, not bytes.
-- **Pack size caps / auto-flush thresholds** (today the barrier is
-  caller-driven and explicit).
 - **Audit coverage**: the spill dir is outside the chained security log
   today; acceptable while it is a re-derivable cache, revisited if it
   ever becomes load-bearing.
+
+Sequencing: hardening landed first (GC + caps, PR #251); residency is
+next — it defines the cadence everything else plugs into and is the
+step that wires `ChunkStoreSpill` into the live server behind a flag;
+subtree-locality packs and audit coverage follow once something live
+is evicting.
 
 ## Test coverage map
 
@@ -139,5 +145,7 @@ because of that number.
 | W9 | `tampered_pack_fails_cold_fetch` |
 | W10 | ent `fault_in` hash-mismatch tests (PR #248) |
 | barrier semantics | `flush_pending_is_the_durability_barrier`, `pending_coalesces_last_wins`, `fetch_serves_pending_before_flush` |
+| W3 bounds | `pending_entry_cap_auto_flushes`, `pending_byte_cap_auto_flushes` (crossing a cap commits the batch; window never exceeds the cap) |
+| W4 cleanup / GC | `gc_removes_orphaned_packs`, `gc_runs_on_reopen` (orphaned chunks deleted, live keys still fetch; open is the GC cadence) |
 | pack format at scale | `large_pack_binary_search` (1000 entries after reopen) |
 | round trip | `chunkstore_spill_roundtrip`, `reopen_finds_spilled_entries` |
