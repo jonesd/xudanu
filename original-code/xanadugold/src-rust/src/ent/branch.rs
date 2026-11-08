@@ -155,6 +155,14 @@ pub enum BranchError {
 pub trait BranchSpill: std::fmt::Debug + Send + Sync {
     fn spill(&mut self, key: u64, bytes: &[u8]) -> Result<(), String>;
     fn fetch(&mut self, key: u64) -> Result<Option<Vec<u8>>, String>;
+
+    // [New Migration Comment] Durability barrier. Write-through backends
+    // (InMemorySpill, FileSpill) have nothing deferred and keep the
+    // default; deferred backends (persist::ChunkStoreSpill) admit spills
+    // cheaply and commit them here. BranchStore::flush_spill forwards.
+    fn flush(&mut self) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 // [New Migration Comment] RAM-backed spill: the default test backend and
@@ -249,6 +257,19 @@ impl BranchStore {
 
     pub fn set_spill(&mut self, spill: Box<dyn BranchSpill>) {
         self.spill = Some(spill);
+    }
+
+    // [New Migration Comment] Durability barrier for deferred-write spill
+    // backends: commit every admitted spill (no-op for write-through
+    // backends). The spill layer is a cache over re-derivable state, never
+    // the system of record, so callers may batch: flush at checkpoint
+    // boundaries for amortized durability, or after each evict when
+    // evict-durable-per-op is wanted.
+    pub fn flush_spill(&mut self) -> Result<(), BranchError> {
+        match self.spill.as_mut() {
+            Some(backend) => backend.flush().map_err(BranchError::SpillIo),
+            None => Ok(()),
+        }
     }
 
     fn allocate_id(&mut self) -> BranchId {
