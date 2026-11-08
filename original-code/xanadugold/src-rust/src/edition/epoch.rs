@@ -328,9 +328,13 @@ mod tests {
         assert_eq!(result.epoch.char_length as usize, char_len);
         assert!(result.epoch.frozen_at > 0);
         assert!(result.bytes_written > 0);
+        // Smoke bound, not a perf gate: a shared CI runner mid-suite
+        // routinely exceeds 100 ms for this two-fsync freeze (it flaked
+        // the docs-only PR #252 run). Perf numbers live in the
+        // #[ignore]d benches.
         assert!(
-            result.freeze_duration_ms < 100.0,
-            "small tree should freeze fast"
+            result.freeze_duration_ms < 10_000.0,
+            "freeze should complete, not hang (smoke bound)"
         );
 
         // Chunk is readable
