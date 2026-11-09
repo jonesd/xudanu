@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>'72 transpointing — mockups &amp; failure modes</title>
+<style>
+  :root {
+    --ink: #1c2733;
+    --paper: #faf7f0;
+    --gutter: 64px;
+    --comment: #3b6ea5;
+    --reference: #2e7d4f;
+    --disagreement: #b3402d;
+    --quotation: #6b4fa0;
+    --seealso: #a07a1f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font: 15px/1.65 Georgia, "Iowan Old Style", serif;
+    color: var(--ink); background: #eceae4;
+  }
+  header { padding: 18px 24px 10px; background: #24303c; color: #e8e4da; }
+  header h1 { font: 600 17px/1.3 system-ui, sans-serif; margin: 0 0 4px; }
+  header p { margin: 0; font: 13px/1.5 system-ui, sans-serif; color: #b8c2cc; max-width: 72rem; }
+  nav {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    padding: 10px 24px; background: #1a232d;
+    position: sticky; top: 0; z-index: 10;
+  }
+  nav button {
+    font: 12.5px system-ui, sans-serif; padding: 6px 11px; border-radius: 6px;
+    border: 1px solid #3a4a5a; background: #24303c; color: #cfd8e0; cursor: pointer;
+  }
+  nav button.active { background: #e8e4da; color: #1a232d; border-color: #e8e4da; }
+  .hypothesis {
+    margin: 14px 24px 0; padding: 10px 14px; border-radius: 8px;
+    background: #fff8e6; border: 1px solid #e4d5a8;
+    font: 13.5px/1.55 system-ui, sans-serif; max-width: 72rem;
+  }
+  .hypothesis b { font-weight: 600; }
+  main { padding: 16px 24px 60px; }
+  .stage-wrap { position: relative; max-width: 76rem; }
+  .stage {
+    display: grid; grid-template-columns: 1fr 1fr;
+    column-gap: var(--gutter); align-items: start;
+  }
+  .pane {
+    background: var(--paper); border: 1px solid #d8d2c4; border-radius: 4px;
+    padding: 26px 30px 40px; box-shadow: 0 1px 3px rgba(0,0,0,.08);
+    height: 78vh; overflow-y: auto; position: relative;
+    scrollbar-width: thin;
+  }
+  .pane h2 { font: 600 15px/1.3 system-ui, sans-serif; margin: 0 0 2px; letter-spacing: .02em; }
+  .pane .sub { font: 12px system-ui, sans-serif; color: #7a7466; margin: 0 0 18px; }
+  .pane p { margin: 0 0 14px; }
+  .end { border-bottom: 2px solid transparent; cursor: default; }
+  .end.marked { background: rgba(120,120,120,.07); }
+  svg.beams {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 5;
+  }
+  .edge-tick {
+    position: absolute; z-index: 6; width: 7px; border-radius: 3px;
+    pointer-events: auto; cursor: pointer;
+  }
+  .edge-tick.left { right: calc(var(--gutter) / 2 + 1px); border-radius: 3px 0 0 3px; }
+  .edge-tick.right { left: calc(var(--gutter) / 2 + 1px); border-radius: 0 3px 3px 0; }
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 14px; margin: 12px 0 0;
+    font: 12.5px system-ui, sans-serif; color: #5d5648; max-width: 76rem;
+  }
+  .legend .sw { display: inline-block; width: 18px; height: 4px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+  .variant-note {
+    margin: 14px 0 0; font: 13.5px/1.6 system-ui, sans-serif; max-width: 76rem;
+    padding: 12px 16px; background: #f4f1e9; border: 1px solid #ddd6c6; border-radius: 8px;
+  }
+  .variant-note b { font-weight: 600; }
+  .bundle-label {
+    position: absolute; z-index: 7; font: 11px system-ui, sans-serif; color: #fff;
+    padding: 2px 7px; border-radius: 9px; pointer-events: none;
+  }
+  .rail { display: none; }
+  body[data-variant="zig"] .stage { grid-template-columns: 1fr 1fr 250px; }
+  body[data-variant="zig"] .rail { display: block; }
+  body[data-variant="zig"] .end { cursor: pointer; }
+  .rail {
+    background: #24303c; color: #e8e4da; border-radius: 4px;
+    padding: 20px 16px; height: 78vh; overflow-y: auto;
+    font: 13px/1.5 system-ui, sans-serif; scrollbar-width: thin;
+  }
+  .rail h3 { margin: 0 0 4px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: #9db3c8; }
+  .rail .sel { font-style: italic; color: #cfd8e0; margin: 0 0 12px; font-size: 12.5px; }
+  .rail .zn { padding: 8px 10px; border-left: 3px solid #4a688a; margin: 8px 0; border-radius: 0 6px 6px 0; background: #2d3c4b; cursor: pointer; }
+  .rail .zn:hover { background: #3a4f63; }
+  .rail .zn .which { font-size: 11px; color: #8fa5ba; margin-top: 3px; }
+  .rail .empty { color: #8fa5ba; font-size: 12.5px; }
+  .rail .foot { margin-top: 14px; font-size: 11.5px; color: #8fa5ba; border-top: 1px solid #3a4a5a; padding-top: 10px; }
+  .end.zig-selected { background: rgba(59,110,165,.18); box-shadow: inset 0 -2px 0 #3b6ea5; }
+</style>
+</head>
+<body>
+<header>
+  <h1>'72 transpointing — six postures, one failure</h1>
+  <p>The documents are Nelson's own XanaduSpace pair (Declaration of Independence ↔ Virginia
+  Declaration of Rights, plus a commentary), so the connections are real parallels, not filler.
+  Beams adhere to their passages while either pane scrolls — scroll both panes in every variant.
+  The question under test: <em>what breaks first, and at how many connections?</em></p>
+</header>
+
+<nav id="variant-nav">
+  <button data-v="few" class="active">1 · '72 as drawn (3)</button>
+  <button data-v="many">2 · the wall (17)</button>
+  <button data-v="lens">3 · lens (hover)</button>
+  <button data-v="bundle">4 · bundled by type</button>
+  <button data-v="edge">5 · edge marks, no lines</button>
+  <button data-v="one">6 · the zanadoo gesture (one)</button>
+  <button data-v="zig">7 · ZigZag: no lines at all</button>
+</nav>
+
+<div class="hypothesis">
+  <b>Hypothesis under test</b> — the lines, once past a few, are the problem: crossing count
+  grows with the square of connection count; identification, not existence, is what fails.
+  Variant 2 is the predicted failure. Variants 3–7 are different escapes from projection.
+</div>
+
+<main>
+  <div class="stage-wrap" id="stage-wrap">
+    <div class="stage" id="stage">
+      <section class="pane" id="paneL">
+        <h2>Declaration of Independence</h2>
+        <p class="sub">Jefferson et al., 1776 · left pane</p>
+        <p>We hold these truths to be self-evident, that <span class="end" id="L1">all men are created equal</span>, that they are <span class="end" id="L2">endowed by their Creator with certain unalienable Rights</span>, that among these are <span class="end" id="L3">Life, Liberty and the pursuit of Happiness</span>.</p>
+        <p class="commentary"><span class="end" id="L9">Jefferson's list is famous, but the phrasing owes a direct debt to Mason's earlier draft</span> — the structure of the sentence, not just its sentiment.</p>
+        <p>That to secure these rights, Governments are instituted among Men, deriving their just powers from the consent of the governed, that <span class="end" id="L4">whenever any Form of Government becomes destructive of these ends, it is the Right of the People to alter or to abolish it</span>.</p>
+        <p class="commentary"><span class="end" id="L10">Historians dispute how radical this clause was intended to be in practice</span>; the sentence has carried more weight than its authors foresaw.</p>
+        <p>Prudence, indeed, will dictate that Governments long established should not be changed for light and transient causes.</p>
+        <p>The history of the present King is a history of repeated injuries and usurpations, all having in direct object the establishment of an absolute Tyranny over these States.</p>
+        <p class="commentary"><span class="end" id="L11">Note what the Declaration never says</span>: it never specifies the mechanism of replacement, only the right of it.</p>
+        <p>In every stage of these Oppressions We have Petitioned for Redress in the most humble terms: Our repeated Petitions have been answered only by repeated injury.</p>
+        <p class="commentary"><span class="end" id="L12">Compare the tone here with Mason's Article III</span> — where Mason names the community, Jefferson names the people.</p>
+        <p>Nor have We been wanting in attentions to our Brittish brethren.</p>
+        <p>We, therefore, solemnly publish and declare, that these United Colonies are, and of Right ought to be Free and Independent States.</p>
+        <p class="commentary"><span class="end" id="L17">And for support of this Declaration, we mutually pledge to each other our Lives, our Fortunes and our sacred Honor</span> — the sentence that made signers traitors.</p>
+      </section>
+
+      <section class="pane" id="paneR">
+        <h2>Virginia Declaration of Rights</h2>
+        <p class="sub">George Mason, 1776 · right pane</p>
+        <p>That <span class="end" id="R1">all men are by nature equally free and independent</span>, and have certain inherent rights… namely, the enjoyment of <span class="end" id="R2">life and liberty, with the means of acquiring and possessing property, and pursuing and obtaining happiness and safety</span>.</p>
+        <p>That all power is vested in, and consequently derived from, the people; that magistrates are their trustees and servants.</p>
+        <p>That government is, or ought to be, instituted for the common benefit, protection, and security of the people; and that <span class="end" id="R4">a majority of the community hath an indubitable, unalienable, and indefeasible right to reform, alter, or abolish it</span>, in such manner as shall be judged most conducive to the public weal.</p>
+        <p>That the legislative and executive powers of the State should be separate and distinct from the judicative.</p>
+        <p>That <span class="end" id="R6">the freedom of the press is one of the great bulwarks of liberty</span>, and can never be restrained but by despotic governments.</p>
+        <p>That a well regulated militia, composed of the body of the people, trained to arms, is the proper, natural, and safe defence of a free State.</p>
+        <p>That in all capital or criminal prosecutions, a man hath a right to demand the cause and nature of his accusation.</p>
+        <p>That no free government, or the blessings of liberty, can be preserved to any people but by <span class="end" id="R8">a firm adherence to justice, moderation, temperance, frugality, and virtue</span>.</p>
+        <p class="commentary sub2">— interleaved later commentary —</p>
+        <p class="commentary"><span class="end" id="R10">Mason's Article I is the source of the sentence every American knows — but Jefferson improved the rhythm</span>, trading Mason's inventory for three beats.</p>
+        <p class="commentary"><span class="end" id="R11">The dispute about revolutionary intent starts here:</span> Mason limits to "most conducive to the public weal"; Jefferson states a right without limit.</p>
+        <p class="commentary"><span class="end" id="R12">The tonal contrast with the petitions clause is stark</span> — Mason argues, Jefferson accuses.</p>
+        <p class="commentary"><span class="end" id="R13">"Pursuing and obtaining" versus "pursuit of"</span> — the tighter phrase is the remembered one.</p>
+        <p class="commentary"><span class="end" id="R14">Nothing in Mason obligates personal risk</span>; the pledge is Jefferson's addition and the document's hinge.</p>
+      </section>
+
+      <aside class="rail" id="rail"></aside>
+    </div>
+    <svg class="beams" id="beams"></svg>
+    <div id="ticks"></div>
+    <div id="bundle-labels"></div>
+  </div>
+
+  <div class="legend" id="legend"></div>
+  <div class="variant-note" id="variant-note"></div>
+
+  <footer style="margin-top:28px;font:12.5px system-ui,sans-serif;color:#7a7466;max-width:76rem">
+    A design probe from <a href="https://dgjones.info/xudanu/" style="color:#3b6ea5">Xudanu</a> —
+    an open-source (Apache-2.0) xanalogical document system in the Udanax lineage:
+    <a href="https://github.com/jonesd/xudanu" style="color:#3b6ea5">github.com/jonesd/xudanu</a>.
+    The question under test predates the code: which of these postures is the one readers were promised?
+  </footer>
+</main>
+
+<script>
+const TYPES = {
+  quotation:   { color: cssVar("--quotation"),   label: "same content / quotation" },
+  reference:   { color: cssVar("--reference"),   label: "reference" },
+  disagreement:{ color: cssVar("--disagreement"),label: "disagreement" },
+  comment:     { color: cssVar("--comment"),     label: "comment" },
+  seealso:     { color: cssVar("--seealso"),     label: "see also" },
+};
+function cssVar(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
+// 17 connections: the first 3 are the '72 figure; the rest are honest density.
+const LINKS = [
+  { id: 1,  type: "quotation",    a: "L1", b: "R1",  note: "created equal / equally free" },
+  { id: 2,  type: "quotation",    a: "L3", b: "R2",  note: "happiness" },
+  { id: 3,  type: "reference",    a: "L4", b: "R4",  note: "alter or abolish" },
+  { id: 4,  type: "disagreement", a: "L9", b: "R10", note: "debt vs improvement" },
+  { id: 5,  type: "disagreement", a: "L10", b: "R11", note: "how radical" },
+  { id: 6,  type: "comment",      a: "L11", b: "R11", note: "mechanism unnamed" },
+  { id: 7,  type: "comment",      a: "L12", b: "R12", note: "tone" },
+  { id: 8,  type: "reference",    a: "L2", b: "R2",  note: "unalienable / inherent" },
+  { id: 9,  type: "seealso",      a: "L1", b: "R13", note: "phrasing" },
+  { id: 10, type: "disagreement", a: "L4", b: "R11", note: "right without limit" },
+  { id: 11, type: "comment",      a: "L12", b: "R13", note: "phrase contrast" },
+  { id: 12, type: "quotation",    a: "L3", b: "R2",  note: "life and liberty" },
+  { id: 13, type: "reference",    a: "L17", b: "R14", note: "the pledge" },
+  { id: 14, type: "seealso",      a: "L9", b: "R13", note: "rhythm" },
+  { id: 15, type: "comment",      a: "L10", b: "R12", note: "accusation" },
+  { id: 16, type: "reference",    a: "L1", b: "R1",  note: "nature's equality" },
+  { id: 17, type: "seealso",      a: "L11", b: "R14", note: "risk" },
+];
+
+const NOTES = {
+  few:   "<b>1 · '72 as drawn.</b> Three connections, the figure's density. Nothing crosses badly; every line is identifiable at a glance; scroll either pane and the adherence feels alive. This is the image people carry — <em>at three connections it is entirely honest</em>.",
+  many:  "<b>2 · the wall.</b> Seventeen honest connections between two short documents. Crossings are near-unavoidable, colour no longer identifies, and adjacency of endpoints (not meaning) decides what the picture looks like. Scroll either pane and watch the tangle re-form. This is the predicted failure — and note it is only 17, not 170.",
+  lens:  "<b>3 · lens — colour is a query result.</b> At rest: a quiet page (dots mark connected passages). Hover any passage and only <em>its</em> connections draw. The full graph is always available but never ambient; cost scales with attention, not with corpus. The calm-surface rule from the overlay, applied to the reading posture.",
+  bundle:"<b>4 · bundled by type.</b> Lines route through a shared bus in the gutter, grouped by type, counts in the pills. The eye reads five harnesses instead of seventeen wires; a bundle's thickness is a density signal (the workspace's lanes/density-pills idea, moved into the gutter). Individual connections still fan out and remain hoverable.",
+  edge:  "<b>5 · edge marks, no lines at rest.</b> The overlay's proven move: ticks at the pane edges, coloured by type, positioned at the passage's height — the connection is <em>there</em>, but the text surface is never drawn on. Hover a tick to flash the one connection it stands for. Nothing to cross, nothing to tangle, at any density.",
+  one:   "<b>6 · the zanadoo gesture — '72 for one.</b> No lines at rest. Click any marked passage: the far pane scrolls to its counterpart, one line draws and adheres while you scroll either side, click elsewhere (or another passage) to dismiss. Nelson's current demo converges here: the unit of navigation is a single connection, held only while attended.",
+  zig:   "<b>7 · ZigZag — connections without lines.</b> Nelson's own escape from projection: stop drawing the graph, navigate it dimension by dimension. Click any marked passage: its connections appear in the <em>third column</em> as neighbours along a dimension — a rail that takes layout space instead of covering text, so nothing is ever occluded. Click a neighbour to step there. No geometry, no crossings, cost per connection constant. What you lose is the ambient picture; what you gain is unbounded scale. Ted's two answers, side by side: transpointing <em>shows</em>, ZigZag <em>steps</em>.",
+};
+
+let variant = "few";
+let hoverSpan = null;
+let selectedSpan = null;
+
+const stageWrap = document.getElementById("stage-wrap");
+const stage = document.getElementById("stage");
+const beams = document.getElementById("beams");
+const ticks = document.getElementById("ticks");
+const bundleLabels = document.getElementById("bundle-labels");
+const rail = document.getElementById("rail");
+const paneL = document.getElementById("paneL");
+const paneR = document.getElementById("paneR");
+
+// mark endpoints (dots in lens variant get .marked via CSS only in lens)
+LINKS.forEach(l => {
+  for (const id of [l.a, l.b]) {
+    const el = document.getElementById(id);
+    if (el) { el.classList.add("end", "marked"); el.dataset.link = l.id; }
+  }
+});
+
+// legend
+const legend = document.getElementById("legend");
+legend.innerHTML = Object.entries(TYPES).map(([k, t]) =>
+  `<span><span class="sw" style="background:${t.color}"></span>${t.label}</span>`).join("");
+
+document.getElementById("variant-nav").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  variant = b.dataset.v;
+  document.body.dataset.variant = variant;
+  document.querySelectorAll("#variant-nav button").forEach(x => x.classList.toggle("active", x === b));
+  document.getElementById("variant-note").innerHTML = NOTES[variant];
+  clearTransient();
+  render();
+});
+document.getElementById("variant-note").innerHTML = NOTES[variant];
+document.body.dataset.variant = variant;
+
+function visibleLinks() {
+  if (variant === "few") return LINKS.slice(0, 3);
+  if (variant === "one") return selectedSpan ? linksFor(selectedSpan) : [];
+  return LINKS;
+}
+function linksFor(el) { return LINKS.filter(l => l.a === el.id || l.b === el.id); }
+
+function endpoints(l) {
+  const A = document.getElementById(l.a), B = document.getElementById(l.b);
+  if (!A || !B) return null;
+  const wrap = stageWrap.getBoundingClientRect();
+  const ra = A.getBoundingClientRect(), rb = B.getBoundingClientRect();
+  // A must sit in the left pane, B in the right; swap if needed
+  let left = ra, right = rb;
+  if (ra.left > rb.left) { left = rb; right = ra; }
+  return {
+    x1: left.right - wrap.left, y1: left.top + left.height / 2 - wrap.top,
+    x2: right.left - wrap.left, y2: right.top + right.height / 2 - wrap.top,
+    inView: (r) => r.bottom > wrap.top && r.top < wrap.bottom,
+  };
+}
+
+function pathFor(l, midY) {
+  const ep = endpoints(l); if (!ep) return null;
+  const t = TYPES[l.type].color;
+  const mid = stage.getBoundingClientRect().width / 2;
+  const cx1 = ep.x1 + (mid - ep.x1) * 0.45, cx2 = ep.x2 - (ep.x2 - mid) * 0.45;
+  const my = midY != null ? midY : (ep.y1 + ep.y2) / 2;
+  return `<path d="M ${ep.x1} ${ep.y1} C ${cx1} ${my}, ${cx2} ${my}, ${ep.x2} ${ep.y2}"
+    fill="none" stroke="${t}" stroke-width="1.6" opacity="0.85">
+    <title>${l.note} · ${TYPES[l.type].label}</title></path>`;
+}
+
+function render() {
+  beams.innerHTML = "";
+  ticks.innerHTML = "";
+  bundleLabels.innerHTML = "";
+
+  if (variant === "few" || variant === "many") {
+    beams.innerHTML = visibleLinks().map(l => pathFor(l)).join("");
+  }
+
+  if (variant === "lens") {
+    const active = hoverSpan ? linksFor(hoverSpan) : [];
+    beams.innerHTML = active.map(l => pathFor(l)).join("");
+  }
+
+  if (variant === "bundle") {
+    // group by type; route each group through a shared bus y
+    const byType = {};
+    visibleLinks().forEach(l => (byType[l.type] ??= []).push(l));
+    const keys = Object.keys(byType);
+    const midW = stage.getBoundingClientRect().width / 2;
+    let html = "";
+    keys.forEach((k, i) => {
+      const busY = stage.getBoundingClientRect().height * (0.12 + i * (0.76 / Math.max(keys.length - 1, 1)));
+      byType[k].forEach(l => { html += pathFor(l, busY); });
+      const lbl = document.createElement("div");
+      lbl.className = "bundle-label";
+      lbl.style.background = TYPES[k].color;
+      lbl.style.left = (midW - 26) + "px";
+      lbl.style.top = (busY - 9) + "px";
+      lbl.textContent = byType[k].length;
+      bundleLabels.appendChild(lbl);
+    });
+    beams.innerHTML = html;
+  }
+
+  if (variant === "edge") {
+    const wrap = stageWrap.getBoundingClientRect();
+    LINKS.forEach(l => {
+      for (const [id, side] of [[l.a, "L"], [l.b, "R"]]) {
+        const el = document.getElementById(id); if (!el) continue;
+        const r = el.getBoundingClientRect();
+        if (r.bottom < wrap.top || r.top > wrap.bottom) continue;
+        const t = document.createElement("div");
+        t.className = "edge-tick " + (side === "L" ? "left" : "right");
+        t.style.background = TYPES[l.type].color;
+        t.style.top = (r.top - wrap.top + r.height / 2 - Math.max(r.height / 2, 6)) + "px";
+        t.style.height = Math.max(r.height, 8) + "px";
+        t.title = l.note + " · " + TYPES[l.type].label;
+        t.addEventListener("mouseenter", () => { beams.innerHTML = pathFor(l); });
+        t.addEventListener("mouseleave", () => { beams.innerHTML = ""; });
+        ticks.appendChild(t);
+      }
+    });
+  }
+
+  if (variant === "one" && selectedSpan) {
+    const active = linksFor(selectedSpan);
+    const far = active.map(l => document.getElementById(l.a === selectedSpan.id ? l.b : l.a));
+    far.forEach(f => { if (f) f.scrollIntoView({ block: "center", behavior: "smooth" }); });
+    beams.innerHTML = active.map(l => pathFor(l)).join("");
+  }
+
+  if (variant === "zig") {
+    renderZig();
+  }
+}
+
+function clearTransient() { hoverSpan = null; selectedSpan = null; }
+
+// hover lens
+document.querySelectorAll(".end").forEach(el => {
+  el.addEventListener("mouseenter", () => {
+    if (variant === "lens") { hoverSpan = el; render(); }
+  });
+  el.addEventListener("mouseleave", () => {
+    if (variant === "lens") { hoverSpan = null; render(); }
+  });
+});
+
+// click behaviours
+document.querySelectorAll(".end").forEach(el => {
+  el.addEventListener("click", e => {
+    e.stopPropagation();
+    if (variant === "one" || variant === "zig") { selectedSpan = el; render(); }
+  });
+});
+document.addEventListener("click", () => {
+  if (variant === "one" || variant === "zig") { clearTransient(); render(); }
+});
+
+// ZigZag rail: neighbours along a dimension, in a dedicated column
+function renderZig() {
+  document.querySelectorAll(".end.zig-selected").forEach(e => e.classList.remove("zig-selected"));
+  if (variant !== "zig") { rail.innerHTML = ""; return; }
+  if (!selectedSpan) {
+    rail.innerHTML = `<h3>dimension view</h3>
+      <p class="empty">Click any marked passage in either document. Its connections
+      appear here as neighbours along a dimension — no lines, no overlay, nothing hidden.</p>`;
+    return;
+  }
+  selectedSpan.classList.add("zig-selected");
+  const links = linksFor(selectedSpan);
+  rail.innerHTML = `<h3>connections of this passage</h3>
+    <p class="sel">“${selectedSpan.textContent.slice(0, 64)}…”</p>` +
+    links.map(l => {
+      const farId = l.a === selectedSpan.id ? l.b : l.a;
+      const far = document.getElementById(farId);
+      const which = far && far.closest("#paneL") ? "left document" : "right document";
+      return `<div class="zn" style="border-color:${TYPES[l.type].color}" data-far="${farId}">
+        <b style="color:${TYPES[l.type].color}">${TYPES[l.type].label}</b> — ${far ? far.textContent.slice(0, 80) : ""}…
+        <div class="which">${which} · click to step there</div></div>`;
+    }).join("") +
+    `<div class="foot">no lines: each step reveals the neighbours along one dimension —
+     cost per connection is constant.</div>`;
+  rail.querySelectorAll(".zn").forEach(n => n.addEventListener("click", ev => {
+    ev.stopPropagation();
+    const far = document.getElementById(n.dataset.far);
+    if (far) { far.scrollIntoView({ block: "center", behavior: "smooth" }); selectedSpan = far; render(); }
+  }));
+}
+
+// beams adhere on scroll and resize
+let raf = 0;
+function scheduleRender() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; render(); }); }
+paneL.addEventListener("scroll", scheduleRender);
+paneR.addEventListener("scroll", scheduleRender);
+window.addEventListener("resize", scheduleRender);
+
+render();
+</script>
+</body>
+</html>
