@@ -6,6 +6,11 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [Unreleased]
+
+### Registered
+- **IANA provisional registration of the `xudanu` URI scheme** completed 2026-11-09 (IANA ticket #1496237). The registry entry is live at <https://www.iana.org/assignments/uri-schemes/prov/xudanu> and points at the shipped specification (<https://dgjones.info/xudanu/uri-scheme.html>). The scheme was already emitted and parsed across the MCP surface and the CLI (`xudanu://work/{id}[?rev=N][#span=s,e]`); the registration makes the name official and citable.
+
 ## [v1.21.0] — 2026-10-30
 
 The **opt-ins** release: license posture becomes a first-class, inspectable fact — what this installation chose, and what it declined — alongside the editor, offline-editing, and durability work that landed since v1.20.0.
