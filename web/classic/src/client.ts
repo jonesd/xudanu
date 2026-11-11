@@ -91,8 +91,22 @@ export class ClassicClient {
       );
     }
 
+    // CSRF double-submit: a server started with --csrf-token rejects a
+    // bare WS upgrade with a silent 403. Fetch the token first and
+    // append it; a missing endpoint or token means CSRF is disabled
+    // and the bare URL is correct.
+    let csrfParam = "";
+    try {
+      const r = await fetch("/csrf-token");
+      if (r.ok) {
+        const d = (await r.json()) as { csrf_token?: string };
+        if (d.csrf_token) csrfParam = "&csrf_token=" + encodeURIComponent(d.csrf_token);
+      }
+    } catch {
+      // no token endpoint: server has CSRF disabled
+    }
     const ws = new WebSocket(
-      `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/xudanu?format=json&version=2`,
+      `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/xudanu?format=json&version=2${csrfParam}`,
     );
     await new Promise<void>((resolve, reject) => {
       ws.onopen = () => resolve();
