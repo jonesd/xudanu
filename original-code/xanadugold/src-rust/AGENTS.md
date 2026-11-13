@@ -158,6 +158,48 @@ Notes for ad-hoc servers (when a script doesn't fit, e.g. a second
 instance on another port): use `nohup ... & disown` — plain
 `(cmd &)` subshells get reaped when the spawning shell exits.
 
+## Production deploys (xudanu.com) — topology + verify-as-a-reader
+
+Learned 2026-11-12 the hard way: three stacked gaps (classic missing
+from the image, deploy.sh never refreshing the static tree, classic's
+WS missing the CSRF token) each masked the next, and CI was green
+through all of them. Rules:
+
+- **Topology**: host systemd (`xudanu.service` → `/opt/xudanu/
+  xudanu-server`, serves `--static-dir dist` = `/opt/xudanu/dist`,
+  data at `/var/lib/xudanu`) behind host Caddy (`reverse_proxy
+  127.0.0.1:8080`). The Docker image is a BUILD TOOL only — never
+  `compose up` on production. Full map: `/opt/xudanu/
+  ARCHITECTURE-NOTES.md` on the server.
+- **deploy.sh swaps binary AND dist** (with `.pre-<ts>` backups +
+  data backup first). Before v1.22.0 it swapped only the binary —
+  the frontend tree froze at whatever old manual copy existed.
+- **The image must build classic into the dist** (Dockerfile does
+  this since v1.22.x). `web/app`'s vite build EMPTIES `dist/`, and
+  the classic→`web/app/dist/classic` merge in pre-push.sh is a
+  LOCAL-only step. Without it the image has no `/classic/` and the
+  classic-first landing is silently disabled — `index_handler`
+  redirects `/` → `/classic/` ONLY when the static tree carries
+  `classic/index.html`.
+- **After every deploy, verify as a reader** (not just /health):
+  1. `curl -sI https://xudanu.com/` → `307` + `location: /classic/`
+  2. `/classic/index.html` → populated (title "Xudanu — Parallel
+     view", ~410 bytes) and references the current bundle
+  3. WS handshake: `curl --http1.1` with `Upgrade`/`Sec-WebSocket-*`
+     headers + `Origin: https://xudanu.com` + `csrf_token` from
+     `/csrf-token` → `101`. Without the Origin header you get a 403
+     from the allowed-origin check (which logs
+     `SECURITY:ws_origin_rejected`) — it fires before CSRF and will
+     mislead you.
+- Production does NOT run `--csrf-token` (see its ExecStart), but
+  dev servers and self-hosters may — classic and the workspace do
+  the `/csrf-token` fetch regardless, so it works either way.
+- CI green ≠ production serving: the layers above CI (image
+  contents, deploy mechanics, static-dir wiring) can each fail
+  silently. The send-gate/verify-as-a-reader discipline exists
+  because none of the three stacked bugs was catchable from inside
+  the repo.
+
 ## Test & lint
 
 ```sh
