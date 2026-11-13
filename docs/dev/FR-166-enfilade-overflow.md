@@ -140,7 +140,10 @@ because of that number.
 - **Residency**: who calls evict, flush cadence at checkpoint
   boundaries, op-boundary interactions, async wiring (the adapter is
   synchronous `std::fs`; a tokio host must `spawn_blocking`). Must
-  prove the eviction invariant for every evictable branch.
+  prove the eviction invariant for every evictable branch. **Design
+  draft: FR-167** — policy (K-generation retention + entry-count
+  ceiling + dirty-gen proof rule), checkpoint-cadence two-phase flush,
+  the IsStub audit, and the residency failure ledger (R1–R7).
 - **Subtree-locality packs** (the full flock model — group evictions by
   enfilade subtree for locality-aligned packs).
 - **Audit coverage**: the spill dir is outside the chained security log
