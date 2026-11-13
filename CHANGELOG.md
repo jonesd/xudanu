@@ -6,6 +6,14 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.22.1] — 2026-11-13
+
+### Fixed
+- **The Docker image now contains the classic reader.** The frontend stage built only `web/app`; the classic→`web/app/dist/classic` merge lived solely in pre-push.sh's local rsync, which the server-side image build never runs (and vite empties `dist/` on build). Production consequences, all verified: no `/classic/` in the image, an empty `/classic/index.html` on disk, and the classic-first landing silently disabled since v1.18.1 — `index_handler` redirects `/` → `/classic/` only when the static tree carries `classic/index.html`. Verified live after deploy: `/` → 307 `/classic/`, classic populated, WS handshake 101.
+
+### Internal
+- AGENTS.md gains the production deploy runbook (topology, binary+dist swap, classic-in-image rule, verify-as-a-reader checks): CI green ≠ production serving.
+
 ## [v1.22.0] — 2026-11-12
 
 ### Registered
