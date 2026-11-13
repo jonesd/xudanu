@@ -26,14 +26,23 @@ ssh $SERVER "tar czf /root/xudanu-live-backup-\$(date +%F).tgz -C /var/lib/xudan
 echo "2. Pulling latest + building image (build tool only)..."
 ssh $SERVER "cd $REMOTE_DIR/repo && git pull --ff-only -q && docker build -q -t xudanu:latest . >/dev/null && echo '   build: ok'"
 
-echo "3. Extracting binary + swapping under systemd..."
+echo "3. Extracting binary + static dist + swapping under systemd..."
 ssh $SERVER "set -e
 CID=\$(docker create xudanu:latest)
 docker cp \$CID:/usr/local/bin/xudanu-server $REMOTE_DIR/xudanu-server.new
+docker cp \$CID:/app/dist $REMOTE_DIR/dist.new
 docker rm \$CID >/dev/null
 systemctl stop xudanu
 cp $REMOTE_DIR/xudanu-server $REMOTE_DIR/xudanu-server.pre-\$(date +%s)
 cp $REMOTE_DIR/xudanu-server.new $REMOTE_DIR/xudanu-server
+# The systemd unit serves --static-dir dist (relative to /opt/xudanu):
+# refresh it from the same image the binary came from, or the
+# frontend stays stale after every deploy (found 2026-11-12:
+# production /classic/index.html was an empty file from a half-old
+# tree while the binary was current).
+rm -rf $REMOTE_DIR/dist.pre-\$(date +%s)
+[ -d $REMOTE_DIR/dist ] && mv $REMOTE_DIR/dist $REMOTE_DIR/dist.pre-\$(date +%s)
+mv $REMOTE_DIR/dist.new $REMOTE_DIR/dist
 systemctl start xudanu
 echo '   swap: ok'"
 
