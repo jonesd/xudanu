@@ -24,6 +24,8 @@ const FX = "http://127.0.0.1:8899";
 const extDir = fs.mkdtempSync(path.join(os.tmpdir(), "xudanu-overlay-ext-"));
 fs.copyFileSync(path.join(EXT_SRC, "content.js"), path.join(extDir, "content.js"));
 fs.copyFileSync(path.join(EXT_SRC, "background.js"), path.join(extDir, "background.js"));
+fs.copyFileSync(path.join(EXT_SRC, "options.html"), path.join(extDir, "options.html"));
+fs.copyFileSync(path.join(EXT_SRC, "options.js"), path.join(extDir, "options.js"));
 fs.copyFileSync(path.join(EXT_SRC, "test", "manifest.test.json"), path.join(extDir, "manifest.json"));
 
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), "xudanu-overlay-profile-"));
@@ -147,7 +149,29 @@ try {
   const stray = await p3.locator(".xudanu-ribbon").count();
   ok("unshadowed page: zero render", stray === 0);
 
-  // ── 7. Console hygiene ───────────────────────────────────────
+  // ── 7. Options page: save + test connection through the SW ───
+  // The Enable click needs Chrome's native permission prompt, which
+  // automation cannot dismiss — MANUAL-TEST.md covers that one step.
+  // Ask the worker for the options URL (chrome.runtime.getURL) rather
+  // than parsing sw.url(), which can be opaque if the handle races a
+  // worker restart.
+  const optionsUrl = await sw.evaluate(() => chrome.runtime.getURL("options.html"));
+  const opt = await context.newPage();
+  await opt.goto(optionsUrl);
+  await opt.fill("#server", SERVER);
+  await opt.click("#save");
+  await opt.click("#test");
+  await opt.waitForFunction(
+    () => (document.getElementById("status")?.textContent ?? "").length > 0,
+    { timeout: 10000 },
+  );
+  const statusText = (await opt.textContent("#status")) ?? "";
+  ok("options: test connection reports the live server",
+    /Connected/i.test(statusText), statusText.slice(0, 80));
+  await opt.screenshot({ path: "shot-options.png" });
+  await opt.close();
+
+  // ── 8. Console hygiene ───────────────────────────────────────
   const relevant = consoleErrors.filter((e) => !/favicon|net::ERR/i.test(e));
   ok("no console/page errors from the content script", relevant.length === 0,
     relevant.slice(0, 2).join(" | "));

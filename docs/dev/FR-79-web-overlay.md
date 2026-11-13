@@ -1,6 +1,6 @@
 # FR-79: The Web Overlay — Xudanu as the Connection Layer of the WWW
 
-**Status:** Stage 1 shipped (v1.14.4); Stage 2 implemented (server + extension + E2E walkthrough; browser-render pass pending manual fixture run)
+**Status:** Stage 1 shipped (v1.14.4); Stage 2 complete — E2E manual walkthrough passed 2026-11-10/11 (full flow: page → ribbon → classic → connect → far work displays; one production bug found and fixed on the way: classic's WS had no CSRF token)
 **Created:** 2026-09-23
 **Tradition:** Nelson's transquotation and the Little Transquoter
 (2004–05, Andrew Pam): portion addresses on web pages, each excerpt
@@ -182,10 +182,26 @@ return the mark descriptors. Rate-limited; no session needed.
       fixed: missing CORS preflight on the marks endpoint (OPTIONS
       404 → fetch fail) and a MutationObserver self-trigger loop in
       the content script (render → mutation → re-render churn).
-- [ ] manual: the production-manifest flow (options UI: server URL,
+- [x] manual: the production-manifest flow (options UI: server URL,
       Test connection, Enable → dynamic permission grant +
-      registration) — the one path automation can't gesture through
-- [ ] extension store review hygiene pass (permissions audit)
+      registration) — the one path automation can't gesture through.
+      Code fixed: `permissions.request` now runs in the options-page
+      click handler (an MV3 user gesture does not survive the
+      sendMessage hop to the worker, so the SW-side call always threw
+      "This function must be called during a user gesture"); the SW
+      guards with `permissions.contains` before registering. The
+      save/test-connection path is harness-covered
+      (overlay.test.mjs §7); walkthrough: web/extension/MANUAL-TEST.md.
+      **Passed 2026-11-10/11**, full loop in a real Chrome: ribbons on
+      the article (hover tooltip + click), classic deep link, connect,
+      far work displays. Second bug found by the same walkthrough:
+      the classic client opened its WS bare, so any `--csrf-token`
+      server 403'd it silently — classic now fetches `/csrf-token`
+      first (web/classic/src/client.ts, mirroring crdt_sync.ts)
+- [x] extension store review hygiene pass (permissions audit):
+      web/extension/STORE.md (per-permission justification, privacy
+      statement, listing copy, pre-submission checklist); manifest
+      gains icons (16/32/48/128) and homepage_url
 
 ---
 

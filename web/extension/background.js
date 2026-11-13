@@ -82,10 +82,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           }
         }
         case "enable": {
-          const granted = await chrome.permissions.request({
+          // The grant happened on the options page (the only context
+          // where permissions.request has a user gesture). Guard with
+          // contains() so a message from anywhere else cannot register
+          // a script that would never inject.
+          const granted = await chrome.permissions.contains({
             origins: ["http://*/*", "https://*/*"],
           });
-          if (!granted) return sendResponse({ ok: false, error: "host permission denied" });
+          if (!granted) {
+            return sendResponse({
+              ok: false,
+              error: "host permission missing — use the options page to enable",
+            });
+          }
           await unregisterOverlay();
           await registerOverlay();
           await chrome.storage.local.set({ enabled: true });
