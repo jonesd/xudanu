@@ -1,0 +1,65 @@
+EMAIL DRAFT — to Jakob Voß
+(not sent from here; placeholder URLs go live when PRs #255/#256 merge)
+
+To:      jakob.voss@gbv.de
+Subject: The hypertext you were promised — running system + a design probe
+
+---
+
+Dear Jakob,
+
+You may remember Xudanu — the open-source xanalogical system standing on
+the Udanax Gold release (you went through it closely in your research,
+and I've thought about your reading more than once). Two things since,
+both worth ten minutes:
+
+Your earlier judgment — that our interface was more complicated than the
+'72 vision — was fair, and it partly prompted this:
+
+  1. A design probe: seven renderings of the parallel-document reading
+     posture, from the 1972 figure at honest density to the density where
+     it visibly fails, to a ZigZag-style dimension rail. Single page, no
+     install:
+     https://dgjones.info/xudanu/transpointing-variants.html
+
+  2. A page mapping your infrastructure-agnostic model onto what we
+     actually implemented — your four elements and four functions,
+     element by element, plus where we implement three of your four
+     exclusions and deliberately decline the fourth. Your model runs:
+     https://dgjones.info/xudanu/infrastructure-agnostic-hypertext.html
+
+The live system, if you want to poke it (Gallery of Unusual Connections,
+live transclusions, two-way links that survive edits):
+https://xudanu.com
+
+If you have ten minutes for the probe, three questions:
+
+  - Which posture reads to you as "the thing we were promised"?
+  - At what connection density does the parallel-lines view stop working,
+    in your judgment?
+  - Does the dimension rail (variant 7) feel like reading — or like a
+    database?
+
+No reply obligation; if any of it is useful to your work, it is there to
+cite. The system is self-hostable (one container) and scriptable over a
+frozen wire protocol if you ever want to test the claims directly.
+
+With respect for the paper,
+
+David Jones
+Xudanu — https://github.com/jonesd/xudanu (Apache-2.0; independent of
+Project Xanadu, which we say up front)
+
+---
+
+NOTES (not part of the email):
+- SEND GATE: xudanu.com must be REDEPLOYED from current main first
+  (merge #254, run deploy.sh). Verified 2026-11-11: production /
+  serves the workspace not classic, /classic/ is an empty file, and
+  the tokenless WS gets 403 (the CSRF bug #254 fixes). Jakob is the
+  one reader for whom the landing must be the '72 posture, working.
+- Optional one-liner if the store submission has landed before sending:
+  "A browser extension also now renders a document's marks on ordinary web
+  pages." Insert after link 2.
+- Do not send before #255/#256 are merged (dead links).
+- His OrcID: 0000-0002-7613-4123, affiliation VZG (verbundzentrale des GBV).

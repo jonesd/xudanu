@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Engine bake-off — Argos vs NLLB-600M</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',system-ui,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:48px 32px 80px}
+.wrap{max-width:1200px;margin:0 auto}
+h1{font-size:28px;font-weight:800;color:#e6edf3;margin-bottom:6px}
+.sub{color:#8b949e;font-size:14px;margin-bottom:32px}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{text-align:left;padding:10px 12px;border-bottom:2px solid #30363d;color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:0.5px}
+td{padding:12px;border-bottom:1px solid #21262d;vertical-align:top}
+td.src{color:#79c0ff;width:30%}
+.lbl{font-size:11px;color:#8b949e;margin-bottom:6px;text-transform:none}
+.tag{font-family:'JetBrains Mono',monospace;font-size:10px;padding:1px 7px;border-radius:8px;margin-left:4px}
+.tag.synthetic{background:rgba(210,153,34,.15);color:#d29922;border:1px solid rgba(210,153,34,.4)}
+.tag.public-domain{background:rgba(88,166,255,.1);color:#58a6ff;border:1px solid rgba(88,166,255,.3)}
+.ms{font-family:'JetBrains Mono',monospace;font-size:11px;color:#484f58;margin-bottom:6px}
+.verdict{width:12%;border-left:2px dashed #30363d}
+.note{background:rgba(210,153,34,.06);border-left:3px solid #d29922;padding:12px 16px;margin:24px 0;font-size:13px;color:#8b949e;border-radius:0 6px 6px 0}
+pre.mem{font-family:'JetBrains Mono',monospace;font-size:12px;color:#8b949e}
+</style></head><body><div class="wrap">
+<h1>Engine bake-off — Argos vs NLLB-200-600M</h1>
+<div class="sub">de→en · 12 spans · 2 measured passes each (after warmup) · generated 2026-10-30 11:22:40</div>
+<table><tr><th>engine</th><th>p50</th><th>p95</th><th>min</th><th>max</th></tr><tr><td>argos</td><td>430ms</td><td>672ms</td><td>235ms</td><td>1223ms</td></tr><tr><td>nllb</td><td>1786ms</td><td>2909ms</td><td>669ms</td><td>5221ms</td></tr></table>
+<pre class="mem">RSS: xlate-spike: 987.5MiB / 12.89GiB · xlate-nllb: 1.031GiB / 12.89GiB</pre>
+<div class="note"><strong>Your call.</strong> Right column is for gists / misleads / fails — judge each row.
+The ms pairs are <em>first translation</em> / repeat. Argos repeats hit its internal dedup cache (~3ms);
+NLLB repeats are full re-inference — in the product, OUR edge cache sits in front, so first-translation
+cost is the number that matters. NLLB weights are CC-BY-NC: bench fine, product default never.</div>
+<table>
+<tr><th>German source</th><th>Argos (LibreTranslate)</th><th>NLLB-600M (ct2 int8)</th><th>verdict</th></tr>
+
+<tr><td class="src"><div class="lbl">Goethe, Faust I — 5 words <span class="tag public-domain">public-domain</span></div>Es irrt der Mensch, solang er strebt.</td>
+<td><div class="ms">254/3 ms</div>Man is wrong as long as he strives.</td>
+<td><div class="ms">669/708 ms</div>Man is wrong as long as he strives.</td>
+<td class="verdict"></td></tr>
+<tr><td class="src"><div class="lbl">Faust I+II — the demo span, 2 sentences <span class="tag public-domain">public-domain</span></div>Es irrt der Mensch, solang er strebt. Wer immer strebend sich bemüht, den können wir erlösen.</td>
+<td><div class="ms">373/3 ms</div>Man is wrong as long as he strives. Whoever strives, we can save him.</td>
+<td><div class="ms">1299/1391 ms</div>Man is wrong as long as he strives. Whoever strives hard, we can rescue.</td>
+<td class="verdict"></td></tr>
+<tr><td class="src"><div class="lbl">Schiller, Wilhelm Tell — 1 sentence <span class="tag public-domain">public-domain</span></div>Durch diese hohle Gasse muss er kommen, es führt kein andrer Weg nach Küssnacht.</td>
+<td><div class="ms">415/3 ms</div>He must come through this hollow alley; there is no other way to Küssnacht.</td>
+<td><div class="ms">1243/1264 ms</div>He has to go through this hollow alley, there&#x27;s no other way to Kiss Night.</td>
+<td class="verdict"></td></tr>
+<tr><td class="src"><div class="lbl">Kant, Kritik der reinen Vernunft — philosophy, hard <span class="tag public-domain">public-domain</span></div>Gedanken ohne Inhalt sind leer, Anschauungen ohne Begriffe sind blind.</td>
+<td><div class="ms">235/4 ms</div>Thoughts without content are empty, views without concepts are blind.</td>
+<td><div class="ms">831/914 ms</div>Thoughts without content are empty, perceptions without concepts are blind.</td>
+<td class="verdict"></td></tr>
+<tr><td class="src"><div class="lbl">Fontane, Effi Briest — narrative, long sentence <span class="tag public-domain">public-domain</span></div>In den letzten Novembertagen des Jahres 1859, eines Nachmittags, den man noch zum Fahrradfahren hätte benutzen können, ging in Berlin, in der alten Keithstraße, ein Herr von mittlerer Größe und militärischem Aussehen von der Treppe eines Vorderhauses hinab auf die Straße.</td>
+<td><div class="ms">672/4 ms</div>In the last days of November 1859, an afternoon which could still have been used for cycling, a gentleman of medium size and military appearance walked down the stairs of a front house in Berlin, in the old Keithstraße.</td>
+<td><div class="ms">2909/3084 ms</div>In the last days of November 1859, an afternoon that could still have been used for cycling, a gentleman of medium size and military appearance went down the stairs of a front house on the street in Berlin, in the old Keithstraße.</td>
+<td class="verdict"></td></tr>
+<tr><td class="src"><div class="lbl">Kafka, Die Verwandlung — famous opening <span class="tag public-domain">public-domain</span></div>Als Gregor Samsa eines Morgens aus unruhigen Träumen erwachte, fand er sich in seinem Bett zu einem ungeheueren Ungeziefer verwandelt.</td>
+<td><div class="ms">460/3 ms</div>When Gregor Samsa woke up one morning from troubled dreams, he found himself transformed into a monstrous vermin in his bed.</td>
+<td><div class="ms">1786/1593 ms</div>When Gregor Samsa woke up one morning from restless dreams, he found himself in his bed transformed into an enormous insect.</td>
+<td class="verdict"></td></tr>
+<tr><td class="src"><div class="lbl">Rilke, Der Panther — verse line <span class="tag public-domain">public-domain</span></div>Der Panther im Jardin des Plantes, Paris: sein Blick ist vom Vorübergehn der Stäbe so müd geworden, dass er nichts mehr hält.</td>
+<td><div class="ms">640/4 ms</div>The Panther in the Jardin des Plantes, Paris: his gaze has become so tired from the passing of the staffs that he no longer holds anything.</td>
+<td><div class="ms">2292/2305 ms</div>The Panther in the Jardin des Plantes, Paris: his gaze is so tired of the passing of the rods that he holds nothing.</td>
+<td class="verdict"></td></tr>
+<tr><td class="src"><div class="lbl">Heine, Die Harzreise — travel prose <span class="tag public-domain">public-domain</span></div>Das ist ja die alte Geschichte: erst glaubt man nicht, dann hofft man, und endlich hat man verloren.</td>
+<td><div class="ms">413/3 ms</div>This is the old story: first you don’t believe, then you hope, and finally you have lost.</td>
+<td><div class="ms">1718/1361 ms</div>That&#x27;s the old story. First you don&#x27;t believe, then you hope, and finally you lose.</td>
+<td class="verdict"></td></tr>
+<tr><td class="src"><div class="lbl">SYNTHETIC — technical instruction <span class="tag synthetic">synthetic</span></div>Nach der Installation muss der Schlüssel des Serversignaturzertifikats in das Verzeichnis /etc/xudanu/keys kopiert und die Zugriffsrechte auf 0600 gesetzt werden.</td>
+<td><div class="ms">430/3 ms</div>After installation, the key of the server signature certificate must be copied to the /etc/xudanu/keys directory and the access rights set to 0600.</td>
+<td><div class="ms">2112/2177 ms</div>After installation, the server signature certificate key must be copied to the /etc/xudanu/keys directory and the access rights must be set to 0600.</td>
+<td class="verdict"></td></tr>
+<tr><td class="src"><div class="lbl">SYNTHETIC — domain prose (federation) <span class="tag synthetic">synthetic</span></div>Ein Rund wird erst versiegelt, wenn der Leiter Stimmen von der Zwei-Drittel-Mehrheit der aktiven Mitglieder gesammelt hat; danach wird das Ergebnis an alle Replikate weitergeleitet.</td>
+<td><div class="ms">550/4 ms</div>A round is not sealed until the leader has collected votes from the two-thirds majority of active members; The result is then forwarded to all replicates.</td>
+<td><div class="ms">2315/2375 ms</div>A round is not sealed until the leader has collected a two-thirds majority of the votes of the active members, after which the result is forwarded to all replicates.</td>
+<td class="verdict"></td></tr>
+<tr><td class="src"><div class="lbl">SYNTHETIC — numbers + proper nouns <span class="tag synthetic">synthetic</span></div>Der Server srv-a hat seit dem 14. März 3.742 Anfragen von 18 verschiedenen Peers beantwortet, davon 112 mit Fehlercode 429.</td>
+<td><div class="ms">503/3 ms</div>The server srv-a has been running since 14. 3,742 requests answered by 18 different peers, 112 of them with error code 429.</td>
+<td><div class="ms">1818/2088 ms</div>Since 14 March, the server srv-a has responded to 3,742 requests from 18 different peers, 112 of which have an error code of 429.</td>
+<td class="verdict"></td></tr>
+<tr><td class="src"><div class="lbl">SYNTHETIC — long paragraph, ~80 words <span class="tag synthetic">synthetic</span></div>Die Geschichtsschreibung des neunzehnten Jahrhunderts hat lange geglaubt, dass der Fortschritt eine gerade Linie sei. Aber wer die Briefe der Beteiligten liest, bemerkt schnell, dass fast jede Entscheidung unter Zeitdruck getroffen wurde, dass die Akteure oft nicht wussten, welche Folgen ihre Handlungen haben würden, und dass der spätere Sieger meist nicht der war, der am besten geplant hatte, sondern der, der am schnellsten aus Fehlern lernte. So gesehen ist jede große Erfindung auch ein Bericht über das Scheitern der Alternativen.</td>
+<td><div class="ms">1223/4 ms</div>The historiography of the nineteenth century has long believed that progress is a straight line. But those who read the letters of the participants quickly realize that almost every decision was made under time pressure, that the actors often did not know what consequences their actions would have, and that the later winner was usually not the one who had planned best, but the one who learned the fastest from mistakes. In this sense, every great invention is also a report on the failure of alternatives.</td>
+<td><div class="ms">5221/5650 ms</div>Nineteenth-century historians have long believed that progress was a straight line. But if you read the letters of those involved, you quickly notice that almost every decision was made under time pressure, that the actors often didn&#x27;t know what the consequences of their actions would be, and that the subsequent winner was usually not the one who had the best plans, but the one who learned the fastest from mistakes.</td>
+<td class="verdict"></td></tr>
+</table>
+</div></body></html>

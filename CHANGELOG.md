@@ -6,10 +6,21 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
-## [Unreleased]
+## [v1.22.0] — 2026-11-12
 
 ### Registered
 - **IANA provisional registration of the `xudanu` URI scheme** completed 2026-11-09 (IANA ticket #1496237). The registry entry is live at <https://www.iana.org/assignments/uri-schemes/prov/xudanu> and points at the shipped specification (<https://dgjones.info/xudanu/uri-scheme.html>). The scheme was already emitted and parsed across the MCP surface and the CLI (`xudanu://work/{id}[?rev=N][#span=s,e]`); the registration makes the name official and citable.
+
+### Fixed
+- **Classic client now performs the CSRF handshake.** The classic reader opened its WebSocket bare, so any server started with `--csrf-token` silently 403'd the upgrade — classic showed only "websocket connect failed". Since the overlay ribbon's click-through lands on classic, the entire FR-79 production flow dead-ended at connect on CSRF-enabled servers. Classic now fetches `/csrf-token` first and appends the token, mirroring the main app's `crdt_sync.ts`. Found by the FR-79 Stage 2 manual walkthrough (a real Chrome, a real click), not by any harness.
+- **`deploy.sh` now refreshes the static dist.** The systemd unit serves `--static-dir dist` from the host, but the deploy script only swapped the binary — the frontend tree never updated. Production `/classic/index.html` was an empty file and `/` served a pre-classic-first workspace. The dist is now extracted from the same build image as the binary, swapped with a timestamped backup.
+
+### Added
+- **Web overlay production flow complete (FR-79 Stage 2).** Extension manifest gains icons (16/32/48/128) and `homepage_url`; the options page's Enable runs `permissions.request` inside the click handler (an MV3 user gesture does not survive the `sendMessage` hop to the service worker) with a `permissions.contains` guard on the worker side; store listing and per-permission audit shipped as `STORE.md` (privacy statement verified against the handler: overlay url + page_text are transient, in-memory only, never persisted or logged); 12/12 extension harness including the options flow; full E2E manual walkthrough passed in a real browser — page → ribbon → classic → connect → far work displays.
+
+### Internal
+- FR-167 tumbler residency design notes (docs only).
+- Attribution epoch test deflake (test-only).
 
 ## [v1.21.0] — 2026-10-30
 
