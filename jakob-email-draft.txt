@@ -53,11 +53,10 @@ Project Xanadu, which we say up front)
 ---
 
 NOTES (not part of the email):
-- SEND GATE: xudanu.com must be REDEPLOYED from current main first
-  (merge #254, run deploy.sh). Verified 2026-11-11: production /
-  serves the workspace not classic, /classic/ is an empty file, and
-  the tokenless WS gets 403 (the CSRF bug #254 fixes). Jakob is the
-  one reader for whom the landing must be the '72 posture, working.
+- SEND GATE CLEARED 2026-11-12: #254 merged, v1.22.0 released +
+  deployed, /classic/ populated with the fixed bundle, / redirects
+  to classic (307), WS handshake verified 101. All three links
+  deliver. Ready to send.
 - Optional one-liner if the store submission has landed before sending:
   "A browser extension also now renders a document's marks on ordinary web
   pages." Insert after link 2.
