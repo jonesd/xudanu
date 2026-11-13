@@ -2,13 +2,22 @@
 # xudanu server image — multi-stage: frontend (vite) + server (rust) + lean runtime.
 # Build context must be the repo root (so web/app and original-code are available).
 
-# ── Stage 1: React frontend ────────────────────────────────────────────────
+# ── Stage 1: React frontend + classic reader ──────────────────────────────
 FROM node:22-bookworm-slim AS frontend
 WORKDIR /app
 COPY web/app/package*.json ./
 RUN npm ci
 COPY web/app/ ./
 RUN npm run build
+# Classic reader: built separately, merged into the app dist AFTER the
+# app build (vite empties dist/ on build, so classic must come last).
+# Mirrors scripts/pre-push.sh's rsync; without this the image serves no
+# /classic/ and the classic-first landing dead-ends (found 2026-11-12:
+# production /classic/index.html was an empty file for this reason).
+COPY web/classic/package*.json ./classic-src/
+RUN cd classic-src && npm ci
+COPY web/classic/ ./classic-src/
+RUN cd classic-src && npm run build && cp -r dist /app/dist/classic
 
 # ── Stage 2: Rust server binary ────────────────────────────────────────────
 FROM rust:slim AS server
