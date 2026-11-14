@@ -1142,11 +1142,17 @@ function wireMainWorkLinks(): void {
   });
 }
 
+/** Which column an element lives in. Marks in pane C used to be
+ *  misread as column A, silently killing every third-column click. */
+function colOf(el: Element | null): Col {
+  const host = el?.closest("#pane-a, #pane-b, #pane-c");
+  return (host ? host.id.replace("pane-", "") : "a") as Col;
+}
+
 function wireMarks(): void {
   document.querySelectorAll<HTMLElement>("mark[data-link]").forEach((m) => {
     m.onclick = () => {
-      const from = m.closest("#pane-b") ? "b" : "a";
-      void follow(Number(m.dataset.link), from);
+      void follow(Number(m.dataset.link), colOf(m));
     };
   });
 }
@@ -1155,8 +1161,7 @@ function wireConns(): void {
   document.querySelectorAll<HTMLAnchorElement>("a.conn").forEach((a) => {
     a.onclick = (ev) => {
       ev.preventDefault();
-      const from = a.closest("#pane-b") ? "b" : "a";
-      void follow(Number(a.dataset.link), from);
+      void follow(Number(a.dataset.link), colOf(a));
     };
   });
 }
@@ -1164,19 +1169,29 @@ function wireConns(): void {
 async function follow(linkId: number, from: Col = "a"): Promise<void> {
   if (!client) return;
   const src = paneAt(from);
-  if (!src) return;
+  if (!src) { setStatus("no work in this column"); return; }
   const l = src.links.find((x) => x.link_id === linkId);
-  if (!l) return;
+  if (!l) { setStatus("connection not found in this work"); return; }
   const far = farId(l, src.workId);
-  if (far === null) return;
+  if (far === null) { setStatus("this connection has no far end"); return; }
   activeLink = l;
   // The reading stream: following a connection appends to the next
   // column's stack — nothing is replaced, the trail grows.
-  const p = await fetchPane(client, far);
-  if (from === "a") appendToStack("b", p);
-  else if (from === "b") appendToStack("c", p);
-  else appendToStack("a", p);
+  const target: Col = from === "a" ? "b" : from === "b" ? "c" : "a";
+  setStatus("opening…");
+  let p: Pane;
+  try {
+    p = await fetchPane(client, far);
+  } catch (e) {
+    setStatus("could not open the far end: " + String(e));
+    return;
+  }
+  const already = stackAt(target).some((w) => w.workId === far);
+  appendToStack(target, p);
   render();
+  setStatus(firstLine(p.text, far) + (already
+    ? " — already open in column " + target.toUpperCase()
+    : " — column " + target.toUpperCase()));
 }
 
 function wireBeams(): void {
