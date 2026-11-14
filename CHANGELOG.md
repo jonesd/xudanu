@@ -6,6 +6,11 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.22.2] — 2026-11-14
+
+### Fixed
+- **Classic: dead clicks on connections.** Three silent failure modes in the panes reader, all in `follow()`: (1) every underline in **column C** was mis-wired as column A (`closest("#pane-b") ? "b" : "a"` never yields C), so after two reading-stream hops all third-column underlines silently no-opped — now resolved via a `colOf()` that matches the actual pane container; (2) re-following a connection whose far work was already open re-activated it with zero visual change — now reported ("already open in column B"); (3) every early return and fetch failure was swallowed (`void follow(...)` eating throws) — now each path sets a status line, including fetch errors. Found from a live reader report on production (Room 12 / Lobby); server-side fetch path verified healthy (work_get_edition ~130ms) before the client was suspected.
+
 ## [v1.22.1] — 2026-11-13
 
 ### Fixed

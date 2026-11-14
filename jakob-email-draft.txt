@@ -18,7 +18,9 @@ Your earlier judgment — that our interface was more complicated than the
 
   1. A design probe: seven renderings of the parallel-document reading
      posture, from the 1972 figure at honest density to the density where
-     it visibly fails, to a ZigZag-style dimension rail. Single page, no
+     it visibly fails, to a ZigZag-style dimension rail. It runs on the
+     Declaration of Independence beside the Virginia Declaration of
+     Rights, so every beam is a real textual parallel. Single page, no
      install:
      https://dgjones.info/xudanu/transpointing-variants.html
 
@@ -32,8 +34,12 @@ The live system, if you want to poke it (Gallery of Unusual Connections,
 live transclusions, two-way links that survive edits):
 https://xudanu.com
 
-If you have ten minutes for the probe, three questions:
+If you have ten minutes for the probe, four questions:
 
+  - The two-column figure — Declaration beside Virginia Declaration — is
+    deliberately not a reconstruction of the '72 interface. With your
+    knowledge of the original and your taste in interfaces: what does it
+    get right, and what does it miss?
   - Which posture reads to you as "the thing we were promised"?
   - At what connection density does the parallel-lines view stop working,
     in your judgment?
