@@ -55,15 +55,17 @@ export class WindowsView {
   private sats: SatWin[] = [];
   private cache = new Map<number, WinData>();
   private typeNames = new Map<number, string>();
+  private canRevise: boolean;
   private zTop = 10;
   private editText: string | null = null;
   private cleanupFns: (() => void)[] = [];
 
-  constructor(root: HTMLElement, client: ClassicClient, onPromote: (workId: number) => void, revise: ReviseHooks) {
+  constructor(root: HTMLElement, client: ClassicClient, onPromote: (workId: number) => void, revise: ReviseHooks, canRevise = true) {
     this.root = root;
     this.client = client;
     this.onPromote = onPromote;
     this.revise = revise;
+    this.canRevise = canRevise;
   }
 
   destroy(): void {
@@ -275,7 +277,7 @@ export class WindowsView {
     this.root.innerHTML = `
       <svg class="beamfield" id="beamfield"></svg>
       <section class="win center" id="win-center" style="left:24px;top:16px;width:${centerW}px;height:calc(100% - 32px)">
-        <div class="win-head" data-drag="center"><h2>${esc(this.center.title)}</h2>${this.editText === null ? `<span class="win-tools"><button class="tool" id="revise-start" title="revise this work">✎</button></span>` : ""}</div>
+        <div class="win-head" data-drag="center"><h2>${esc(this.center.title)}</h2>${this.editText === null && this.canRevise ? `<span class="win-tools"><button class="tool" id="revise-start" title="revise this work">✎</button></span>` : ""}</div>
         ${this.editText !== null
           ? `<textarea id="revise-text" class="revise" spellcheck="false">${esc(this.editText)}</textarea>
              <div class="revise-bar"><button id="revise-save" class="revise-btn">save</button><button id="revise-cancel" class="revise-btn ghosted">cancel</button><span class="quiet small">editing — ⌘↵ saves · esc cancels</span></div>`

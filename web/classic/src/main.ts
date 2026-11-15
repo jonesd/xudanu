@@ -12,6 +12,13 @@ import { WindowsView } from "./windows";
 
 const app = document.getElementById("app")!;
 let client: ClassicClient | null = null;
+// Server edit policy from /health, fetched before the first render.
+// null = unknown (older server, or /health unavailable) — assume open.
+// "owner-only": anonymous sessions may read and connect, but not write.
+// "frozen": museum mode — no mutations at all, connecting included.
+let editPolicy: string | null = null;
+const canWrite = (): boolean => editPolicy !== "owner-only" && editPolicy !== "frozen";
+const canConnect = (): boolean => editPolicy !== "frozen";
 let mode: "panes" | "windows" = localStorage.getItem("xudanu_classic_mode") === "windows" ? "windows" : "panes";
 let skin: "ink" | "paper" = localStorage.getItem("xudanu_classic_skin") === "paper" ? "paper" : "ink";
 let winView: WindowsView | null = null;
@@ -330,7 +337,7 @@ function paneHtml(tag: Col): string {
 
   // column-level tools (only on the column header)
   const colTools: string[] = [];
-  if (tag === "a" && !isEditingHere) {
+  if (tag === "a" && !isEditingHere && canConnect()) {
     colTools.push(`<button class="close-pane" id="link-start" data-link-pane="a" title="connect this selection">⧉</button>`);
   }
 
@@ -356,8 +363,8 @@ function paneHtml(tag: Col): string {
       if (i > 0) wTools.push(`<button class="close-pane" data-reorder-pane="${tag}" data-reorder-idx="${i}" data-reorder-dir="up" title="move up">↑</button>`);
       if (i < stack.length - 1) wTools.push(`<button class="close-pane" data-reorder-pane="${tag}" data-reorder-idx="${i}" data-reorder-dir="down" title="move down">↓</button>`);
       wTools.push(`<button class="close-pane" data-similar-pane="${tag}" data-similar-idx="${i}" title="find more like this passage">⇄</button>`);
-      wTools.push(`<button class="close-pane" data-link-pane="${tag}" data-work-idx="${i}" title="connect this selection">⧉</button>`);
-      wTools.push(`<button class="close-pane" data-revise-pane="${tag}" data-revise-idx="${i}" title="revise this work">✎</button>`);
+      if (canConnect()) wTools.push(`<button class="close-pane" data-link-pane="${tag}" data-work-idx="${i}" title="connect this selection">⧉</button>`);
+      if (canWrite()) wTools.push(`<button class="close-pane" data-revise-pane="${tag}" data-revise-idx="${i}" title="revise this work">✎</button>`);
       wTools.push(`<button class="close-pane" data-close-pane="${tag}" data-close-idx="${i}" title="remove from stack">×</button>`);
     }
     const body = isEditingHere && isActive
@@ -474,6 +481,10 @@ async function gatherDraftSelection(linkId: number, endName: string): Promise<vo
 }
 
 function beginLinkFromSelection(from: Col = "a"): void {
+  if (!canConnect()) {
+    setStatus("this server is read-only");
+    return;
+  }
   const stack = stackAt(from);
   if (stack.length === 0) return;
 
@@ -651,8 +662,9 @@ function render(): void {
           <button id="hist-fwd" title="forward (alt-→)">›</button>
           <button id="mode-toggle" title="switch posture">${mode === "windows" ? "⧉ windows" : "▤ panes"}</button>
           <button id="skin-toggle" title="switch skin — ink or the mockup paper look">${skin === "paper" ? "paper" : "ink"}</button>
-          <button id="new-work" title="create a new work in the docuverse">+</button>
+          ${canWrite() ? `<button id="new-work" title="create a new work in the docuverse">+</button>` : ""}
         </span>
+        ${!canWrite() ? `<span class="quiet small" title="${canConnect() ? "reading and connecting are open — writing is signed-in in the workspace" : "this server is read-only"}">${canConnect() ? "◦ reading room" : "◦ read-only"}</span>` : ""}
         ${paneAt("a") ? `<a class="head-link" href="/workspace?work=0x${paneAt("a")!.workId.toString(16)}" title="open this work in the workspace">workspace ↗</a>` : ""}
         <span id="head-status" class="quiet small"></span>
         <span class="quiet">${esc(client.serverName)} · v${esc(client.serverVersion || "?")} · api ${client.apiVersion}</span>
@@ -692,7 +704,8 @@ function render(): void {
     localStorage.setItem("xudanu_classic_skin", skin);
     render();
   };
-  document.getElementById("new-work")!.onclick = () => void createAndEdit();
+  const newWorkBtn = document.getElementById("new-work");
+  if (newWorkBtn) newWorkBtn.onclick = () => void createAndEdit();
   if (windowsMode) {
     const stage = document.getElementById("stage")!;
     winView = new WindowsView(
@@ -700,6 +713,7 @@ function render(): void {
       client,
       (workId) => void openWork(workId, "A"),
       { start: () => void startEditing(), save: () => void commitEditing(), cancel: () => void cancelEditing() },
+      canWrite(),
     );
     void winView.setCenter(paneAt("a")!.workId);
   } else {
@@ -741,6 +755,10 @@ function wireHistoryButtons(): void {
 
 async function createAndEdit(): Promise<void> {
   if (!client) return;
+  if (!canWrite()) {
+    setStatus(canConnect() ? "writing is signed-in — open the workspace ↗" : "this server is read-only");
+    return;
+  }
   if (mode !== "panes") {
     mode = "panes";
     localStorage.setItem("xudanu_classic_mode", mode);
@@ -763,6 +781,10 @@ async function createAndEdit(): Promise<void> {
 
 async function startEditing(pane: Col = "a"): Promise<void> {
   if (!client || editing) return;
+  if (!canWrite()) {
+    setStatus(canConnect() ? "writing is signed-in — open the workspace ↗" : "this server is read-only");
+    return;
+  }
   if (mode === "windows" && pane !== "a") return;
   const target = paneAt(pane);
   if (!target) return;
@@ -1014,7 +1036,20 @@ async function connect(): Promise<void> {
     editing = null;
   }
   draft = null;
+  // Learn the edit policy before the first render so closed affordances
+  // never flash. Anonymous sessions can never write under owner-only.
+  try {
+    const h = await fetch("/health");
+    editPolicy = (await h.json())?.edit_policy ?? null;
+  } catch {
+    editPolicy = null;
+  }
   render();
+  if (!canWrite()) {
+    setStatus(canConnect()
+      ? "reading room — connecting is open; writing is signed-in (workspace ↗)"
+      : "reading room — this server is read-only");
+  }
   const wm = /^#w(\d+)$/.exec(location.hash);
   if (wm) void openWork(Number(wm[1]), "A", false);
 }
