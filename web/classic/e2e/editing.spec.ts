@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { openHash, connect, makeWorks } from "./helpers";
+import { openHash, connect, makeWorks, activeTitle } from "./helpers";
 
 test.describe("classic editing through the CRDT delta path", () => {
   test("a save revises the text and the underline follows its words", async ({ page }) => {
@@ -12,7 +12,7 @@ test.describe("classic editing through the CRDT delta path", () => {
     );
 
     await openHash(page, a);
-    await expect(page.locator("#pane-a h2")).toContainText("XXXX MOVEME");
+    await expect(activeTitle(page, "a")).toContainText("XXXX MOVEME");
     await expect(page.locator("#scroll-a mark[data-link]")).toHaveText("MOVEME");
 
     // Edit: insert text BEFORE the linked passage.

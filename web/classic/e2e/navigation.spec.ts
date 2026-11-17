@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { connect } from "./helpers";
+import { connect, activeTitle } from "./helpers";
 
 /** Click a trail stop and wait for the work to land — retries once
  *  if the trail list re-rendered mid-click (async trails fetch can
@@ -14,7 +14,7 @@ async function openStop(page: Page, n: number): Promise<void> {
     }
     await page.locator(".trail-stops a").nth(n).click();
     try {
-      await expect(page.locator("#pane-a h2")).not.toBeEmpty({ timeout: 4000 });
+      await expect(activeTitle(page, "a")).not.toBeEmpty({ timeout: 4000 });
       return;
     } catch {
       /* retry */
@@ -36,7 +36,7 @@ test.describe("classic navigation", () => {
     // Open the first stop: it lands in the left column, hash deep-links it.
     await openStop(page, 0);
     // The pane heading is the work's first line (not its title).
-    await expect(page.locator("#pane-a h2")).not.toBeEmpty();
+    await expect(activeTitle(page, "a")).not.toBeEmpty();
     await expect(page).toHaveURL(/#w\d+$/);
 
     // The lesson's demonstration underline opens its far end in the
@@ -44,7 +44,7 @@ test.describe("classic navigation", () => {
     const mark = page.locator("#scroll-a mark[data-link]").first();
     await expect(mark).toBeVisible();
     await mark.click();
-    await expect(page.locator("#pane-b:not(.ghost) h2")).toBeVisible();
+    await expect(page.locator("#pane-b:not(.ghost) .stack-work-title").first()).toBeVisible();
 
     // History: the back button leaves the walk and returns to the
     // trail view (following a connection opens pane B without pushing
@@ -61,7 +61,7 @@ test.describe("classic navigation", () => {
     const stops = page.locator(".trail-stops a");
     await expect(stops.first()).toBeVisible();
     await openStop(page, 0);
-    const heading = page.locator("#pane-a h2");
+    const heading = activeTitle(page, "a");
     await expect(heading).not.toBeEmpty();
     const openedHeading = ((await heading.textContent()) ?? "").trim().slice(0, 20);
 
@@ -76,6 +76,6 @@ test.describe("classic navigation", () => {
 
     // and back
     await page.locator("#mode-toggle").click();
-    await expect(page.locator("#pane-a h2")).toContainText(openedHeading);
+    await expect(activeTitle(page, "a")).toContainText(openedHeading);
   });
 });

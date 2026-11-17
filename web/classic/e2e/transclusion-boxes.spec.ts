@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { openHash, connect } from "./helpers";
+import { openHash, connect, activeTitle } from "./helpers";
 
 test.describe("transclusion identity boxes", () => {
   test("a placed transclusion displays resolved content in a Nelson box with its source tab", async ({ page }) => {
@@ -34,7 +34,7 @@ test.describe("transclusion identity boxes", () => {
     });
 
     await openHash(page, ids.holder);
-    await expect(page.locator("#pane-a h2")).toContainText("Holder opening");
+    await expect(activeTitle(page, "a")).toContainText("Holder opening");
 
     // The reading surface shows the RESOLVED text: the live window's
     // content appears inline, not a placeholder.

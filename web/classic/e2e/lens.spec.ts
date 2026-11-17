@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { connect, makeWorks } from "./helpers";
+import { connect, makeWorks, activeTitle } from "./helpers";
 
 test.describe("the lens — per-span provenance on hover", () => {
   test("hovering a passage reveals the author in the margin", async ({ page }) => {
@@ -12,7 +12,7 @@ test.describe("the lens — per-span provenance on hover", () => {
     );
 
     await page.goto(`/#w${a}`);
-    await expect(page.locator("#pane-a h2")).toContainText("LENS TEST");
+    await expect(activeTitle(page, "a")).toContainText("LENS TEST");
 
     // hover the first line of text — the lens should appear
     const pre = page.locator("#scroll-a pre");

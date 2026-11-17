@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { openHash, connect, makeWorks } from "./helpers";
+import { openHash, connect, makeWorks, activeTitle } from "./helpers";
 
 test.describe("Pyxi panes — every shared connection drawn at once", () => {
   test("all links between the two open works draw beams, passage to passage", async ({ page }) => {
@@ -39,7 +39,7 @@ test.describe("Pyxi panes — every shared connection drawn at once", () => {
     await openHash(page, a);
     // open the far end by clicking the first underline
     await page.locator("#scroll-a mark[data-link]").first().click();
-    await expect(page.locator("#pane-b:not(.ghost) h2")).toContainText("far end");
+    await expect(page.locator("#pane-b:not(.ghost) .stack-work-title").first()).toContainText("far end");
 
     // Three shared links → three beams, each anchored to its own pair
     // of passages (svg paths under #beams).

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { openHash, connect, makeWorks } from "./helpers";
+import { openHash, connect, makeWorks, activeTitle } from "./helpers";
 
 test.describe("many columns — the 1972 parallel-pages posture", () => {
   test("following connections grows a third page with beams criss-crossing", async ({ page }) => {
@@ -38,9 +38,9 @@ test.describe("many columns — the 1972 parallel-pages posture", () => {
 
     // open page one; its underline opens page two
     await openHash(page, a);
-    await expect(page.locator("#pane-a h2")).toContainText("PAGE ONE");
+    await expect(activeTitle(page, "a")).toContainText("PAGE ONE");
     await page.locator("#scroll-a mark").first().click();
-    await expect(page.locator("#pane-b:not(.ghost) h2")).toContainText("PAGE TWO");
+    await expect(page.locator("#pane-b:not(.ghost) .stack-work-title").first()).toContainText("PAGE TWO");
     await expect(page.locator("#pane-c.ghost")).toBeVisible();
 
     // keyboard focus cycles a → b
@@ -50,7 +50,7 @@ test.describe("many columns — the 1972 parallel-pages posture", () => {
     // closing a column removes only it
     await page.locator('[data-close-pane="b"]').click();
     await expect(page.locator("#pane-b.ghost")).toBeVisible();
-    await expect(page.locator("#pane-a h2")).toContainText("PAGE ONE");
+    await expect(activeTitle(page, "a")).toContainText("PAGE ONE");
     void c;
   });
 });

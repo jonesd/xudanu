@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { openHash, connect, makeWorks } from "./helpers";
+import { openHash, connect, makeWorks, activeTitle } from "./helpers";
 
 test.describe("classic as a complete authoring loop on the shared model", () => {
   test("create → write → connect, all persisted server-side", async ({ page }) => {
@@ -13,21 +13,21 @@ test.describe("classic as a complete authoring loop on the shared model", () => 
     await expect(page.locator("#head-status")).toContainText("saved");
     await expect(page.locator("#scroll-a")).toContainText("AUTHORING LOOP A.");
     // Title derived from the first line.
-    await expect(page.locator("#pane-a h2")).toContainText("AUTHORING LOOP A.");
+    await expect(activeTitle(page, "a")).toContainText("AUTHORING LOOP A.");
 
     // Create a second work the same way.
     await page.locator("#new-work").click();
     await expect(page.locator("#revise-text")).toBeVisible();
     await page.locator("#revise-text").fill("AUTHORING LOOP B.\nThe second work, the far end.");
     await page.locator("#revise-save").click();
-    await expect(page.locator("#pane-a h2")).toContainText("AUTHORING LOOP B.");
+    await expect(activeTitle(page, "a")).toContainText("AUTHORING LOOP B.");
 
     // Open A again via search and link A → B through the UI.
     await page.locator("#q").fill("AUTHORING LOOP A");
     await page.keyboard.press("Enter");
     await expect(page.locator("#results a").first()).toBeVisible();
     await page.locator("#results a").first().click();
-    await expect(page.locator("#pane-a h2")).toContainText("AUTHORING LOOP A.");
+    await expect(activeTitle(page, "a")).toContainText("AUTHORING LOOP A.");
 
     // Select a passage in A and start the connection.
     await page.evaluate(() => {
@@ -42,7 +42,7 @@ test.describe("classic as a complete authoring loop on the shared model", () => 
       s?.removeAllRanges();
       s?.addRange(r);
     });
-    await page.locator("#link-start").click();
+    await page.locator('[data-link-pane="a"][data-work-idx="0"]').click();
     await expect(page.locator("#head-status")).toContainText("origin held");
 
     // Search for B and pick it as the far end.
@@ -57,7 +57,7 @@ test.describe("classic as a complete authoring loop on the shared model", () => 
     await expect(page.locator("#head-status")).toContainText("connection made");
 
     // B opened beside A with a beam between the passages.
-    await expect(page.locator("#pane-b:not(.ghost) h2")).toContainText("AUTHORING LOOP B.");
+    await expect(page.locator("#pane-b:not(.ghost) .stack-work-title").first()).toContainText("AUTHORING LOOP B.");
     await expect(page.locator("#scroll-a mark[data-link]")).toContainText("AUTHORING LOOP A");
     await expect(page.locator("#beams path:not(.beam-hit)")).toHaveCount(1);
   });
@@ -89,7 +89,7 @@ test.describe("classic as a complete authoring loop on the shared model", () => 
     }) };
 
     await openHash(page, a);
-    await expect(page.locator("#pane-a h2")).toContainText("SWITCH TEST");
+    await expect(activeTitle(page, "a")).toContainText("SWITCH TEST");
 
     // workspace ↗ carries the work into the modern UI.
     const href = await page.locator(".head-link").getAttribute("href");
@@ -115,7 +115,7 @@ test.describe("gather in classic", () => {
     );
 
     await openHash(page, a);
-    await expect(page.locator("#pane-a h2")).toContainText("GATHER SOURCE");
+    await expect(activeTitle(page, "a")).toContainText("GATHER SOURCE");
 
     // select the SECOND passage (offsets walk the tree — the first
     // passage is already a <mark>, so text nodes are split)
@@ -141,7 +141,7 @@ test.describe("gather in classic", () => {
       s?.removeAllRanges();
       s?.addRange(r);
     }, [s2, s2 + 16]);
-    await page.locator("#link-start").click();
+    await page.locator('[data-link-pane="a"][data-work-idx="0"]').click();
     await expect(page.locator("#head-status")).toContainText("origin held");
 
     // the gather panel offers the existing end

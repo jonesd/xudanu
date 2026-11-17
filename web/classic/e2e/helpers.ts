@@ -74,3 +74,12 @@ export async function openHash(page: import("@playwright/test").Page, workId: nu
     location.hash = `#w${id}`;
   }, workId);
 }
+
+/** Title of the active (top-of-stack) work in a column. Panes hold a
+ *  stack of works; index 0 is the active one. Always resolve through
+ *  this — pane titles are h3.stack-work-title since the stack-works
+ *  redesign, and scoping to .first() keeps strict mode happy when the
+ *  stack holds dimmed earlier works below the active one. */
+export function activeTitle(page: import("@playwright/test").Page, tag: "a" | "b" | "c") {
+  return page.locator(`#pane-${tag} .stack-work-title`).first();
+}
