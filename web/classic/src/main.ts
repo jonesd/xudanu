@@ -387,6 +387,8 @@ function paneHtml(tag: Col): string {
   const focused = !isEditingHere && focusPane === tag ? " focused" : "";
   return `<section class="pane${focused}" id="pane-${tag}">
     <div class="stack-count" id="stack-count-${tag}">${stack.length > 1 ? `${stack.length} works` : ""}</div>
+    <div class="searchhl-layer" id="searchhl-${tag}"></div>
+    <div class="tboxes" id="tboxes-${tag}"></div>
     <div class="pane-scroll" id="scroll-${tag}">
       ${worksHtml}
     </div>
@@ -619,12 +621,19 @@ function cancelDraft(): void {
   setStatus("");
 }
 
+function gateSubtitle(): string {
+  if (editPolicy === "owner-only")
+    return "Reading and connecting are open to every visitor; writing signs in through the workspace.";
+  if (editPolicy === "frozen") return "This server is running read-only.";
+  return "Read, connect, and write — an open posture speaking the wire contract, api_version 1.";
+}
+
 function render(): void {
   document.body.classList.toggle("paper", skin === "paper");
   if (!client) {
     app.innerHTML = `<div class="gate">
       <h1>Xudanu <span>classic</span></h1>
-      <p class="quiet">A reading posture for the docuverse.<br>Read-only; speaks the wire contract, api_version 1.</p>
+      <p class="quiet">A reading posture for the docuverse.<br>${gateSubtitle()}</p>
       <button id="connect">connect</button>
       <p id="gate-status" class="quiet"></p>
     </div>`;
@@ -1722,3 +1731,12 @@ window.addEventListener("keydown", (e) => {
 });
 
 render();
+// Learn the edit policy at boot too, so the gate states the server's
+// real posture before the visitor connects (connect() refetches).
+fetch("/health")
+  .then((h) => h.json())
+  .then((j) => {
+    editPolicy = j?.edit_policy ?? null;
+    if (!client) render();
+  })
+  .catch(() => {});
