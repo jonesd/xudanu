@@ -30,7 +30,12 @@ fn find_and_span(text: &str, marker: &str) -> (usize, usize) {
             &marker[..marker.len().min(40)]
         )
     });
-    (i, i + marker.len())
+    // Character positions, not byte offsets: the wire span space is
+    // characters (clients and the resolver slice by them), so a
+    // marker after any multibyte em-dash or section sign must not
+    // drift.
+    let s = text[..i].chars().count();
+    (s, s + marker.chars().count())
 }
 
 pub fn seed_compound_demo(server: &mut Server) {

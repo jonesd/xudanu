@@ -21,7 +21,11 @@ fn span_of(text: &str, marker: &str) -> (i64, i64) {
     let i = text
         .find(marker)
         .unwrap_or_else(|| panic!("seed marker not found: {}", &marker[..marker.len().min(24)]));
-    (i as i64, (i + marker.len()) as i64)
+    // Character positions, not byte offsets: the wire span space is
+    // characters (clients slice by them), so a marker after any
+    // multibyte em-dash or middot must not drift.
+    let s = text[..i].chars().count() as i64;
+    (s, s + marker.chars().count() as i64)
 }
 
 fn ref_span(work: u64, excerpt: &str, (s, e): (i64, i64)) -> HyperRef {
@@ -584,11 +588,14 @@ pub fn seed_gallery(server: &mut Server) {
         "a literature of connection, and the connections will be visible, traversable, and permanent",
     );
     let win_reb = span_of(ANNEX_REBUTTAL, "the pattern is the window, not the world");
-    let pos1 = R9_TEXT
+    let pos1 = R9_TEXT[..R9_TEXT
         .find("not quotations and not links")
-        .expect("gallery: r9 pos1") as i64;
+        .expect("gallery: r9 pos1")]
+        .chars()
+        .count() as i64;
     let pos2_tail = "if its author revises, this window revises with it";
-    let pos2 = (R9_TEXT.find(pos2_tail).expect("gallery: r9 pos2") + pos2_tail.len()) as i64;
+    let pos2_end = R9_TEXT.find(pos2_tail).expect("gallery: r9 pos2") + pos2_tail.len();
+    let pos2 = R9_TEXT[..pos2_end].chars().count() as i64;
     server
         .element_insert(
             sid,
@@ -746,6 +753,26 @@ pub fn seed_gallery(server: &mut Server) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn span_of_counts_characters_not_bytes() {
+        // The lobby text pattern: multibyte punctuation before the
+        // marker. Byte offsets drift by the byte-vs-char difference;
+        // the wire span space is characters.
+        let text = "structure — nothing · here\nRoom 1: The Spectrum Sentence follows.";
+        let (s, e) = span_of(text, "Room 1: The Spectrum Sentence");
+        // Extract in characters: s/e are char indices (the wire space),
+        // so byte-slicing here would itself be the bug under test.
+        let sel: String = text
+            .chars()
+            .skip(s as usize)
+            .take((e - s) as usize)
+            .collect();
+        assert_eq!(sel, "Room 1: The Spectrum Sentence");
+        // ASCII text: unchanged behavior.
+        let (s2, e2) = span_of("plain ascii only", "ascii");
+        assert_eq!(&"plain ascii only"[s2 as usize..e2 as usize], "ascii");
+    }
 
     #[test]
     fn seed_gallery_makes_reuse_graph_answer() {

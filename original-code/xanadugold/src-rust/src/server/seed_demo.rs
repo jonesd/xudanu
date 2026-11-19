@@ -18,7 +18,11 @@ fn span_of(text: &str, marker: &str) -> (i64, i64) {
     let i = text
         .find(marker)
         .unwrap_or_else(|| panic!("seed marker not found: {}", &marker[..marker.len().min(24)]));
-    (i as i64, (i + marker.len()) as i64)
+    // Character positions, not byte offsets: the wire span space is
+    // characters (clients slice by them), so a marker after any
+    // multibyte em-dash or middot must not drift.
+    let s = text[..i].chars().count() as i64;
+    (s, s + marker.chars().count() as i64)
 }
 
 fn ref_at(work: u64, text: &str, marker: &str, excerpt: &str) -> HyperRef {
