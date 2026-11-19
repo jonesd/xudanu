@@ -110,7 +110,10 @@ article h2 { font-weight: 400; font-size: 22px; margin: 0 0 20px; }
 .pane-head h2 { font-size: 16.5px; font-weight: 400; margin: 0; }
 .close-pane { background: none; border: none; color: var(--ink-dim); font-size: 20px; cursor: pointer; }
 .close-pane:hover { color: var(--ink); }
-.pane-scroll { overflow-y: auto; padding: 20px 24px; flex: 1; }
+.pane-scroll { overflow-y: auto; padding: 20px 24px; flex: 1; scrollbar-width: thin; scrollbar-color: var(--rule) transparent; }
+.pane-scroll::-webkit-scrollbar { width: 10px; }
+.pane-scroll::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 5px; border: 3px solid transparent; background-clip: content-box; }
+.pane-scroll::-webkit-scrollbar-track { background: transparent; }
 .pane-conns { border-top: 1px solid var(--rule); padding: 12px 20px; max-height: 160px; overflow-y: auto; }
 a.conn { display: block; padding: 4px 0; margin: 4px 0; text-decoration: none; color: var(--ink); cursor: pointer; font-size: 15px; }
 a.conn:hover { color: var(--accent); }
@@ -169,9 +172,11 @@ mark { color: inherit; border-radius: 2px; padding: 0 1px; }
   position: absolute; top: -16px; left: -1px; font-size: 11px; line-height: 14px;
   color: var(--accent); background: var(--paper-inset); border: 1px solid var(--accent);
   border-bottom: none; border-radius: 2px 2px 0 0; padding: 0 5px;
-  pointer-events: auto; white-space: nowrap; max-width: 240px; overflow: hidden;
-  text-overflow: ellipsis; cursor: help;
+  pointer-events: auto; cursor: pointer; white-space: nowrap; max-width: 240px;
+  overflow: hidden; text-overflow: ellipsis;
 }
+.tbox-tab:hover { background: var(--accent); color: var(--paper-inset); }
+body.paper .tbox-tab:hover { background: #1d1a15; color: #faf6ec; }
 body.paper .tbox { border-color: #1d1a15; background: rgba(29, 26, 21, 0.03); }
 body.paper .tbox-tab { color: #1d1a15; border-color: #1d1a15; background: #faf6ec; }
 

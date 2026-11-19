@@ -1486,7 +1486,7 @@ function drawTBoxes(tag: Col): void {
       for (const rect of range.getClientRects()) {
         const x = rect.left - layerR.left;
         const y = rect.top - layerR.top;
-        html += `<div class="tbox" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;width:${rect.width.toFixed(1)}px;height:${rect.height.toFixed(1)}px" title="same content — live window onto: ${esc(title)}"><span class="tbox-tab">↩ ${esc(title.slice(0, 24))}</span></div>`;
+        html += `<div class="tbox" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;width:${rect.width.toFixed(1)}px;height:${rect.height.toFixed(1)}px" title="same content — live window onto: ${esc(title)}"><span class="tbox-tab" data-src="${sp.source_work_id}">↩ ${esc(title.slice(0, 24))}</span></div>`;
       }
     }
   }
@@ -1728,6 +1728,15 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault();
     void startEditing(focusPane);
   }
+});
+
+// The identity tab is the window's other side: clicking it opens
+// the source work beside, so the reader can stand in both places.
+document.addEventListener("click", (e) => {
+  const tab = (e.target as HTMLElement | null)?.closest?.(".tbox-tab");
+  if (!(tab instanceof HTMLElement) || !client) return;
+  const src = Number(tab.dataset.src);
+  if (Number.isFinite(src)) void openBeside(src);
 });
 
 render();
