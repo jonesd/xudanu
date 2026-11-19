@@ -92,3 +92,5 @@ web/app/src/engine-wasm/
 
 # docker test bed secrets (admin passphrases) and local artifacts
 docker/.env
+# playwright run artifacts (classic e2e)
+web/classic/test-results/
