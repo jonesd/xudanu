@@ -1002,7 +1002,7 @@ function renderLibraryPanel(): void {
         chooseFarWork(wid, a.textContent?.trim() ?? `work ${wid}`);
         return;
       }
-      void openBeside(wid);
+      openBeside(wid).catch((e) => setStatus((e as Error).message));
     };
   });
 }
@@ -1088,7 +1088,7 @@ function wireSearch(): void {
             chooseFarWork(wid, a.textContent?.trim() ?? `work ${wid}`);
             return;
           }
-          void openBeside(wid);
+          openBeside(wid).catch((e) => setStatus((e as Error).message));
         };
       });
     } catch (e) {
@@ -1168,7 +1168,7 @@ document.addEventListener("click", (ev) => {
       chooseFarWork(wid, a.textContent?.trim() ?? `work ${wid}`);
       return;
     }
-    void openBeside(wid);
+    openBeside(wid).catch((e) => setStatus((e as Error).message));
   }
 });
 
@@ -1181,7 +1181,7 @@ function wireMainWorkLinks(): void {
         chooseFarWork(wid, a.textContent?.trim() ?? `work ${wid}`);
         return;
       }
-      void openBeside(wid);
+      openBeside(wid).catch((e) => setStatus((e as Error).message));
     };
   });
 }
@@ -1259,7 +1259,7 @@ function wireBeams(): void {
       const note = [paneAt('a'), paneAt('b'), paneAt('c')].flatMap((p) => (p ? p.links : [])).find((l) => l.link_id === noteId);
       inspectLink = null;
       if (note) {
-        void openWork(note.origin, "B");
+        openWork(note.origin, "B").catch((e) => setStatus((e as Error).message));
       }
     });
   });
@@ -1272,7 +1272,7 @@ function wireBeams(): void {
         else if (stackAt("c").length === 0) appendToStack("c", await fetchPane(client!, workId));
         else appendToStack("b", await fetchPane(client!, workId));
         render();
-      })();
+      })().catch((e) => setStatus((e as Error).message));
     });
   });
 }
@@ -1290,7 +1290,7 @@ function wireSimilar(): void {
     b.addEventListener("click", () => {
       const workId = Number(b.dataset.similarWork);
       similarResults = null;
-      void openBeside(workId);
+      openBeside(workId).catch((e) => setStatus((e as Error).message));
     });
   });
   document.getElementById("similar-close")?.addEventListener("click", () => {
@@ -1736,7 +1736,7 @@ document.addEventListener("click", (e) => {
   const tab = (e.target as HTMLElement | null)?.closest?.(".tbox-tab");
   if (!(tab instanceof HTMLElement) || !client) return;
   const src = Number(tab.dataset.src);
-  if (Number.isFinite(src)) void openBeside(src);
+  if (Number.isFinite(src)) openBeside(src).catch((e) => setStatus((e as Error).message));
 });
 
 render();
