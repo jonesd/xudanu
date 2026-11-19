@@ -44,6 +44,17 @@ pub fn seed_compound_demo(server: &mut Server) {
         tracing::warn!("[seed-compound-demo] public login refused \u{2014} skipping");
         return;
     }
+    // Seed with system authority: the seeder is boot-time server
+    // code, not a remote user — the edit policy must not gate it
+    // (owner-only servers refuse public work_create otherwise).
+    let sc = *server.system_clubs();
+    let mut clubs = std::collections::HashSet::new();
+    clubs.insert(sc.admin_club);
+    clubs.insert(sc.access_club);
+    clubs.insert(sc.public_club);
+    if let Some(sess) = server.sessions.get_mut(&sid) {
+        sess.set_key_master(crate::server::keymaster::KeyMaster::make_all(clubs));
+    }
 
     let marker = "The Connected Document";
     let already = server
@@ -95,5 +106,9 @@ fn make_work(server: &mut Server, sid: SessionId, text: &str, title: &str) -> u6
         .create_work(sid, Edition::from_text(text))
         .expect("demo: work_create");
     server.set_work_title(id, title.to_string());
+    // Publish: demo works are public reading material. Unpublished
+    // works (read_club None) fall through to edit permission on read
+    // checks and are denied to public readers under owner-only.
+    let _ = server.work_publish(sid, id);
     id
 }

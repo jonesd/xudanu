@@ -37,6 +37,12 @@ fn make_work(server: &mut Server, sid: SessionId, text: &str) -> u64 {
     let id = server
         .create_work(sid, Edition::from_text(text))
         .expect("demo: work_create");
+    // Publish: course works are public reading material. Without
+    // this, read_club stays None and the read check falls through to
+    // edit permission — under owner-only policy a public reader
+    // cannot open a lesson at all, while the published trail still
+    // lists every stop (clicks die as swallowed not-authorized).
+    let _ = server.work_publish(sid, id);
     // Showcase works are read-only: editing locked to the admin club
     // so the public course cannot be defaced. (Practice happens on
     // public-sandbox servers; production shows the course.)
@@ -320,6 +326,31 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn seeded_works_are_readable_by_public_under_owner_only() {
+        // The 2026-11-18 report: clicking a Links Course stop under
+        // owner-only policy did nothing. The trail publishes, but its
+        // works never did — read_club None falls through to edit
+        // permission on read checks, which a public session lacks,
+        // so every stop died as a swallowed not-authorized. Every
+        // seeded work must be openable by a public reader.
+        let mut server = Server::new();
+        server.set_edit_policy(crate::server::server::EditPolicy::OwnerOnly);
+        seed_links_demo(&mut server);
+        let reader = server.connect();
+        server.login_public(reader).expect("public login");
+        let mut checked = 0;
+        for (id, ws) in server.works.iter() {
+            assert!(
+                server.ensure_can_read(reader, *id).is_ok(),
+                "public reader must be able to open seeded work {:?}",
+                ws.cached_title()
+            );
+            checked += 1;
+        }
+        assert!(checked > 0, "seeding produced works");
     }
 
     #[test]
