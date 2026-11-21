@@ -10,12 +10,14 @@ rewritten). Run from the repository root.
 import re
 import sys
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 import markdown
 
 DOCS = Path("docs")
 REPO_URL = "https://github.com/jonesd/xudanu"
 BRANCH = "main"
+BASE_URL = "https://dgjones.info/xudanu/"
 
 BASE_CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
@@ -145,6 +147,28 @@ TEMPLATE = """<!DOCTYPE html>
 """
 
 
+def write_sitemap() -> int:
+    """Emit sitemap.xml and robots.txt covering every page in the deployed tree."""
+    urls = []
+    for html_path in sorted(DOCS.rglob("*.html")):
+        rel = html_path.relative_to(DOCS).as_posix()
+        if rel == "404.html":
+            continue
+        loc = BASE_URL if rel == "index.html" else BASE_URL + rel
+        urls.append(f"  <url><loc>{escape(loc)}</loc></url>")
+    sitemap = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        + "\n".join(urls)
+        + "\n</urlset>\n"
+    )
+    (DOCS / "sitemap.xml").write_text(sitemap, encoding="utf-8")
+    robots = f"User-agent: *\nAllow: /\nSitemap: {BASE_URL}sitemap.xml\n"
+    (DOCS / "robots.txt").write_text(robots, encoding="utf-8")
+    print(f"sitemap: {len(urls)} page(s)")
+    return len(urls)
+
+
 def main() -> int:
     if not DOCS.is_dir():
         print(f"error: {DOCS} directory not found", file=sys.stderr)
@@ -153,6 +177,7 @@ def main() -> int:
     md_files = sorted(DOCS.rglob("*.md"))
     if not md_files:
         print("no markdown files to render")
+        write_sitemap()
         return 0
 
     for md_path in md_files:
@@ -170,6 +195,8 @@ def main() -> int:
 
     for md_path in md_files:
         md_path.unlink()
+
+    write_sitemap()
 
     print(f"done: rendered {len(md_files)} markdown document(s)")
     return 0
