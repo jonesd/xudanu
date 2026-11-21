@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Xanalogical Systems Census 2026 &mdash; who builds on Xanadu</title>
+<meta name="description" content="Every known xanalogical system mapped: the Udanax Green and Gold origins, every port, reimplementation, specification and independent heir &mdash; with live/dead status verified November 2026.">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:14px;font-weight:600;margin-top:20px;margin-bottom:6px;color:#8b949e}
+p{margin-bottom:12px;max-width:820px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.88em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.diagram-container svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.warning{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warning strong{color:#f85149}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.pro{color:#3fb950}
+.con{color:#f85149}
+.neutral{color:#d29922}
+.tag{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:0.5px;margin-left:6px;vertical-align:middle}
+.tag-gold{background:rgba(210,153,34,0.15);color:#d29922;border:1px solid rgba(210,153,34,0.3)}
+.tag-green{background:rgba(63,185,80,0.15);color:#3fb950;border:1px solid rgba(63,185,80,0.3)}
+.tag-blue{background:rgba(88,166,255,0.15);color:#58a6ff;border:1px solid rgba(88,166,255,0.3)}
+.tag-purple{background:rgba(163,113,247,0.15);color:#a371f7;border:1px solid rgba(163,113,247,0.3)}
+.tag-red{background:rgba(248,81,73,0.15);color:#f85149;border:1px solid rgba(248,81,73,0.3)}
+ul{margin-left:20px;margin-bottom:12px;list-style:disc}
+li{margin-bottom:4px}
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+@media print{body{background:#fff;color:#222}h1,h2,h3,h4{color:#111}table{font-size:11px}}
+</style>
+</head>
+<body>
+<div style="background:#161b22;border-bottom:1px solid #30363d;color:#8b949e;font-size:13px;padding:6px 16px;text-align:center">An independent interpretation of the released Udanax Gold source &middot; not Project Xanadu documentation &middot; <a href="provenance.html" style="color:#58a6ff;text-decoration:none">about this documentation</a></div>
+<div class="content-wrap">
+
+<h1>The Xanalogical Systems Census</h1>
+<p class="subtitle">Every known system in the Udanax lineage &mdash; and the independents beside it &mdash; mapped, verified, and offered back to the community.</p>
+
+<div class="note"><strong>What this is.</strong> A census of xanalogical systems, started as a community working list on the transclusion.org Zulip in 2026. This page fills in the gaps, adds the systems the working list missed, and records a live/dead check of every web-facing artifact as of <strong>20 November 2026</strong>. A census is a snapshot, not a registry: it shows where xanalogical builders were focusing at one datable moment &mdash; and dated observations accumulate here rather than being silently overwritten, so over time the page becomes a record of where the field&rsquo;s attention went, not just what it built. Every entry carries what was verified and how. Corrections are welcome and will be attributed &mdash; <a href="#corrections">correct the table, don&rsquo;t reconstruct the history</a>.</div>
+
+<div class="toc">
+<div class="toc-section">Contents</div>
+<a href="#census">1. The census</a>
+<a href="#additions">2. Proposed additions &mdash; systems the list missed</a>
+<a href="#teds-demos">3. Ted Nelson&rsquo;s own browser demos &mdash; what remains</a>
+<a href="#timeline">4. Timeline, 1988&ndash;2026</a>
+<a href="#gold-model">5. Where the Gold model is actually documented</a>
+<a href="#sources">6. Sources and verification</a>
+<a href="#corrections">7. Corrections &mdash; how to reach us</a>
+</div>
+
+<h2 id="census">The census</h2>
+<p>Lineage tags: <span class="tag tag-gold">Gold</span> descended from the Udanax Gold design &middot; <span class="tag tag-green">Green</span> descended from Udanax Green (Xu88) &middot; <span class="tag tag-blue">Independent</span> no Udanax ancestry, same problem space &middot; <span class="tag tag-purple">Origin</span> the systems themselves.</p>
+
+<table>
+<thead><tr><th>System</th><th>Author</th><th>Since</th><th>Lineage</th><th>Stack</th><th>Status (Nov 2026)</th></tr></thead>
+<tbody>
+<tr><td><strong>Udanax Green</strong> (Xu88)</td><td>1988 team</td><td>1988</td><td><span class="tag tag-purple">Origin</span></td><td>C</td><td>Open-sourced 1999</td></tr>
+<tr><td><strong>Udanax Gold</strong></td><td>1992 team</td><td>1992</td><td><span class="tag tag-purple">Origin</span></td><td>C (cross-compiled from Smalltalk)</td><td>Open-sourced 1999</td></tr>
+<tr><td><strong>udanax-test-harness</strong></td><td>Shane Isbell</td><td>~2025&ndash;26</td><td><span class="tag tag-green">Green</span></td><td>&mdash;</td><td>On GitHub; details unverified</td></tr>
+<tr><td><strong>xanadu-spec</strong></td><td>Shane Isbell</td><td>2026</td><td><span class="tag tag-green">Green</span> (formal spec, agentic-AI-derived)</td><td>spec</td><td>On GitHub; accuracy unvalidated</td></tr>
+<tr><td><strong>OulipoMachine</strong></td><td>Shane Isbell</td><td>2017</td><td><span class="tag tag-green">Green</span>-inspired</td><td>Java</td><td>Archived ~2021</td></tr>
+<tr><td><strong>Alph</strong></td><td>Adam Moore</td><td>2016</td><td><span class="tag tag-blue">Independent</span>, web-native</td><td>JavaScript</td><td>Active (per census list)</td></tr>
+<tr><td><strong>xu60</strong></td><td>Raymond Finzel</td><td>Nov 2025</td><td><span class="tag tag-gold">Gold</span>-inspired deep addressing</td><td>Python</td><td class="pro">Active &mdash; PyPI 0.1.5, Sep 2026</td></tr>
+<tr><td><strong>Xudanu</strong></td><td>David Jones</td><td>2026</td><td><span class="tag tag-gold">Gold</span> document model, original code</td><td>Rust + React</td><td class="pro">Active &mdash; <a href="https://demo.transclusion.org">live public sandbox</a> verified 2026-11-20 (238 works)</td></tr>
+<tr><td><strong>Seed Hypermedia</strong></td><td>Gabo Beaumont et al. (Mintter Inc.)</td><td>2023 (as Mintter; rebranded Feb 2025)</td><td><span class="tag tag-blue">Independent</span> P2P, Xanadu-aware</td><td>Go/TS, libp2p + CRDTs</td><td class="pro">Very active &mdash; ~98 members, ACM HT&rsquo;24 paper</td></tr>
+</tbody>
+</table>
+
+<div class="gold"><strong>What the table says.</strong> Of the Gold lineage specifically, exactly one system is active with a running multi-user product: Xudanu. Its core stays close to the Gold model &mdash; and where it diverges, the divergences are documented openly, subsystem by subsystem, complexity comparison by complexity comparison, in both directions. xu60 is an addressing layer (content-addressed immutable URLs, not a docuverse). Everything else in the Gold line is dead, unreleased, or a spec. The independents (Alph, Seed) are alive and well in adjacent territory &mdash; different lineage, overlapping ambition.</div>
+
+<h2 id="additions">Proposed additions &mdash; systems the list missed</h2>
+<p>Found while completing this census. Offered back to the community list; verification method for each is in <a href="#sources">sources</a>.</p>
+
+<table>
+<thead><tr><th>System</th><th>Author</th><th>Since</th><th>Lineage</th><th>Status (Nov 2026)</th></tr></thead>
+<tbody>
+<tr><td><strong>Abora Gold</strong> / <a href="https://github.com/jonesd/udanax-gold2java">udanax-gold2java</a></td><td>David Jones</td><td>2003&ndash;2014</td><td><span class="tag tag-gold">Gold</span> (Smalltalk&rarr;Java, automatic translator + hand-translated classes)</td><td>Dead; mirrors the Gold Smalltalk and C++ sources. Predecessor of Xudanu</td></tr>
+<tr><td><strong>R. Gregory C + Rust ports</strong></td><td>Roger Gregory</td><td>2026 (reported Sept)</td><td><span class="tag tag-gold">Gold</span> (from ~150,000 lines Smalltalk; ~27,000 lines each)</td><td>Reported publicly as finished but <em>unreleased</em> (&ldquo;waiting on Ted&rdquo;); no code published; byte-identical-output claim unverified until release; means of translation not stated</td></tr>
+<tr><td><strong>AI-coded Xanadu demo</strong></td><td>&ldquo;alice&rdquo; (gitworkshop)</td><td>~Sept 2026</td><td>Built from published docs: permascrolls, xanalinks, transpointing windows</td><td>Python stdlib demo; single machine, no deps</td></tr>
+<tr><td><strong>udanax-green modern builds</strong></td><td>enkiv2; Kragen Javier Sitaker; nkhine</td><td>2019&ndash;2021&ndash;</td><td><span class="tag tag-green">Green</span> (actual code)</td><td>Mirrors and modern-Linux build fixes on GitHub</td></tr>
+<tr><td><strong>xuCamb / perma.pub</strong> (&ldquo;Cambridge Xanadu&rdquo;)</td><td>Ted Nelson + Edward Betts</td><td>2016</td><td><span class="tag tag-purple">Origin designer&rsquo;s own</span> &mdash; EDL, xanalinks, visible transclusion, simulated micropayment</td><td class="con">Server dead &mdash; see <a href="#teds-demos">below</a></td></tr>
+<tr><td><strong>OpenXanadu</strong></td><td>Nicholas Levin (for Ted Nelson)</td><td>2014</td><td><span class="tag tag-purple">Origin designer&rsquo;s own</span> &mdash; transclusions only; xanalinks cut to finish in time</td><td class="pro">Live &mdash; <a href="https://xanadu.com/xanademos/MoeJusteOrigins.html">xanadu.com demo</a> verified 2026-11-20</td></tr>
+</tbody>
+</table>
+
+<div class="note"><strong>Adjacent:</strong> <a href="https://github.com/jonesd/xcp">XCP</a> &mdash; a proposed open standard for cross-implementation content sharing between xanalogical systems. Not a system; listed because it matters the day more than one of these runs at once.</div>
+
+<h2 id="teds-demos">Ted Nelson&rsquo;s own browser demos &mdash; what remains</h2>
+<p>The origin designer&rsquo;s own line of browser demos is itself part of the census, and part of the story. Ted Nelson, describing where the design settled: <em>&ldquo;The Xanadu design has essentially resolved to one basic document concept: parallel pages with visible connections.&rdquo;</em> (<a href="http://hyperland.com/HTbrew-D11">hyperland.com</a>)</p>
+
+<table>
+<thead><tr><th>Demo</th><th>Year</th><th>What it had</th><th>State, verified 2026-11-20</th></tr></thead>
+<tbody>
+<tr><td><strong>XanaduSpace</strong></td><td>2003&ndash;7</td><td>Full 3D demo (with Robert Adamson Smith): EDL assembly, parallel pages, visible links and transclusions</td><td>Windows-only download; development abandoned (&ldquo;impossible due to the complexity of the code&rdquo;)</td></tr>
+<tr><td><strong>OpenXanadu</strong></td><td>2014</td><td>Browser viewer; transclusions only &mdash; xanalinks cut to finish in the time available</td><td class="pro">Live (200)</td></tr>
+<tr><td><strong>xuCamb / perma.pub</strong></td><td>2016</td><td>The most complete: EDL + xanalinks + visible transclusion + simulated micropayment, users could supply their own EDLs</td><td class="con">Dead: <code>xanadu.com/demo/</code> is a meta-refresh shell; perma.pub fails TLS (invalid certificate); surviving artifacts are orphaned xanalink text files on hyperland.com</td></tr>
+</tbody>
+</table>
+
+<div class="warning"><strong>The pattern:</strong> the fuller the demo, the deader the link. What remains reachable is the version that cut links; the version that had everything points into a void. (And transclusion.com itself, for contrast, is a parked domain-for-sale page.) The reading public currently has almost nowhere to watch passages visibly connect. This is the gap every active system in the census is, in one way or another, trying to fill.</div>
+
+<h2 id="timeline">Timeline, 1988&ndash;2026</h2>
+
+<div class="diagram-container">
+<svg viewBox="0 0 880 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Timeline of xanalogical systems 1988 to 2026">
+<!-- decade grid -->
+<line x1="40" y1="30" x2="840" y2="30" stroke="#21262d" stroke-width="1"/>
+<g font-family="Inter,sans-serif" font-size="10" fill="#484f58">
+<text x="40" y="22">1988</text>
+<text x="245" y="22">1999</text>
+<text x="450" y="22">2010</text>
+<text x="655" y="22">2020</text>
+<text x="830" y="22">2026</text>
+</g>
+<line x1="40" y1="30" x2="40" y2="220" stroke="#21262d" stroke-width="1"/>
+<line x1="245" y1="30" x2="245" y2="220" stroke="#21262d" stroke-width="1"/>
+<line x1="450" y1="30" x2="450" y2="220" stroke="#21262d" stroke-width="1"/>
+<line x1="655" y1="30" x2="655" y2="220" stroke="#21262d" stroke-width="1"/>
+<!-- axis -->
+<line x1="40" y1="140" x2="840" y2="140" stroke="#30363d" stroke-width="2"/>
+<!-- markers: x = 40 + (year-1988)*20.5 -->
+<!-- 1988 Green origin -->
+<circle cx="40" cy="140" r="6" fill="#a371f7"/>
+<text x="46" y="128" font-family="Inter,sans-serif" font-size="11" fill="#c9d1d9">Udanax Green</text>
+<!-- 1992 Gold origin -->
+<circle cx="122" cy="140" r="6" fill="#a371f7"/>
+<text x="128" y="156" font-family="Inter,sans-serif" font-size="11" fill="#c9d1d9">Udanax Gold (1992)</text>
+<!-- 1999 open-sourced -->
+<circle cx="266" cy="140" r="6" fill="#e6edf3"/>
+<text x="272" y="128" font-family="Inter,sans-serif" font-size="11" fill="#8b949e">open-sourced 1999</text>
+<!-- 2003 Abora -->
+<circle cx="347" cy="140" r="5" fill="#d29922"/>
+<text x="330" y="166" font-family="Inter,sans-serif" font-size="11" fill="#d29922">Abora Gold 2003&ndash;14</text>
+<!-- 2014 OpenXanadu -->
+<circle cx="573" cy="140" r="5" fill="#a371f7"/>
+<text x="478" y="128" font-family="Inter,sans-serif" font-size="11" fill="#a371f7">OpenXanadu 2014 (live)</text>
+<!-- 2016 xuCamb + Alph -->
+<circle cx="614" cy="140" r="5" fill="#a371f7"/>
+<text x="600" y="166" font-family="Inter,sans-serif" font-size="11" fill="#a371f7">xuCamb 2016 (dead)</text>
+<circle cx="614" cy="118" r="5" fill="#58a6ff"/>
+<text x="624" y="104" font-family="Inter,sans-serif" font-size="11" fill="#58a6ff">Alph 2016</text>
+<!-- 2017 OulipoMachine -->
+<circle cx="634" cy="140" r="5" fill="#3fb950"/>
+<text x="612" y="192" font-family="Inter,sans-serif" font-size="11" fill="#3fb950">OulipoMachine 2017 (archived)</text>
+<!-- 2019 enkiv2 -->
+<circle cx="675" cy="140" r="4" fill="#3fb950"/>
+<text x="655" y="156" font-family="Inter,sans-serif" font-size="10" fill="#3fb950">Green builds 2019&ndash;21</text>
+<!-- 2023 Mintter/Seed -->
+<circle cx="757" cy="140" r="5" fill="#58a6ff"/>
+<text x="712" y="166" font-family="Inter,sans-serif" font-size="11" fill="#58a6ff">Seed 2023&ndash;</text>
+<!-- 2025 xu60 -->
+<circle cx="800" cy="140" r="5" fill="#d29922"/>
+<text x="744" y="128" font-family="Inter,sans-serif" font-size="11" fill="#d29922">xu60 2025&ndash;</text>
+<!-- 2026 cluster -->
+<circle cx="822" cy="140" r="6" fill="#d29922"/>
+<text x="676" y="214" font-family="Inter,sans-serif" font-size="11" fill="#d29922">2026: Xudanu, xanadu-spec, ports</text>
+<!-- legend -->
+<g font-family="Inter,sans-serif" font-size="10">
+<circle cx="60" cy="212" r="4" fill="#d29922"/><text x="70" y="216" fill="#8b949e">Gold lineage</text>
+<circle cx="165" cy="212" r="4" fill="#3fb950"/><text x="175" y="216" fill="#8b949e">Green lineage</text>
+<circle cx="275" cy="212" r="4" fill="#58a6ff"/><text x="285" y="216" fill="#8b949e">Independent</text>
+<circle cx="380" cy="212" r="4" fill="#a371f7"/><text x="390" y="216" fill="#8b949e">Origin / designer&rsquo;s own</text>
+<circle cx="530" cy="212" r="4" fill="#e6edf3"/><text x="540" y="216" fill="#8b949e">Event</text>
+</g>
+</svg>
+<div class="diagram-caption">Thirty-eight years: two origin systems (1988, 1992), one burst of openness (1999), a scatter of descendants &mdash; and, since 2025, the busiest the field has ever been.</div>
+</div>
+
+<h2 id="gold-model">Where the Gold model is actually documented</h2>
+<p>The 1999 release was machine-generated C++, famously unreadable. The readable Smalltalk it came from was never given a prose companion. Between gwern&rsquo;s critique of the <em>idea</em> and machine-derived specs of <em>Green</em>, the clearest public explanation of how the <strong>Gold model actually works</strong> that we know of is the documentation set on this site &mdash; public, free, and built while implementing it:</p>
+<ul>
+<li><a href="gold-heritage.html">Udanax Gold Heritage &mdash; concept mapping</a> &mdash; 35+ Gold concepts (enfilades, canopy, clubs, locks, backfollow, H-tree) each traced to its running descendant. The front door if you speak Gold&rsquo;s vocabulary.</li>
+<li><a href="index.html">Xudanu at a Glance</a> &mdash; the clickable whole-system map, every region opening a deep-dive page. The front door if you speak systems vocabulary.</li>
+<li><a href="document-space.html">Document Space: Tumblers and Enfilades</a> &mdash; the position/region/algebra foundation under every address in the system.</li>
+<li><a href="transclusion-engine.html">Transclusion Engine</a> &mdash; canopy trees, backfollow queries, content-reuse detection.</li>
+<li><a href="transclusion-architecture.html">Transclusion Architecture</a> &mdash; this implementation&rsquo;s variant, compared honestly against Gold&rsquo;s enfilade/I-stream model.</li>
+<li><a href="gold-xudanu-complexity.html">Gold vs. Xudanu complexity</a> &mdash; subsystem-by-subsystem Big-O and footprint, derived by reading both codebases &mdash; in both directions, including where the 1992 design holds the advantage.</li>
+<li><a href="technical-architecture.html">Technical Architecture</a> &mdash; 15-section deep dive with Big-O analysis of every data structure.</li>
+<li>The engineering record (<code>dev/</code> series) &mdash; <a href="dev/xanadu-17-rules.html">Nelson&rsquo;s 17 rules with compliance status</a>, the <a href="dev/phases-4-6-mapping-fetext-wrapper-clubs.html">phase documents</a> (mapping algebra &rarr; clubs &rarr; transclusion queries &rarr; federation &rarr; governance), the <a href="dev/migration-notes.html">C++&rarr;Rust migration notes</a>, and the <a href="dev/test-registry.html">test registry</a>. Read in sequence, it doubles as a build order for a xanalogical engine &mdash; for anyone building their own.</li>
+<li><a href="xanadu-comparison.html">Udanax-Gold vs. OpenXanadu vs. Xudanu</a> &mdash; three lineages, feature by feature.</li>
+</ul>
+<p>Offered so the next builder doesn&rsquo;t start from zero. If you know of comparable public documentation of the Gold model elsewhere, this section will name it &mdash; <a href="#corrections">tell us</a>.</p>
+
+<h2 id="sources">Sources and verification</h2>
+<ul>
+<li><strong>The starting list:</strong> the xanalogical systems census worked on the transclusion.org Zulip (2026). This page is a completion of that list, not a replacement for it.</li>
+<li><strong>The framing critique:</strong> Gwern, <a href="https://gwern.net/xanadu">&ldquo;Xanadu: Then and Now&rdquo;</a> &mdash; the best-known critical essay on the design; the census is, in part, an empirical answer to its &ldquo;vaporware&rdquo; framing.</li>
+<li><strong>xu60:</strong> <a href="https://pypi.org/project/xu60">PyPI</a> &mdash; 0.1.0 Nov 2025, 0.1.5 Sep 2026, Python/ASGI.</li>
+<li><strong>Seed Hypermedia:</strong> <a href="https://seed.hyper.media/">seed.hyper.media</a>; ACM HT&rsquo;14/24 DOI 10.1145/3648188.3677050; Mintter rebrand Feb 2025.</li>
+<li><strong>R. Gregory ports:</strong> reported publicly Sept 2026 in correspondence archived in Don Hopkins&rsquo; <a href="https://github.com/SimHacker/WillWrightShowForFood">WillWrightShowForFood</a> repository (the invitation and reply documents). Unreleased; no cooperation with any project is implied by this entry; nothing here is quoted beyond what that public archive already states.</li>
+<li><strong>Ted Nelson&rsquo;s demo lineage:</strong> <a href="http://hyperland.com/HTbrew-D11">hyperland.com project history</a> and <a href="https://xanadu.com/YourXanadoc.html">xanadu.com/xanadoc instructions</a>. Liveness checked 2026-11-20: xanadu.com/demo/ returns 200 but is a meta-refresh to perma.pub, which fails TLS with an invalid certificate; hyperland.com/xuCambDemo/ returns 403 on the directory but sample xanalink files within return 200.</li>
+<li><strong>Live/dead checks</strong> on this page were made 2026&ndash;11&ndash;20 with plain HTTP requests (status codes as noted). Dates are recorded so future readers can see how fresh each observation was.</li>
+</ul>
+
+<h2 id="corrections">Corrections &mdash; how to reach us</h2>
+<p>This census improves by correction. Wrong dates, dead links reported alive, missed systems, misassigned lineage &mdash; all welcome, all attributed. Pick whichever door suits you:</p>
+<ul>
+<li><strong>Email</strong> (no account needed): <a href="mailto:david@dgjones.info?subject=Xanalogical%20census%20correction">david@dgjones.info</a></li>
+<li><strong>GitHub:</strong> open an issue or pull request at <a href="https://github.com/jonesd/xudanu">github.com/jonesd/xudanu</a> &mdash; PR corrections carry your attribution with them</li>
+<li><strong>Zulip:</strong> say so on transclusion.org, where the list began (members)</li>
+</ul>
+<p>Live/dead states get re-checked periodically; every entry carries the date it was last verified, so you can see how fresh each observation is before relying on it.</p>
+<p><strong>Cite as:</strong> Jones, David. <em>The Xanalogical Systems Census.</em> dgjones.info/xudanu/xanalogical-census.html, November 2026 edition (dated observations within).</p>
+
+<div class="footer">
+<p><strong>Xudanu</strong> is an independent, open-source project (Apache 2.0). It is not affiliated with, endorsed by, or sponsored by Ted Nelson, Project Xanadu&trade;, the Xanadu Operating Company, Autodesk Inc., or the Udanax development team. Xudanu implements concepts from the open-sourced Udanax-Gold codebase (released 1999) using original Rust and TypeScript code. All trademarks belong to their respective owners.</p>
+<p>Xudanu Documentation &mdash; <a href="index.html">dgjones.info/xudanu</a></p>
+</div>
+
+</div>
+</body>
+</html>
