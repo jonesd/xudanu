@@ -96,6 +96,7 @@ One binary, one command — and a community has a place to write together: live 
 
 > **[Try it live](https://xudanu.com)** — a running server with the interactive Links Course: typed and multi-ended links, gathered end-sets, and live transclusions.
 > **[Read the documentation](https://dgjones.info/xudanu/)** — user guides, technical architecture, and visual diagrams.
+> **[The xanalogical systems census](https://dgjones.info/xudanu/xanalogical-census.html)** — every known system in the Udanax lineage and the independents beside it, live/dead status verified November 2026.
 > **[Source on GitHub](https://github.com/jonesd/xudanu)** — releases with static binaries for Linux, macOS, and Windows.
 > **[Docker image](https://github.com/jonesd/xudanu/pkgs/container/xudanu)** — `ghcr.io/jonesd/xudanu`, multi-arch, rebuilt on every release.
 >
