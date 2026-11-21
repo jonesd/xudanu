@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Xanalogical systems &mdash; a starting point</title>
+<meta name="description" content="What xanalogical means, the core ideas in learning order, where they came from, who is building now, and reading paths into each &mdash; the field documentation page for xanalogical (Xanadu-lineage) hypertext systems.">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+h4{font-size:14px;font-weight:600;margin-top:20px;margin-bottom:6px;color:#8b949e}
+p{margin-bottom:12px;max-width:820px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.88em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.diagram-container{margin:32px 0;padding:24px;background:#0d1117;border:1px solid #21262d;border-radius:12px;overflow-x:auto}
+.diagram-container svg{display:block;margin:0 auto;max-width:100%;height:auto}
+.diagram-caption{text-align:center;font-size:12px;color:#484f58;margin-top:12px;font-style:italic}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.warning{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warning strong{color:#f85149}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+.pro{color:#3fb950}
+.con{color:#f85149}
+.neutral{color:#d29922}
+.tag{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:0.5px;margin-left:6px;vertical-align:middle}
+.tag-gold{background:rgba(210,153,34,0.15);color:#d29922;border:1px solid rgba(210,153,34,0.3)}
+.tag-green{background:rgba(63,185,80,0.15);color:#3fb950;border:1px solid rgba(63,185,80,0.3)}
+.tag-blue{background:rgba(88,166,255,0.15);color:#58a6ff;border:1px solid rgba(88,166,255,0.3)}
+.tag-purple{background:rgba(163,113,247,0.15);color:#a371f7;border:1px solid rgba(163,113,247,0.3)}
+ul{margin-left:20px;margin-bottom:12px;list-style:disc}
+li{margin-bottom:4px}
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+@media print{body{background:#fff;color:#222}h1,h2,h3,h4{color:#111}table{font-size:11px}}
+</style>
+</head>
+<body>
+<div style="background:#161b22;border-bottom:1px solid #30363d;color:#8b949e;font-size:13px;padding:6px 16px;text-align:center">The field door &mdash; general documentation of xanalogical systems &middot; implementation-specific docs are separate doors &middot; <a href="xanalogical-census.html" style="color:#58a6ff;text-decoration:none">the census of who builds</a></div>
+<div class="content-wrap">
+
+<h1>Xanalogical systems</h1>
+<p class="subtitle">A starting point: what the word means, the ideas in learning order, where they came from, who is building now &mdash; and a reading path for however you arrived.</p>
+
+<div class="note"><strong>Why this page exists.</strong> Almost everything written about xanalogical systems is either primary source material from the 1960s&ndash;90s or post-mortems written from outside the implementations. There is no on-ramp &mdash; and what general material exists tends to be tangled up with one implementation&rsquo;s documentation (this site&rsquo;s included). This page is the <strong>field door</strong>: it documents the class of systems, not any one of them. Implementation doors are linked separately and clearly labelled as one system&rsquo;s choices. Corrections are welcome and attributed &mdash; <a href="#corrections">see the footer</a>.</div>
+
+<div class="toc">
+<div class="toc-section">Contents</div>
+<a href="#means">1. What &ldquo;xanalogical&rdquo; means</a>
+<a href="#ideas">2. The core ideas, in learning order</a>
+<a href="#history">3. Where it came from &mdash; a short history</a>
+<a href="#now">4. Who is building now</a>
+<a href="#xudanu">5. One running implementation: Xudanu</a>
+<a href="#compared">6. Xudanu and Gold, compared both ways</a>
+<a href="#paths">7. Reading paths by arrival</a>
+<a href="#corrections">8. Sources and corrections</a>
+</div>
+
+<h2 id="means">What &ldquo;xanalogical&rdquo; means</h2>
+<p><strong>&ldquo;Xanalogical&rdquo;</strong> is Ted Nelson&rsquo;s word for the general class of document systems his Project Xanadu exemplifies &mdash; the way &ldquo;hypertext&rdquo; names the general class the web exemplifies. Lowercase and adjectival: a <em>xanalogical</em> system. &ldquo;Xanadu&rdquo; itself stays a proper noun for Nelson&rsquo;s specific project (Project Xanadu, Xanadu 92.1, the trademark held by its owner).</p>
+<p>Nelson, describing where the design settled: <em>&ldquo;The Xanadu design has essentially resolved to one basic document concept: parallel pages with visible connections.&rdquo;</em> (<a href="http://hyperland.com/HTbrew-D11">hyperland.com</a>)</p>
+<p>Those two visible properties are the whole of it:</p>
+<ul>
+<li><strong>Parallel documents</strong> &mdash; you read things side by side, origin beside quotation, original beside comment, version beside version. Nothing replaces anything; comparison is the native act.</li>
+<li><strong>Visible connections</strong> &mdash; the links between passages are first-class, shown where they connect, and they point both ways. You can see what connects to what you are reading, and follow it back.</li>
+</ul>
+<p>Everything else in this page &mdash; the addressing, the versioning, the transclusions, the rights model &mdash; exists to make those two properties work without breaking.</p>
+<div class="gold"><strong>Versus the web.</strong> The web shipped with one-way links that break when their target moves, no version management, and copy-paste as the reuse mechanism &mdash; the quotation detaches from its origin and the origin never knows. A xanalogical system inverts each choice: two-way unbreakable connections, permanent versions, and reuse by reference so the connection to the source survives. This is not nostalgia; it is a different set of guarantees. Where those guarantees matter &mdash; citation, comparison, provenance, concurrent editing &mdash; the xanalogical design remains the reference point.</div>
+
+<h2 id="ideas">The core ideas, in learning order</h2>
+<p>Each idea in two sentences, with the deep-dive documentation behind the link. The order matters: each idea fixes a problem the previous one creates.</p>
+
+<h3>1. Transclusion</h3>
+<p>The same content, appearing in two places, with one origin. Nothing is copied &mdash; the second appearance <em>is</em> the first, by reference &mdash; so when the source changes, every appearance reflects it, and the connection back to the origin is permanent and visible.</p>
+<p>&rarr; <a href="transclusion-engine.html">The transclusion engine, documented</a> &middot; <a href="transclusion-architecture.html">transclusion architecture</a></p>
+
+<h3>2. Two-way, unbreakable links</h3>
+<p>A link is a first-class object connecting two specific passages &mdash; not a one-way jump but a visible, typed, bidirectional connection. Both ends always know about each other, so backlinks are native, and the link cannot dangle: the passages it connects are stable addresses, not disposable locations.</p>
+<p>&rarr; <a href="links-and-backlinks.html">Links and backlinks</a> &middot; <a href="gold-link-model.html">the Gold link model</a></p>
+
+<h3>3. Deep addressing &mdash; tumblers</h3>
+<p>Every character range of every version of every document has a permanent address. Gold&rsquo;s form was the <em>tumbler</em> &mdash; a hierarchical address that never renumbers, so a reference written in 1988 still resolves today, to the character.</p>
+<p>&rarr; <a href="document-space.html">The document space and its algebra</a></p>
+
+<h3>4. Permanent versions</h3>
+<p>Editing does not overwrite; it creates new states of a document whose old states remain addressable. Combined with tumblers, this is why links never break: the thing they point at is still there, still named, still findable.</p>
+<p>&rarr; <a href="editions-and-works.html">Editions and works &mdash; the content model</a></p>
+
+<h3>5. Rights at quote granularity</h3>
+<p>If reuse is by reference, then rights can attach to the act of reuse &mdash; quotation-level licensing, automatic attribution, and (in the original design) micropayment paths. Nelson&rsquo;s name for this is <em>transcopyright</em>: permission to quote, granted once, settled at the level of the actual quotation.</p>
+<p>&rarr; <a href="gold-heritage.html">The Gold model&rsquo;s concept tables</a> cover the original design; modern implementations choose their own licensing surface.</p>
+
+<h3>6. Transpointing windows &mdash; the reading interface</h3>
+<p>All of the above is machinery; this is what the reader sees: documents in parallel panes, connections drawn between the passages they connect, the connector lines adhering to characters as text moves. The interface is not decoration &mdash; parallel pages with visible connections <em>is</em> the design.</p>
+<p>&rarr; <a href="index.html">A running classic reader</a> (one implementation&rsquo;s door)</p>
+
+<h2 id="history">Where it came from &mdash; a short history</h2>
+<p><strong>1960&ndash;65.</strong> Ted Nelson, a Harvard graduate student, begins designing a worldwide publishing system for the interactive screen &mdash; and coins the word <em>hypertext</em> (published 1965). His design diverges immediately from what would later ship as the web: visible two-way connection, parallel documents, reuse by reference.</p>
+<p><strong>1974.</strong> <em>Computer Lib / Dream Machines</em> publishes the vision to the generation that built personal computing.</p>
+<p><strong>1979.</strong> The Swarthmore summer: Roger Gregory and Mark S. Miller invent <em>tumblers</em> &mdash; the transfinite-number addressing scheme that lets any range of any version of any document be named, quoted and linked. The hard problem of deep addressing gets its answer before the decade ends.</p>
+<p><strong>1988&ndash;92.</strong> Autodesk buys a controlling interest; the funded team builds two systems &mdash; <strong>Green</strong> (Xu88) and the later <strong>Gold</strong> &mdash; implementing the full model in Smalltalk with a C++ translation.</p>
+<p><strong>1999.</strong> The code is released open source (MIT/X11) as Udanax. The release&rsquo;s shape became its own story: the readable Smalltalk stayed largely internal while machine-generated C++ shipped &mdash; Don Hopkins&rsquo;s famous review called it &ldquo;uncommented glue gluing glue to glue.&rdquo; The model was freed; the readability was not.</p>
+<p><strong>2014&ndash;.</strong> The after-lineage: Nelson&rsquo;s own browser demos (OpenXanadu 2014 still runs; the 2016 xuCamb/perma.pub server did not survive), Green modern builds, addressing layers, ports reported but unreleased, and new independent systems in the same problem space.</p>
+<p>&rarr; The full narrative: <a href="whatever-happened-to-project-xanadu.html">Whatever happened to Project Xanadu?</a> &middot; every system and date, verified: <a href="xanalogical-census.html">the census</a></p>
+
+<h2 id="now">Who is building now</h2>
+<p>The field, verified November 2026 &mdash; full detail, sources and live/dead checks in <a href="xanalogical-census.html">the census</a>:</p>
+<table>
+<thead><tr><th>System</th><th>Lineage</th><th>State (Nov 2026)</th></tr></thead>
+<tbody>
+<tr><td><strong>Seed Hypermedia</strong></td><td><span class="tag tag-blue">Independent</span></td><td class="pro">Very active &mdash; P2P hypermedia, ~98 members</td></tr>
+<tr><td><strong>Xudanu</strong></td><td><span class="tag tag-gold">Gold</span> document model, original code</td><td class="pro">Active &mdash; running public sandbox</td></tr>
+<tr><td><strong>xu60</strong></td><td><span class="tag tag-gold">Gold</span>-inspired addressing layer</td><td class="pro">Active &mdash; PyPI releases through 2026</td></tr>
+<tr><td><strong>Green modern builds</strong> (enkiv2, Sitaker, nkhine)</td><td><span class="tag tag-green">Green</span></td><td class="neutral">Buildable on modern Linux</td></tr>
+<tr><td><strong>xanadu-spec</strong></td><td><span class="tag tag-green">Green</span> formal specification</td><td class="neutral">Published; accuracy unvalidated</td></tr>
+<tr><td><strong>R.&nbsp;Gregory C + Rust ports</strong></td><td><span class="tag tag-gold">Gold</span></td><td class="neutral">Reported finished, unreleased (Sept 2026)</td></tr>
+<tr><td><strong>OpenXanadu</strong></td><td><span class="tag tag-purple">Origin designer</span></td><td class="pro">Live demo (2014)</td></tr>
+</tbody>
+</table>
+<div class="note"><strong>The pattern to notice.</strong> Systems in this space die of silence, not of technical failure. The ones listed active are the ones being published &mdash; releases, demos, pages you can open. That is the lesson the census exists to keep in view.</div>
+
+<h2 id="xudanu">One running implementation: Xudanu</h2>
+<p>Among the active systems, one is documented on this site &mdash; introduced here because a running system makes every idea above inspectable rather than historical.</p>
+<p><strong>Xudanu</strong> is an independent, open-source (Apache 2.0) implementation of the Gold document model in Rust and TypeScript, built by David Jones, whose earlier <a href="https://github.com/jonesd/udanax-gold2java">udanax-gold2java</a> project translated the released Gold sources into Java (2003&ndash;2014). Xudanu is not affiliated with, endorsed by, or sponsored by Ted Nelson, Project Xanadu, the Xanadu Operating Company, or the Udanax team; it implements concepts from the open-sourced Udanax-Gold codebase using original code.</p>
+
+<h3>What carries over from Gold &mdash; the core algorithms, reused</h3>
+<ul>
+<li><strong>Tumblers as typed hierarchical addresses</strong>, with Gold&rsquo;s never-renumber allocation (the Sequence algebra) &mdash; the 1979 Swarthmore answer to deep addressing, implemented as specified</li>
+<li><strong>Enfilades</strong> &mdash; Gold&rsquo;s tree structure for content and ranges &mdash; with <strong>crums</strong> now carried as BLAKE3 Merkle hashes, so subtree equality is checked by hash</li>
+<li><strong>Typed bidirectional links</strong> between passages, both ends visible, migrating through edits</li>
+<li><strong>Inline transclusions</strong> in the document tree itself &mdash; one source of truth, no side tables &mdash; whose spans migrate when sources are edited</li>
+<li><strong>The parallel reading interface</strong> &mdash; a classic reader presenting works side by side with their connections visible</li>
+</ul>
+
+<h3>What is new &mdash; modern technologies the Gold era did not have</h3>
+<ul>
+<li><strong>Real-time concurrent editing via a purpose-built CRDT</strong> (the O-tree) &mdash; many authors editing the same work at once, converging without locks; the collaborative layer Gold never had</li>
+<li><strong>Cross-server reach</strong> &mdash; works addressable across servers by domain-anchored tumblers, public content fetched over HTTPS and verified by content hash</li>
+<li><strong>Cryptographic provenance</strong> &mdash; authorship spans signed and verifiable, an attribution log, per-work licensing options including transcopyright-style terms</li>
+<li><strong>A web-native reading and editing surface</strong> &mdash; browser app, WebSocket wire protocol, and agent-facing (MCP) tooling for the same operations</li>
+</ul>
+
+<p>It runs as a public sandbox at <a href="https://demo.transclusion.org">demo.transclusion.org</a> &mdash; open, no login needed to read. Source: <a href="https://github.com/jonesd/xudanu">github.com/jonesd/xudanu</a>. The Gold model itself, mapped concept by concept, is documented at <a href="gold-heritage.html">gold-heritage.html</a> &mdash; that documentation describes the model, not any one implementation of it.</p>
+
+<h2 id="compared">Xudanu and Gold, compared both ways</h2>
+<p>An honest comparison runs in both directions &mdash; what modern tooling made easier, and where the Gold model is still harder than anything the web attempts:</p>
+<table>
+<thead><tr><th>Subsystem</th><th>In Gold (1992&ndash;99)</th><th>In Xudanu (2026)</th></tr></thead>
+<tbody>
+<tr><td>Addressing</td><td>Tumblers, never renumbered</td><td>Same design, typed; Sequence ordering load-bearing</td></tr>
+<tr><td>Content structure</td><td>Enfilades, crums</td><td>Enfilades with hash-verified crums (BLAKE3)</td></tr>
+<tr><td>Reuse</td><td>Transclusion by reference</td><td>Same, inline in the CRDT tree, spans migrate through edits</td></tr>
+<tr><td>Concurrency</td><td>Frontend/backend sessions, no real-time merge</td><td>Purpose-built O-tree CRDT &mdash; the modern addition</td></tr>
+<tr><td>Cross-server</td><td>Designed, never shipped</td><td>Domain tumblers, HTTPS fetch, hash verification &mdash; shipped</td></tr>
+<tr><td>Provenance</td><td>Designed (transcopyright)</td><td>Signed authorship spans, attribution log, licensing options</td></tr>
+</tbody>
+</table>
+<p>&rarr; The full complexity analysis, Big-O by subsystem in both directions: <a href="gold-xudanu-complexity.html">Gold &harr; Xudanu complexity compared</a> &middot; broader model comparison: <a href="xanadu-comparison.html">the Xanadu comparison</a> &middot; <a href="technical-architecture.html">technical architecture</a></p>
+
+<h2 id="paths">Reading paths by arrival</h2>
+
+<h3>Just curious</h3>
+<p>Start with the story &mdash; <a href="whatever-happened-to-project-xanadu.html">Whatever happened to Project Xanadu?</a> &mdash; then see who is building now in <a href="xanalogical-census.html">the census</a>, then see the model itself in the <a href="gold-heritage.html">Gold concept tables</a>. Total: an evening.</p>
+
+<h3>Designer</h3>
+<p>The reading interface is the design. <a href="index.html">The classic reader</a> (screenshots and live sandbox), then the <a href="document-space.html">document space</a> &mdash; how positions, regions and displacements make parallel pages computable.</p>
+
+<h3>Builder</h3>
+<p>You want to build one of these. Start from the behaviors an engine must have: <a href="dev/test-registry.html">the test registry</a> &mdash; the entry point of a build order through a working engine, a worked path for building a xanalogical engine in any language. Then <a href="dev/xanadu-17-rules.html">the 17 rules</a> as the spec in force, then the <a href="gold-heritage.html">concept tables</a> for the model, then the <a href="gold-xudanu-complexity.html">complexity comparisons</a> to know which parts are hard.</p>
+
+<h3>Skeptic</h3>
+<p>Fair &mdash; the strongest critique is <a href="https://gwern.net/xanadu">Gwern&rsquo;s essay</a>, and it deserves reading in full. Then weigh it against what actually runs: the <a href="xanalogical-census.html">census</a> (what shipped, verified), the <a href="gold-xudanu-complexity.html">both-directions complexity pages</a> (what is genuinely hard, conceded), and <a href="https://demo.transclusion.org">a live system</a> where the connections do not break. The honest version of the debate needs both sides read.</p>
+
+<h2 id="corrections">Sources and corrections</h2>
+<p>This page makes dated claims, and dated claims invite correction. Historical claims trace to the sources cited in <a href="xanalogical-census.html">the census</a>; implementation claims are Xudanu&rsquo;s own documentation, linked above. Corrections are welcome, will be attributed, and are added as dated entries rather than silently overwriting what came before.</p>
+<ul>
+<li>Email: <a href="mailto:david@dgjones.info?subject=Xanalogical%20systems%20page%20correction">david@dgjones.info</a></li>
+<li>GitHub: <a href="https://github.com/jonesd/xudanu/issues">an issue on jonesd/xudanu</a></li>
+</ul>
+<p>Cite as: <em>&ldquo;Xanalogical systems &mdash; a starting point,&rdquo; dgjones.info/xudanu/xanalogical-systems.html, verified November 2026.</em></p>
+
+<div class="footer">
+<p>General documentation of xanalogical systems &middot; implementation doors are separate &middot; <a href="xanalogical-census.html">census</a> &middot; <a href="gold-heritage.html">the Gold model</a> &middot; <a href="index.html">Xudanu&rsquo;s own documentation</a></p>
+<p style="margin-top:8px">&ldquo;Xanadu&rdquo; is a project name of Ted Nelson; Project Xanadu&trade; belongs to its owner. This site is an independent interpretation of the released Udanax sources &mdash; <a href="provenance.html">about this documentation</a>.</p>
+</div>
+
+</div>
+</body>
+</html>
