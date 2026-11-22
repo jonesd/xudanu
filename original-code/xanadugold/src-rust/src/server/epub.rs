@@ -154,6 +154,17 @@ fn itemref_id(e: &quick_xml::events::BytesStart) -> Option<String> {
         .and_then(|a| a.unescape_value().ok().map(|v| v.into_owned()))
 }
 
+/// Resolves one general entity reference (`&amp;`, `&#x2014;`) to its
+/// text. Unknown names pass through verbatim rather than failing the
+/// import.
+fn resolve_general_ref(content: &[u8]) -> String {
+    let raw = format!("&{};", String::from_utf8_lossy(content));
+    match quick_xml::escape::unescape(&raw) {
+        Ok(resolved) => resolved.into_owned(),
+        Err(_) => raw,
+    }
+}
+
 fn parse_opf(xml: &str) -> Opf {
     let mut opf = Opf {
         title: None,
@@ -163,7 +174,8 @@ fn parse_opf(xml: &str) -> Opf {
     };
     let mut reader = quick_xml::Reader::from_str(xml);
     let mut buf = Vec::new();
-    let mut pending: Option<MetaText> = None;
+    let mut pending: Option<(MetaText, String)> = None;
+    let mut pending_depth: usize = 0;
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) => match e.name().local_name().as_ref() {
@@ -177,9 +189,19 @@ fn parse_opf(xml: &str) -> Opf {
                         opf.spine.push(idref);
                     }
                 }
-                b"title" => pending = Some(MetaText::Title),
-                b"creator" => pending = Some(MetaText::Creator),
-                _ => {}
+                b"title" => {
+                    pending = Some((MetaText::Title, String::new()));
+                    pending_depth = 0;
+                }
+                b"creator" => {
+                    pending = Some((MetaText::Creator, String::new()));
+                    pending_depth = 0;
+                }
+                _ => {
+                    if pending.is_some() {
+                        pending_depth += 1;
+                    }
+                }
             },
             Ok(Event::Empty(e)) => match e.name().local_name().as_ref() {
                 b"item" => {
@@ -192,12 +214,28 @@ fn parse_opf(xml: &str) -> Opf {
                         opf.spine.push(idref);
                     }
                 }
+                b"title" | b"creator" => {
+                    pending = None;
+                    pending_depth = 0;
+                }
                 _ => {}
             },
             Ok(Event::Text(t)) => {
-                if let Some(target) = pending.take() {
-                    if let Ok(text) = t.unescape() {
-                        let trimmed = text.trim();
+                if let Some((_, acc)) = pending.as_mut() {
+                    if let Ok(text) = t.decode() {
+                        acc.push_str(&text);
+                    }
+                }
+            }
+            Ok(Event::GeneralRef(r)) => {
+                if let Some((_, acc)) = pending.as_mut() {
+                    acc.push_str(&resolve_general_ref(&r));
+                }
+            }
+            Ok(Event::End(_)) => {
+                if pending_depth == 0 {
+                    if let Some((target, acc)) = pending.take() {
+                        let trimmed = acc.trim();
                         if !trimmed.is_empty() {
                             match target {
                                 MetaText::Title if opf.title.is_none() => {
@@ -210,9 +248,10 @@ fn parse_opf(xml: &str) -> Opf {
                             }
                         }
                     }
+                } else {
+                    pending_depth -= 1;
                 }
             }
-            Ok(Event::End(_)) => pending = None,
             Ok(Event::Eof) => break,
             Err(_) => break,
             _ => {}
@@ -287,7 +326,12 @@ fn extract_text(xml: &str) -> Result<String, String> {
             }
             Ok(Event::Text(t)) => {
                 if skip_depth == 0 {
-                    out.push_str(&t.unescape().map_err(|e| format!("content text: {e}"))?);
+                    out.push_str(&t.decode().map_err(|e| format!("content text: {e}"))?);
+                }
+            }
+            Ok(Event::GeneralRef(r)) => {
+                if skip_depth == 0 {
+                    out.push_str(&resolve_general_ref(&r));
                 }
             }
             Ok(Event::CData(c)) => {
@@ -353,7 +397,7 @@ mod tests {
   </spine>
 </package>"#;
         let ch1 = r#"<html xmlns="http://www.w3.org/1999/xhtml"><head><title>head title skipped</title><style>p { color: red }</style></head><body><p>First chapter.</p></body></html>"#;
-        let ch2 = r#"<html xmlns="http://www.w3.org/1999/xhtml"><body><p>Second <em>chapter</em>.</p><br/>After the break.</body></html>"#;
+        let ch2 = r#"<html xmlns="http://www.w3.org/1999/xhtml"><body><p>Second <em>chapter</em> &mdash; resumed.</p><br/>After the break.</body></html>"#;
         let bytes = build_epub(&[
             ("mimetype", b"application/epub+zip"),
             ("META-INF/container.xml", CONTAINER.as_bytes()),
@@ -372,8 +416,8 @@ mod tests {
             epub.pages[0]
         );
         assert!(
-            epub.pages[1].contains("Second chapter."),
-            "inline tags keep their spacing: {:?}",
+            epub.pages[1].contains("Second chapter — resumed."),
+            "inline tags and entities keep their spacing: {:?}",
             epub.pages[1]
         );
         assert!(epub.pages[1].contains("After the break."));

@@ -17,14 +17,18 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn bin() -> Command {
-    // CARGO_BIN_EXTR_* uses underscores: xudanu-server -> xudanu_server.
-    let exe = std::env::var("CARGO_BIN_EXTR_xudanu-server")
-        .or_else(|_| std::env::var("CARGO_BIN_EXTR_xudanu_server"))
-        .unwrap_or_else(|_| {
-            let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../../target/debug/xudanu-server");
-            p.to_string_lossy().into_owned()
-        });
+    // Compile-time lookup: cargo guarantees the binary is built and
+    // the path valid wherever CARGO_TARGET_DIR points (local builds
+    // redirect target/ off-disk, so a repo-root-relative fallback
+    // misses). The runtime var names below were typos (BIN_EXTR) and
+    // never matched anything cargo sets.
+    let exe = match option_env!("CARGO_BIN_EXE_xudanu-server") {
+        Some(p) => p.to_string(),
+        None => std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../target/debug/xudanu-server")
+            .to_string_lossy()
+            .into_owned(),
+    };
     let mut c = Command::new(exe);
     c.stdin(std::process::Stdio::null());
     c

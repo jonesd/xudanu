@@ -82,6 +82,25 @@ jobs:
           cargo test --features server --test integration --test migration_cli --test recover_cli
         working-directory: original-code/xanadugold/src-rust
 
+  # Supply-chain gate: RustSec advisories against the workspace
+  # lockfile. Added 2026-11-22 after the first local cargo-audit run
+  # surfaced 5 live advisories every other check was green on
+  # (ammonia mutation-XSS, quick-xml DoS x2, quinn-udp recv spin,
+  # url stack overflow, tokio unsound) — nothing in CI was looking.
+  # Unmaintained/yanked warnings stay non-failing; only
+  # vulnerabilities gate.
+  audit:
+    name: Cargo audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
+        with:
+          tool: cargo-audit
+      - run: cargo audit
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
