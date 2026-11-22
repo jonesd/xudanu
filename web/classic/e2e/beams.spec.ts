@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { openHash, connect, makeWorks, activeTitle } from "./helpers";
+import { openHash, connect, makeWorks } from "./helpers";
 
 test.describe("Pyxi panes — every shared connection drawn at once", () => {
   test("all links between the two open works draw beams, passage to passage", async ({ page }) => {

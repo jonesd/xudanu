@@ -106,6 +106,12 @@ impl TestServer {
     /// checkpoints on disk). None = in-memory (no data dir).
     async fn start_with_dir(data_dir: Option<std::path::PathBuf>) -> Self {
         let mut server = Server::new();
+        // Snapshot the ambient loopback flag into the per-server
+        // opt-in, exactly as the CLI's --allow-loopback does: handler
+        // guards read only the per-server field. Tests set the
+        // global BEFORE start; the fetch-layer bypass still consults
+        // the global at request time.
+        server.allow_loopback_cross_server = xudanu::server::server::allow_loopback_enabled();
         if let Some(dir) = &data_dir {
             let _ = server.init_data_dir(dir, None);
         }
@@ -4466,6 +4472,68 @@ async fn backlink_rejects_valid_doc_but_foreign_key() {
         status_ok, 200,
         "published-key notify must be accepted: {resp_ok:?}"
     );
+}
+
+/// SSRF guard on the backlink channel (CodeQL #538): the notify
+/// endpoint is unauthenticated and the origin address is
+/// attacker-choosable (a self-generated key signs the body). A
+/// VALID signature naming a private/loopback origin must be refused
+/// BEFORE any .well-known fetch — the rejection comes from the
+/// guard, not from a failed connection.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn backlink_notify_blocks_private_origin_fetch() {
+    // Parallel-safe: sibling tests flip the global loopback allow for
+    // THEIR needs — establish this test's own precondition.
+    xudanu::server::server::set_allow_loopback(false);
+    let srv = TestServer::start().await;
+    let (mut s, mut r, _) = json_setup(&srv).await;
+    let wid = send_recv_json(
+        &mut s,
+        &mut r,
+        json_req(
+            998,
+            "work_create",
+            Some(serde_json::json!({"edition": {"text": "ssrf guard target"}})),
+        ),
+    )
+    .await["value"]["value"]
+        .as_u64()
+        .unwrap();
+    let wid_hex = format!("{:04x}", wid);
+
+    let key = ed25519_dalek::SigningKey::from([23u8; 32]);
+    for origin in ["127.0.0.1:9", "[::ffff:169.254.169.254]:80"] {
+        let body = serde_json::json!({
+            "target_work_id": wid_hex,
+            "origin_server_address": origin,
+            "origin_server_name": "ProbeOrigin",
+            "origin_work_id": "01",
+            "origin_work_title": "probe work",
+            "excerpt": "excerpt text",
+            "link_type": "cross-server",
+        })
+        .to_string();
+        // Correctly signed: proves the 403 comes from the address
+        // guard, not from signature handling.
+        let sig = {
+            use ed25519_dalek::Signer;
+            hex::encode(key.sign(body.as_bytes()).to_bytes())
+        };
+        let (status, resp) = raw_post(
+            srv.addr,
+            "/api/backlink-notify",
+            &[
+                ("X-Xudanu-Origin-Key", &key_hex(&key)),
+                ("X-Xudanu-Signature", &sig),
+            ],
+            &body,
+        )
+        .await;
+        assert_eq!(
+            status, 403,
+            "signed notify naming private origin {origin} must 403 at the guard: {resp:?}"
+        );
+    }
 }
 
 /// Trust-ladder symmetry for the backlink channel: when the claimed
