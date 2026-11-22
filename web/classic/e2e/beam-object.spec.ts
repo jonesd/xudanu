@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { openHash, connect, makeWorks, activeTitle } from "./helpers";
+import { openHash, connect, makeWorks } from "./helpers";
 
 test.describe("beam as object — the connection line is a thing", () => {
   test("clicking a beam opens an inspector naming its type and both ends", async ({ page }) => {

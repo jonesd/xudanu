@@ -383,6 +383,9 @@ document.addEventListener("click", () => {
 });
 
 // ZigZag rail: neighbours along a dimension, in a dedicated column
+const esc = s => String(s).replace(/[&<>"']/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
 function renderZig() {
   document.querySelectorAll(".end.zig-selected").forEach(e => e.classList.remove("zig-selected"));
   if (variant !== "zig") { rail.innerHTML = ""; return; }
@@ -395,13 +398,13 @@ function renderZig() {
   selectedSpan.classList.add("zig-selected");
   const links = linksFor(selectedSpan);
   rail.innerHTML = `<h3>connections of this passage</h3>
-    <p class="sel">“${selectedSpan.textContent.slice(0, 64)}…”</p>` +
+    <p class="sel">“${esc(selectedSpan.textContent.slice(0, 64))}…”</p>` +
     links.map(l => {
       const farId = l.a === selectedSpan.id ? l.b : l.a;
       const far = document.getElementById(farId);
       const which = far && far.closest("#paneL") ? "left document" : "right document";
-      return `<div class="zn" style="border-color:${TYPES[l.type].color}" data-far="${farId}">
-        <b style="color:${TYPES[l.type].color}">${TYPES[l.type].label}</b> — ${far ? far.textContent.slice(0, 80) : ""}…
+      return `<div class="zn" style="border-color:${TYPES[l.type].color}" data-far="${esc(farId)}">
+        <b style="color:${TYPES[l.type].color}">${TYPES[l.type].label}</b> — ${far ? esc(far.textContent.slice(0, 80)) : ""}…
         <div class="which">${which} · click to step there</div></div>`;
     }).join("") +
     `<div class="foot">no lines: each step reveals the neighbours along one dimension —

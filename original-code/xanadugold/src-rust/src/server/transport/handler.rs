@@ -1241,6 +1241,13 @@ async fn backlink_notify_handler(
         )
             .into_response();
     }
+    if !crate::server::rate_limiter::validate_work_id_hex(&notify.origin_work_id) {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            "invalid origin_work_id format",
+        )
+            .into_response();
+    }
 
     // Sender authenticity (FR-40 hardening): the notify MUST be
     // signed by the claimed origin's Ed25519 key. Verification is
@@ -1322,6 +1329,30 @@ async fn backlink_notify_handler(
                 } else {
                     format!("http://{}", claimed_origin)
                 };
+                // SSRF pre-check (CodeQL #538): this endpoint is
+                // unauthenticated and the origin address is
+                // attacker-choosable — a self-generated key signs a
+                // notify naming any target. Refuse private/loopback
+                // targets before the .well-known fetch (the fetch
+                // layer re-checks every resolved address; this is
+                // the fail-fast, auditable gate in front of it).
+                // Strict form + per-server opt-in: the guard keys
+                // off the server's own configuration
+                // (`--allow-loopback` couples it to the ambient
+                // global at startup), so the decision is
+                // deterministic per deployment instead of rereading
+                // process-global state at request time.
+                let loopback_ok = state
+                    .server
+                    .with_server_ref(|srv| srv.allow_loopback_cross_server);
+                if !loopback_ok && crate::server::server::is_ssrf_address_strict(&base) {
+                    tracing::warn!(target: "xudanu::security", ip = %addr, origin = %claimed_origin, event = "SECURITY:ssrf_blocked", "backlink origin .well-known fetch blocked: private/loopback target");
+                    return (
+                        axum::http::StatusCode::FORBIDDEN,
+                        "origin address rejected (private/loopback fetch targets are not allowed)",
+                    )
+                        .into_response();
+                }
                 let wk_url = format!(
                     "{}/.well-known/xudanu-server.json",
                     base.trim_end_matches('/')

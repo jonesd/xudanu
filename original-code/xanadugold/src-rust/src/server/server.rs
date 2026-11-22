@@ -8,6 +8,11 @@ pub fn set_allow_loopback(allow: bool) {
     ALLOW_LOOPBACK.store(allow, AtomicOrdering::SeqCst);
 }
 
+/// Read the ambient loopback-allow flag (set by `--allow-loopback`).
+pub fn allow_loopback_enabled() -> bool {
+    ALLOW_LOOPBACK.load(AtomicOrdering::SeqCst)
+}
+
 use super::admin::{AdminState, IdGrant, SessionInfo};
 use super::club::Club;
 use super::detector::{Detector, DetectorList, Event};
@@ -393,6 +398,16 @@ pub fn is_ssrf_address(addr: &str) -> bool {
     if ALLOW_LOOPBACK.load(AtomicOrdering::SeqCst) {
         return false;
     }
+    is_ssrf_address_strict(addr)
+}
+
+/// Address classification without the ambient loopback-allow bypass.
+/// Callers that gate on an explicit per-server opt-in (the backlink
+/// notify guard: `allow_loopback_cross_server`) use this form — the
+/// process-global is fine for operator-set-once deployments but
+/// nondeterministic when configuration can change concurrently
+/// (e.g. test binaries flipping the global mid-run).
+pub fn is_ssrf_address_strict(addr: &str) -> bool {
     // Normalize: strip scheme, then brackets/ports without breaking
     // bare or bracketed IPv6 literals ("::1" must survive intact —
     // a naive split(':') truncates it to "").
@@ -430,7 +445,12 @@ pub fn is_ssrf_address(addr: &str) -> bool {
     if let Ok(ip) = host.parse::<std::net::IpAddr>() {
         match ip {
             std::net::IpAddr::V4(v4) => {
-                if v4.is_loopback() || v4.is_private() || v4.is_link_local() || v4.is_unspecified()
+                if v4.is_loopback()
+                    || v4.is_private()
+                    || v4.is_link_local()
+                    || v4.is_unspecified()
+                    || v4.is_documentation()
+                    || v4.octets()[0] >= 224
                 {
                     return true;
                 }
@@ -438,6 +458,19 @@ pub fn is_ssrf_address(addr: &str) -> bool {
             std::net::IpAddr::V6(v6) => {
                 if v6.is_loopback() || v6.is_unspecified() {
                     return true;
+                }
+                // IPv4-mapped literals must classify as their v4
+                // address (see is_ip_blocked).
+                if let Some(v4) = v6.to_ipv4_mapped() {
+                    if v4.is_loopback()
+                        || v4.is_private()
+                        || v4.is_link_local()
+                        || v4.is_unspecified()
+                        || v4.is_documentation()
+                        || v4.octets()[0] >= 224
+                    {
+                        return true;
+                    }
                 }
             }
         }
@@ -452,16 +485,41 @@ fn is_ip_blocked(ip: &std::net::IpAddr) -> bool {
     }
     match ip {
         std::net::IpAddr::V4(v4) => {
-            v4.is_loopback() || v4.is_private() || v4.is_link_local() || v4.is_unspecified() || {
-                let octets = v4.octets();
-                octets[0] == 100 && octets[1] >= 64 && octets[1] <= 127
-            }
+            v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || {
+                    let octets = v4.octets();
+                    octets[0] == 100 && octets[1] >= 64 && octets[1] <= 127
+                }
+                || v4.is_documentation()
+                || v4.octets()[0] >= 224
         }
         std::net::IpAddr::V6(v6) => {
+            // IPv4-mapped literals (::ffff:a.b.c.d) parse as V6 and
+            // otherwise slip past every check below while the OS
+            // routes them to the embedded v4 address — classify them
+            // as the v4 address (covers ::ffff:127.0.0.1 and the
+            // ::ffff:169.254.169.254 metadata endpoint).
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                let octets = v4.octets();
+                if v4.is_loopback()
+                    || v4.is_private()
+                    || v4.is_link_local()
+                    || v4.is_unspecified()
+                    || (octets[0] == 100 && octets[1] >= 64 && octets[1] <= 127)
+                    || v4.is_documentation()
+                    || octets[0] >= 224
+                {
+                    return true;
+                }
+            }
             v6.is_loopback()
                 || v6.is_unspecified()
                 || v6.segments()[0] & 0xfe00 == 0xfc00
                 || v6.segments()[0] & 0xffc0 == 0xfe80
+                || v6.segments()[0] & 0xff00 == 0xff00
         }
     }
 }
@@ -54363,6 +54421,16 @@ mod tests_ssrf_guard {
     }
 
     #[test]
+    fn test_is_ssrf_ipv4_mapped_v6() {
+        assert!(is_ssrf_address("[::ffff:127.0.0.1]"));
+        assert!(is_ssrf_address(
+            "http://[::ffff:169.254.169.254]/.well-known/x"
+        ));
+        assert!(is_ssrf_address("http://[::ffff:10.0.0.1]:8080/x"));
+        assert!(!is_ssrf_address("http://[::ffff:8.8.8.8]/x"));
+    }
+
+    #[test]
     fn test_is_ip_blocked_loopback() {
         assert!(is_ip_blocked(&"127.0.0.1".parse().unwrap()));
         assert!(is_ip_blocked(&"::1".parse().unwrap()));
@@ -54404,6 +54472,33 @@ mod tests_ssrf_guard {
     #[test]
     fn test_is_ip_blocked_ipv6_link_local() {
         assert!(is_ip_blocked(&"fe80::1".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_is_ip_blocked_ipv4_mapped_v6() {
+        assert!(is_ip_blocked(&"::ffff:127.0.0.1".parse().unwrap()));
+        assert!(is_ip_blocked(&"::ffff:10.0.0.1".parse().unwrap()));
+        assert!(is_ip_blocked(&"::ffff:192.168.1.1".parse().unwrap()));
+        assert!(is_ip_blocked(&"::ffff:169.254.169.254".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_is_ip_blocked_ipv4_mapped_v6_allows_public() {
+        assert!(!is_ip_blocked(&"::ffff:8.8.8.8".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_is_ip_blocked_ipv6_multicast() {
+        assert!(is_ip_blocked(&"ff02::1".parse().unwrap()));
+        assert!(is_ip_blocked(&"ff00::1".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_is_ip_blocked_v4_multicast_reserved() {
+        assert!(is_ip_blocked(&"224.0.0.1".parse().unwrap()));
+        assert!(is_ip_blocked(&"239.255.255.255".parse().unwrap()));
+        assert!(is_ip_blocked(&"240.0.0.1".parse().unwrap()));
+        assert!(is_ip_blocked(&"255.255.255.255".parse().unwrap()));
     }
 
     #[test]
