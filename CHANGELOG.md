@@ -6,6 +6,14 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.22.3] — 2026-11-22
+
+### Security
+- **SSRF hardening of the backlink-notify channel (CodeQL #538, Critical).** `/api/backlink-notify` is unauthenticated and accepts an attacker-chosen origin address; the fetch layer already blocked private ranges post-DNS, but (1) **IPv4-mapped IPv6 literals** (`[::ffff:169.254.169.254]`) parsed as V6 and slipped past every check while the OS routed them to the embedded v4 address — `is_ip_blocked`/`is_ssrf_address` now classify mapped literals as their v4 address, and multicast/reserved/documentation ranges are blocked too; (2) the handler now pre-checks the origin before the `.well-known` fetch (mirroring the cross-server-reference path) with a `SECURITY:ssrf_blocked` audit event, keyed off the per-server `allow_loopback_cross_server` field so the decision is deterministic per deployment; (3) `origin_work_id` is hex-validated like `target_work_id`. Correctly-signed notifies naming loopback or mapped-metadata origins now 403 at the guard. Follow-up audit of all fetch call sites: #271.
+
+### Fixed
+- CodeQL cleanups: transpointing docs page `textContent`→`innerHTML` interpolations escaped (#534); accidentally-tracked `web/app/coverage/` untracked and ignored (#535); unused `activeTitle` imports removed from classic e2e specs (#536/#537).
+
 ## [v1.22.2] — 2026-11-14
 
 ### Fixed
