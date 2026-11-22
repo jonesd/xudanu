@@ -6,6 +6,16 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.22.4] — 2026-11-22
+
+### Dependencies (security)
+- **First `cargo audit` pass over the workspace lockfile (PR #273)** — cleared all 5 error-level RustSec advisories every other check was green on: ammonia mutation-XSS via embedded SVG/MathML (RUSTSEC-2026-0533, 4.2.4 → 4.2.5), quick-xml `NsReader` unbounded namespace allocation + quadratic duplicate-attribute scan (RUSTSEC-2026-0195/0194, 0.36.2 → 0.41.0), quinn-udp receive-loop spin after truncated datagram (RUSTSEC-2026-0538, 0.5.15 → 0.5.16), url stack overflow on nested `blob:` URLs (RUSTSEC-2026-0592, 2.5.8 → 2.5.9), tokio `AsyncFd` I/O-safety violation (RUSTSEC-2026-0386, 1.53.1 → 1.53.3).
+- **quick-xml 0.36 → 0.41 port** in the EPUB importer (`src/server/epub.rs`): 0.41 emits entities as separate `Event::GeneralRef` events and `decode()` no longer resolves them — `dc:title` text truncated at the first entity (`Cats &amp; Dogs` → `Cats`). Text + entity refs now accumulate until the element's true End (inline markup tolerated), and `extract_text` resolves refs via `quick_xml::escape::unescape` with the `escape-html` XHTML entity set enabled; unknown entity names pass through verbatim rather than failing an import. Regression tests for both paths.
+- **CI**: new `Cargo audit` job (SHA-pinned `taiki-e/install-action`) gates every PR and push to main on RustSec vulnerabilities — a vulnerable lockfile can no longer ride a green CI. The 17 remaining unmaintained/yanked warnings stay non-failing (tracked; the chacha20 yank needs upstream movement).
+
+### Fixed
+- CLI test helpers (`migration_cli`, `recover_cli`) resolved the server binary through a typo'd runtime env var (`CARGO_BIN_EXTR_`, which cargo never sets) and a repo-root-relative fallback path — broken under `CARGO_TARGET_DIR` redirection (all 7 upgrade tests + recover_cli failed with NotFound before spawning). Now a compile-time `option_env!("CARGO_BIN_EXE_xudanu-server")` that cargo guarantees wherever the target dir lives.
+
 ## [v1.22.3] — 2026-11-22
 
 ### Security
