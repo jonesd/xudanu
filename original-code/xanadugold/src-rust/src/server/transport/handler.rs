@@ -168,7 +168,10 @@ async fn vendor_handler(
         _ => return axum::http::StatusCode::NOT_FOUND.into_response(),
     };
     (
-        [(axum::http::header::CONTENT_TYPE, mime)],
+        [
+            (axum::http::header::CONTENT_TYPE, mime),
+            (axum::http::header::CACHE_CONTROL, "no-cache"),
+        ],
         axum::body::Body::from(bytes.to_vec()),
     )
         .into_response()
@@ -219,7 +222,10 @@ async fn index_handler(
         None => EMBEDDED_INDEX_HTML.to_owned(),
     };
     (
-        [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        [
+            (axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (axum::http::header::CACHE_CONTROL, "no-cache"),
+        ],
         html,
     )
         .into_response()
@@ -324,6 +330,7 @@ async fn well_known_handler(State(state): State<SharedState>) -> impl IntoRespon
                 "application/json; charset=utf-8",
             ),
             (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+            (axum::http::header::CACHE_CONTROL, "no-cache"),
         ],
         json,
     )
@@ -1872,10 +1879,28 @@ async fn serve_index_html(state: &SharedState) -> axum::response::Response {
         None => EMBEDDED_INDEX_HTML.to_owned(),
     };
     (
-        [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        [
+            (axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (axum::http::header::CACHE_CONTROL, "no-cache"),
+        ],
         html,
     )
         .into_response()
+}
+
+/// Cache policy for static responses. Content-hashed build outputs
+/// (vite's assets/) are immutable by construction and may cache hard;
+/// everything else — HTML shells, vendored libs, the well-known
+/// document — must revalidate. With no stated policy browsers
+/// improvise: observed in production 2026-11-22, Safari pinned a
+/// months-old server_version (and its search bloom) from
+/// /.well-known/xanadu-server.json across reloads.
+fn cache_control_for(path: &str) -> &'static str {
+    if path.starts_with("assets/") || path.contains("/assets/") {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-cache"
+    }
 }
 
 async fn static_fallback_handler(
@@ -1921,7 +1946,10 @@ async fn static_fallback_handler(
             if let Ok(bytes) = tokio::fs::read(&index).await {
                 let mime = mime_guess::from_path(&index).first_or_octet_stream();
                 return (
-                    [(axum::http::header::CONTENT_TYPE, mime.to_string())],
+                    [
+                        (axum::http::header::CONTENT_TYPE, mime.to_string()),
+                        (axum::http::header::CACHE_CONTROL, "no-cache".to_string()),
+                    ],
                     bytes,
                 )
                     .into_response();
@@ -1936,7 +1964,13 @@ async fn static_fallback_handler(
         Ok(bytes) => {
             let mime = mime_guess::from_path(&file_path).first_or_octet_stream();
             (
-                [(axum::http::header::CONTENT_TYPE, mime.to_string())],
+                [
+                    (axum::http::header::CONTENT_TYPE, mime.to_string()),
+                    (
+                        axum::http::header::CACHE_CONTROL,
+                        cache_control_for(path).to_string(),
+                    ),
+                ],
                 bytes,
             )
                 .into_response()

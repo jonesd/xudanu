@@ -11582,6 +11582,35 @@ async fn well_known_identity_has_cors_header() {
 }
 
 #[tokio::test]
+async fn well_known_identity_sends_no_cache() {
+    // 2026-11-22: with no cache policy, browsers improvised — a real
+    // visitor's cache pinned a months-old server_version (and its
+    // search bloom) across reloads and reconnects. The document must
+    // revalidate.
+    let server = Server::new();
+    let state = AppState::new(server).shared();
+    let app = build_router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("http://{}/.well-known/xudanu-server.json", addr))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let cc = resp
+        .headers()
+        .get("cache-control")
+        .expect("cache-control missing on well-known document");
+    assert_eq!(cc, "no-cache");
+}
+
+#[tokio::test]
 async fn well_known_identity_reflects_work_count() {
     let mut server = Server::new();
     let sid = server.connect();
@@ -13447,6 +13476,83 @@ fn spa_fallback_serves_real_assets_with_mime() {
             .unwrap();
         assert_eq!(resp.status(), 200, "deep link still serves the shell");
         assert!(resp.text().await.unwrap().contains("shell"));
+    });
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn static_cache_policy_immutable_assets_revalidating_shells() {
+    // Hashed build outputs (assets/) are immutable by construction and
+    // cache hard; HTML shells and vendored files keep stable names and
+    // must revalidate. No policy at all lets browsers improvise
+    // (2026-11-22: a months-old well-known document stayed pinned in
+    // Safari across reloads).
+    let dir = std::env::temp_dir().join(format!("xudanu-cache-test-{}", std::process::id()));
+    let classic_assets = dir.join("classic").join("assets");
+    std::fs::create_dir_all(&classic_assets).unwrap();
+    std::fs::write(
+        classic_assets.join("index-abc123.js"),
+        b"console.log('ok');",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("classic").join("index.html"),
+        b"<html><body>classic</body></html>",
+    )
+    .unwrap();
+
+    let server = xudanu::server::Server::new();
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let state = std::sync::Arc::new(
+            xudanu::server::transport::shared::AppState::new(server).with_static_dir(dir.clone()),
+        );
+        let app = xudanu::server::transport::handler::build_router(state.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let resp = reqwest::get(format!("http://{}/classic/assets/index-abc123.js", addr))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let cc = resp
+            .headers()
+            .get("cache-control")
+            .expect("hashed asset needs cache-control")
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert_eq!(cc, "public, max-age=31536000, immutable");
+
+        let resp = reqwest::get(format!("http://{}/classic/", addr))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let cc = resp
+            .headers()
+            .get("cache-control")
+            .expect("index shell needs cache-control")
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert_eq!(cc, "no-cache");
+
+        let resp = reqwest::get(format!("http://{}/vendor/preact.umd.js", addr))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let cc = resp
+            .headers()
+            .get("cache-control")
+            .expect("vendored file needs cache-control")
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert_eq!(cc, "no-cache");
     });
 
     let _ = std::fs::remove_dir_all(&dir);
