@@ -57,6 +57,7 @@ header {
 /* the mode toggle's label changes length ("windows" vs "panes") —
    a fixed floor stops the ‹ › arrows from jumping on toggle */
 .navbtns button#mode-toggle { min-width: 78px; text-align: center; }
+.navbtns button#nav-toggle { display: none; }
 .head-link {
   color: var(--ink-dim); text-decoration: none; font-size: 13.5px;
   border: 1px solid var(--rule); border-radius: 3px; padding: 3px 10px;
@@ -389,3 +390,74 @@ body.paper .stack-handle { background: #faf6ec; }
   outline-offset: 2px;
   border-radius: 4px;
 }
+
+/* The reading deck — phones. The spread becomes a horizontal deck
+   of panes with a peek of the next card; the shelf collapses to a
+   strip above; beams are suppressed (a line between off-screen
+   panes cannot be honest — the chip names the connection instead).
+   Mirrors DECK_MQ in main.ts — keep them in step. */
+@media (max-width: 720px), (orientation: landscape) and (max-height: 500px) {
+  header { flex-wrap: wrap; padding: 10px 14px; row-gap: 4px; }
+  .head-right { flex-wrap: wrap; row-gap: 4px; }
+  #head-status { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .server-meta { display: none; }
+  .navbtns button#nav-toggle { display: inline-block; }
+
+  #app { height: auto; min-height: 100vh; min-height: 100dvh; }
+  .frame { display: block; height: auto; }
+  nav {
+    border-right: none; border-bottom: 1px solid var(--rule);
+    max-height: 30vh; padding: 12px 14px;
+  }
+  body.nav-collapsed nav { display: none; }
+  main { padding: 12px; overflow: visible; }
+
+  .panes {
+    display: flex; gap: 12px;
+    overflow-x: auto; scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    padding: 2px 0 10px;
+  }
+  /* Trailing spacer: gives the deck the scroll range to center its
+     last card — the visible remainder is the peek of "more deck". */
+  .panes::after { content: ""; flex: 0 0 14vw; }
+  .pane {
+    flex: 0 0 86vw; scroll-snap-align: center; scroll-snap-stop: always;
+    min-height: 45vh;
+    height: calc(100vh - 320px); height: calc(100dvh - 320px);
+    max-height: none;
+  }
+  .pane.ghost { display: none; }
+  #beams { display: none; }
+
+  .beam-panel { min-width: 0; width: calc(100vw - 28px); }
+  .type-panel { max-width: calc(100vw - 24px); }
+  .tbox-tab { max-width: 150px; }
+
+  .gate { margin: 12vh auto; }
+}
+
+/* Landscape phones: same deck, wider cards, shorter shelf. */
+@media (orientation: landscape) and (max-height: 500px) {
+  nav { max-height: 26vh; }
+  .panes::after { flex-basis: 20vw; }
+  .pane {
+    flex-basis: 58vw;
+    height: calc(100vh - 170px); height: calc(100dvh - 170px);
+  }
+}
+
+/* The chip: a followed connection names itself where the beam
+   would have been. */
+.follow-chip {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 60; max-width: calc(100vw - 36px);
+  background: var(--paper-inset); color: var(--ink);
+  border: 1px solid var(--rule); border-radius: 999px;
+  padding: 6px 16px; font-size: 13px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  display: none;
+}
+.follow-chip.on { display: block; animation: lens-fade-in 0.15s ease-out; }

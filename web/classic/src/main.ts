@@ -21,6 +21,11 @@ const canWrite = (): boolean => editPolicy !== "owner-only" && editPolicy !== "f
 const canConnect = (): boolean => editPolicy !== "frozen";
 let mode: "panes" | "windows" = localStorage.getItem("xudanu_classic_mode") === "windows" ? "windows" : "panes";
 let skin: "ink" | "paper" = localStorage.getItem("xudanu_classic_skin") === "paper" ? "paper" : "ink";
+if (localStorage.getItem("xudanu_classic_nav_collapsed") === "1") document.body.classList.add("nav-collapsed");
+// The mobile deck query: narrow screens, and landscape phones (wide
+// but short). Mirrors the CSS media queries — keep them in step.
+const DECK_MQ = "(max-width: 720px), (orientation: landscape) and (max-height: 500px)";
+const deckMode = (): boolean => window.matchMedia(DECK_MQ).matches;
 let winView: WindowsView | null = null;
 let focusPane: Col = "a";
 let stackRev: Partial<Record<Col, number | null>> = {};
@@ -328,6 +333,7 @@ async function openWork(workId: number, pane: "A" | "B" | "C", push = true): Pro
     appendToStack("c", p);
   }
   render();
+  deckFocus(pane.toLowerCase() as Col);
 }
 
 
@@ -662,6 +668,7 @@ function render(): void {
       : `<article><p class="quiet">Search, or follow a trail. Underlines are live connections —
         click one to open the far end beside this work, joined by a beam.</p></article>`;
 
+  const keepDeck = document.getElementById("panes")?.scrollLeft ?? 0;
   app.innerHTML = `
     <header>
       <span class="mark">Xudanu <span>classic</span></span>
@@ -671,12 +678,13 @@ function render(): void {
           <button id="hist-fwd" title="forward (alt-→)">›</button>
           <button id="mode-toggle" title="switch posture">${mode === "windows" ? "⧉ windows" : "▤ panes"}</button>
           <button id="skin-toggle" title="switch skin — ink or the mockup paper look">${skin === "paper" ? "paper" : "ink"}</button>
+          <button id="nav-toggle" title="show or hide the shelf">☰</button>
           ${canWrite() ? `<button id="new-work" title="create a new work in the docuverse">+</button>` : ""}
         </span>
         ${!canWrite() ? `<span class="quiet small" title="${canConnect() ? "reading and connecting are open — writing is signed-in in the workspace" : "this server is read-only"}">${canConnect() ? "◦ reading room" : "◦ read-only"}</span>` : ""}
         ${paneAt("a") ? `<a class="head-link" href="/workspace?work=0x${paneAt("a")!.workId.toString(16)}" title="open this work in the workspace">workspace ↗</a>` : ""}
         <span id="head-status" class="quiet small"></span>
-        <span class="quiet">${esc(client.serverName)} · v${esc(client.serverVersion || "?")} · api ${client.apiVersion}</span>
+        <span class="quiet server-meta">${esc(client.serverName)} · v${esc(client.serverVersion || "?")} · api ${client.apiVersion}</span>
       </div>
     </header>
     <div class="frame">
@@ -688,6 +696,9 @@ function render(): void {
       </nav>
       <main>${main}</main>
     </div>`;
+  // The deck keeps its place across a re-render (render rebuilds the
+  // whole tree; without this every state change would snap back to A).
+  if (keepDeck > 0) document.getElementById("panes")?.scrollTo({ left: keepDeck });
 
   ensureTrails();
   ensureWorks();
@@ -712,6 +723,10 @@ function render(): void {
     skin = skin === "paper" ? "ink" : "paper";
     localStorage.setItem("xudanu_classic_skin", skin);
     render();
+  };
+  document.getElementById("nav-toggle")!.onclick = () => {
+    document.body.classList.toggle("nav-collapsed");
+    localStorage.setItem("xudanu_classic_nav_collapsed", document.body.classList.contains("nav-collapsed") ? "1" : "0");
   };
   const newWorkBtn = document.getElementById("new-work");
   if (newWorkBtn) newWorkBtn.onclick = () => void createAndEdit();
@@ -980,6 +995,7 @@ async function openBeside(workId: number): Promise<void> {
   }
   appendToStack(target, await fetchPane(client!, workId));
   render();
+  deckFocus(target);
 }
 
 function renderLibraryPanel(): void {
@@ -1219,6 +1235,7 @@ async function follow(linkId: number, from: Col = "a"): Promise<void> {
   const far = farId(l, src.workId);
   if (far === null) { setStatus("this connection has no far end"); return; }
   activeLink = l;
+  showFollowChip(`${typeOf(l).name} → ${farTitle(l, src.workId)}`);
   // The reading stream: following a connection appends to the next
   // column's stack — nothing is replaced, the trail grows.
   const target: Col = from === "a" ? "b" : from === "b" ? "c" : "a";
@@ -1233,9 +1250,34 @@ async function follow(linkId: number, from: Col = "a"): Promise<void> {
   const already = stackAt(target).some((w) => w.workId === far);
   appendToStack(target, p);
   render();
+  deckFocus(target);
   setStatus(firstLine(p.text, far) + (already
     ? " — already open in column " + target.toUpperCase()
     : " — column " + target.toUpperCase()));
+}
+
+let chipTimer: number | null = null;
+
+/** Deck mode has no beams (a line between off-screen panes would
+ *  lie), so a followed connection names itself: a chip at the thumb
+ *  line — "type → far end" — while the deck swipes to the target. */
+function showFollowChip(text: string): void {
+  if (!deckMode()) return;
+  let chip = document.getElementById("follow-chip");
+  if (!chip) {
+    chip = document.createElement("div");
+    chip.id = "follow-chip";
+    document.body.appendChild(chip);
+  }
+  chip.textContent = text;
+  chip.classList.add("on");
+  if (chipTimer !== null) window.clearTimeout(chipTimer);
+  chipTimer = window.setTimeout(() => { chip?.classList.remove("on"); }, 2600);
+}
+
+function deckFocus(tag: Col): void {
+  if (!deckMode()) return;
+  document.getElementById(`pane-${tag}`)?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
 }
 
 function wireBeams(): void {
@@ -1268,10 +1310,10 @@ function wireBeams(): void {
       const workId = Number(b.dataset.endWork);
       inspectLink = null;
       void (async () => {
-        if (stackAt("b").length === 0) appendToStack("b", await fetchPane(client!, workId));
-        else if (stackAt("c").length === 0) appendToStack("c", await fetchPane(client!, workId));
-        else appendToStack("b", await fetchPane(client!, workId));
+        const target: Col = stackAt("b").length === 0 ? "b" : stackAt("c").length === 0 ? "c" : "b";
+        appendToStack(target, await fetchPane(client!, workId));
         render();
+        deckFocus(target);
       })().catch((e) => setStatus((e as Error).message));
     });
   });
@@ -1385,6 +1427,7 @@ function drawBeams(): void {
   const svg = document.getElementById("beams") as SVGSVGElement | null;
   const panes = document.getElementById("panes");
   if (!svg || !panes) return;
+  if (deckMode()) { svg.innerHTML = ""; return; }
   const svgR = panes.getBoundingClientRect();
   svg.setAttribute("width", String(svgR.width));
   svg.setAttribute("height", String(svgR.height));
