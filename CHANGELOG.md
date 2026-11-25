@@ -6,6 +6,11 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.22.6] — 2026-11-25
+
+### Fixed
+- **Classic: browser back destroyed the reading session (PR #283)** — following a connection opened the far end in column B with no history entry (only pane-A opens pushed one), so the browser's back landed on the entry from *before* the session: one tap wiped the panes to the trail view, a second left the app. On a phone this hits the most habitual gesture there is (edge-swipe, bottom-bar back). Every column open — follow, search result, trail stop, beam-panel end — now pushes an entry carrying a layout snapshot (the stack depths before the open, plus the followed connection); restoring truncates to the snapshot and re-opens the work, so back from a follow closes the far column and keeps the reading view, and forward reopens it with its beam. Cold deep links enrich their entry at boot; reconnects no longer re-open the hash's work into column A; popstate/hashchange double-fires are deduped by a nav key and in-flight async restores are superseded by newer navigations. New `e2e/history.spec.ts` (search-open → follow → back/forward; trail → lesson → follow → back keeps reading, back again shows the trail), suite 14/14; WebKit at phone dimensions: back closes card B, the deck re-focuses card A, forward reopens B — zero console errors.
+
 ## [v1.22.5] — 2026-11-25
 
 ### Added
