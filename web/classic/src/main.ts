@@ -26,6 +26,9 @@ if (localStorage.getItem("xudanu_classic_nav_collapsed") === "1") document.body.
 // but short). Mirrors the CSS media queries — keep them in step.
 const DECK_MQ = "(max-width: 720px), (orientation: landscape) and (max-height: 500px)";
 const deckMode = (): boolean => window.matchMedia(DECK_MQ).matches;
+// The windows posture is desktop-first (satellites live past a phone's
+// edge); a phone reads in the deck regardless of a stored preference.
+if (deckMode()) mode = "panes";
 let winView: WindowsView | null = null;
 let focusPane: Col = "a";
 let stackRev: Partial<Record<Col, number | null>> = {};
@@ -681,7 +684,7 @@ function render(): void {
           <button id="nav-toggle" title="show or hide the shelf">☰</button>
           ${canWrite() ? `<button id="new-work" title="create a new work in the docuverse">+</button>` : ""}
         </span>
-        ${!canWrite() ? `<span class="quiet small" title="${canConnect() ? "reading and connecting are open — writing is signed-in in the workspace" : "this server is read-only"}">${canConnect() ? "◦ reading room" : "◦ read-only"}</span>` : ""}
+        ${!canWrite() ? `<span class="quiet small room-label" title="${canConnect() ? "reading and connecting are open — writing is signed-in in the workspace" : "this server is read-only"}">${canConnect() ? "◦ reading room" : "◦ read-only"}</span>` : ""}
         ${paneAt("a") ? `<a class="head-link" href="/workspace?work=0x${paneAt("a")!.workId.toString(16)}" title="open this work in the workspace">workspace ↗</a>` : ""}
         <span id="head-status" class="quiet small"></span>
         <span class="quiet server-meta">${esc(client.serverName)} · v${esc(client.serverVersion || "?")} · api ${client.apiVersion}</span>
