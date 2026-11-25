@@ -6,6 +6,15 @@ GitHub releases: https://github.com/jonesd/xudanu/releases
 
 ---
 
+## [v1.22.5] — 2026-11-25
+
+### Added
+- **Classic mobile reading deck (PR #278)** — the 1972 posture translated for the phone rather than squeezed onto it. Below 720px width (or landscape-phone height) the parallel pages become a scroll-snap card deck: portrait cards 86vw, landscape 58vw, the next card peeking at the edge so the spread's promise stays visible. Following a connection names itself in words — a follow-chip ("reference → Lesson Companion") slides up along the bottom edge while the deck swipes to the far passage — because a beam drawn between off-screen pages cannot be honest. The shelf collapses to a scrollable strip with a persisted ☰ toggle; ghost panes and beams are suppressed below the threshold. Desktop is untouched (everything lives in `@media` queries): classic e2e 12/12 and phone-dimension WebKit walks with zero overflow in both orientations.
+- **Phone pass 2 (PR #279)**, from the deck's first real-device session (the author's iPhone over WiFi against a LAN-served build): the windows posture is desktop-first — its satellites park past a phone's edge, leaving content on the left and a dead stage on the right — so phones now boot into the deck regardless of a stored `windows` preference and the posture toggle hides below the deck threshold; the workspace link compacts onto the header's button row (the reading-room label hides on phones; the connect gate already states the posture); symmetric deck spacers plus `safe center` center a lone card instead of it hugging the left edge with dead paper beside it. The same session gave the reconnect machinery its live-fire proof: screen lock → "connection dropped — reconnecting…" → page restored with its open work — and identified an earlier desktop "underline doesn't register" report as a silently-dead socket on a slept tab, not a code path.
+
+### Fixed
+- **Scroll undulation on touch devices (PR #280)** — transclusion identity boxes and search highlights were drawn as overlays *outside* `.pane-scroll` and re-positioned on every scroll tick to chase the text. Discrete wheel steps hide the one-frame lag; continuous touch scrolling exposes it (first seen live: the yellow search highlight wobbling behind the link line in the gallery's Six Voices). Both layers now live inside the scroller (`position: relative`), laid out in content coordinates and moving with the text natively — the drawing code is unchanged, the same rect-minus-layer-origin formula simply yields content coordinates now. Only the beams still chase a scroll, the one overlay that genuinely lives in viewport space (drawn between columns); resize keeps the full redraw, correctly, since reflow changes content coordinates too. e2e asserts the layer's parent is the scroller and that a box stays within 2px of its words at a real 600px scroll offset (suite 12/12); WebKit at phone dimensions: search highlight dx=0/dy=0 at a genuine 86px offset, Nelson boxes within 0.1px of their line tops at offsets 0/80/135 with box positions tracking the scroll deltas exactly.
+
 ## [v1.22.4] — 2026-11-22
 
 ### Dependencies (security)
