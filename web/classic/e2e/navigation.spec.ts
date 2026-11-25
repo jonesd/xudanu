@@ -46,10 +46,11 @@ test.describe("classic navigation", () => {
     await mark.click();
     await expect(page.locator("#pane-b:not(.ghost) .stack-work-title").first()).toBeVisible();
 
-    // History: the back button leaves the walk and returns to the
-    // trail view (following a connection opens pane B without pushing
-    // a history entry — back returns to the last opened work's
-    // predecessor: here, the expanded trail).
+    // History: back from a follow closes the far column and keeps
+    // the reading view; back again returns to the expanded trail.
+    await page.locator("#hist-back").click();
+    await expect(page.locator("#pane-b.ghost")).toBeVisible();
+    await expect(activeTitle(page, "a")).not.toBeEmpty();
     await page.locator("#hist-back").click();
     await expect(page.locator("#pane-a")).toHaveCount(0);
     await expect(page.locator("main article, .trail-stops").first()).toBeVisible();
