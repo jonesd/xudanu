@@ -400,8 +400,10 @@ body.paper .stack-handle { background: #faf6ec; }
   header { flex-wrap: wrap; padding: 10px 14px; row-gap: 4px; }
   .head-right { flex-wrap: wrap; row-gap: 4px; }
   #head-status { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .room-label { display: none; }
   .server-meta { display: none; }
   .navbtns button#nav-toggle { display: inline-block; }
+  .head-link { padding: 2px 8px; font-size: 12.5px; }
 
   #app { height: auto; min-height: 100vh; min-height: 100dvh; }
   .frame { display: block; height: auto; }
@@ -415,12 +417,15 @@ body.paper .stack-handle { background: #faf6ec; }
   .panes {
     display: flex; gap: 12px;
     overflow-x: auto; scroll-snap-type: x mandatory;
+    justify-content: safe center;
     -webkit-overflow-scrolling: touch;
     padding: 2px 0 10px;
   }
-  /* Trailing spacer: gives the deck the scroll range to center its
-     last card — the visible remainder is the peek of "more deck". */
-  .panes::after { content: ""; flex: 0 0 14vw; }
+  /* Symmetric spacers: a lone card centers itself instead of hugging
+     the left edge with dead paper beside it; with several cards they
+     give the snap range for end cards to center too. */
+  .panes::before, .panes::after { content: ""; flex: 0 0 12vw; }
+  .navbtns button#mode-toggle { display: none; }
   .pane {
     flex: 0 0 86vw; scroll-snap-align: center; scroll-snap-stop: always;
     min-height: 45vh;
@@ -440,7 +445,7 @@ body.paper .stack-handle { background: #faf6ec; }
 /* Landscape phones: same deck, wider cards, shorter shelf. */
 @media (orientation: landscape) and (max-height: 500px) {
   nav { max-height: 26vh; }
-  .panes::after { flex-basis: 20vw; }
+  .panes::before, .panes::after { flex-basis: 20vw; }
   .pane {
     flex-basis: 58vw;
     height: calc(100vh - 170px); height: calc(100dvh - 170px);
