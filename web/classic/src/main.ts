@@ -396,9 +396,9 @@ function paneHtml(tag: Col): string {
   const focused = !isEditingHere && focusPane === tag ? " focused" : "";
   return `<section class="pane${focused}" id="pane-${tag}">
     <div class="stack-count" id="stack-count-${tag}">${stack.length > 1 ? `${stack.length} works` : ""}</div>
-    <div class="searchhl-layer" id="searchhl-${tag}"></div>
-    <div class="tboxes" id="tboxes-${tag}"></div>
     <div class="pane-scroll" id="scroll-${tag}">
+      <div class="searchhl-layer" id="searchhl-${tag}"></div>
+      <div class="tboxes" id="tboxes-${tag}"></div>
       ${worksHtml}
     </div>
     ${editBar}
@@ -1743,9 +1743,13 @@ function observeBeams(): void {
     drawAllTBoxes();
     drawAllSearchHl();
   };
-  sa.addEventListener("scroll", redraw, { passive: true });
-  sb.addEventListener("scroll", redraw, { passive: true });
-  sc?.addEventListener("scroll", redraw, { passive: true });
+  // Identity boxes and search highlights ride inside the scroller —
+  // they move with the text, so only the beams (drawn between columns
+  // in viewport coordinates) need to chase a scroll.
+  const onScroll = () => { drawBeams(); };
+  sa.addEventListener("scroll", onScroll, { passive: true });
+  sb.addEventListener("scroll", onScroll, { passive: true });
+  sc?.addEventListener("scroll", onScroll, { passive: true });
   window.addEventListener("resize", redraw);
   beamObserver = new ResizeObserver(redraw);
   beamObserver.observe(sa);
