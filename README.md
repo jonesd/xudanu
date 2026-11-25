@@ -53,6 +53,12 @@ Read-only by default; the server owns durability. Full tool list, the direct dat
 
 ## What it looks like
 
+**The reading interface is the 1972 posture, running:** parallel pages, connections drawn as beams between the passages they join. Click an underline and the far passage opens as its own page beside the first; follow another and the spread grows — reading as moving around a place, not scrolling past it.
+
+![The 1972 posture, running — the spread grown to three pages by two clicks, beams joining the passages](docs/screenshots-classic/posture-1972.png)
+
+*Three pages, two clicks: the Gallery lobby, Room 4, and the 1987 Second Echo one hop back along the quotation chain. The story of this interface: [The 1972 reading interface, alive at last](https://dgjones.info/xudanu/the-1972-reading-interface.html).*
+
 | | |
 |---|---|
 | ![Connections](docs/screenshots/right-panel-links.png) | ![Link types](docs/screenshots/link-types-multi.png) |
