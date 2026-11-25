@@ -131,6 +131,46 @@ let stackC: Pane[] = [];
 const COLS = ["a", "b", "c"] as const;
 type Col = (typeof COLS)[number];
 
+/** Layout snapshot carried in a history entry: `s` is the nav
+ *  sequence, `w` the work this entry opened, `col` the column it
+ *  opened in, `d` the stack depths BEFORE the open (restoring
+ *  truncates back to `d`, then re-opens `w`), `l` the followed
+ *  connection so beams return with the layout, `t` a trail view. */
+interface HistState {
+  s: number;
+  w?: number;
+  col?: Col;
+  d?: [number, number, number];
+  l?: number | null;
+  t?: number;
+}
+let navSeq = 0;
+/** popstate and hashchange both fire for one navigation — the second
+ *  event for the same entry is skipped. Set on every programmatic
+ *  push too: pushState fires no events of its own. */
+let lastNavKey = "";
+/** Supersedes an in-flight async restore when a newer navigation lands. */
+let navToken = 0;
+function histKey(): string {
+  const st = history.state as HistState | null;
+  return st !== null && typeof st.s === "number" ? `s${st.s}` : `h${location.hash}`;
+}
+
+/** Every column open pushes a history entry carrying the layout it
+ *  was pushed over — back from a follow closes the far column
+ *  instead of leaving the app, and forward reopens it. */
+function pushHist(workId: number, col: Col, linkId: number | null = null): void {
+  const st: HistState = {
+    s: ++navSeq,
+    w: workId,
+    col,
+    d: [stackA.length, stackB.length, stackC.length],
+    l: linkId,
+  };
+  history.pushState(st, "", `#w${workId}`);
+  lastNavKey = `s${st.s}`;
+}
+
 const STACK_CAP = 8;
 
 function stackAt(tag: Col): Pane[] {
@@ -327,16 +367,11 @@ async function openWork(workId: number, pane: "A" | "B" | "C", push = true): Pro
     editing = null;
   }
   const p = await fetchPane(client, workId);
-  if (pane === "A") {
-    appendToStack("a", p);
-    if (push) history.pushState({ w: workId }, "", `#w${workId}`);
-  } else if (pane === "B") {
-    appendToStack("b", p);
-  } else {
-    appendToStack("c", p);
-  }
+  const col = pane.toLowerCase() as Col;
+  if (push) pushHist(workId, col);
+  appendToStack(col, p);
   render();
-  deckFocus(pane.toLowerCase() as Col);
+  deckFocus(col);
 }
 
 
@@ -996,7 +1031,9 @@ async function openBeside(workId: number): Promise<void> {
     await openWork(workId, "A");
     return;
   }
-  appendToStack(target, await fetchPane(client!, workId));
+  const p = await fetchPane(client!, workId);
+  pushHist(workId, target);
+  appendToStack(target, p);
   render();
   deckFocus(target);
 }
@@ -1032,6 +1069,7 @@ function renderLibraryPanel(): void {
  *  is abandoned (its grab died with the socket — the server released
  *  it on disconnect). */
 async function connect(): Promise<void> {
+  const booting = client === null;
   const gate = document.getElementById("gate-status");
   if (gate) gate.textContent = "connecting…";
   const c = new ClassicClient();
@@ -1079,7 +1117,17 @@ async function connect(): Promise<void> {
       : "reading room — this server is read-only");
   }
   const wm = /^#w(\d+)$/.exec(location.hash);
-  if (wm) void openWork(Number(wm[1]), "A", false);
+  if (wm && booting) {
+    // A cold deep link: enrich the browser's own entry with the
+    // layout snapshot, so back from the first opened work behaves
+    // like any other open. Reconnects skip this — after a follow the
+    // hash names a far-end work opened in B, not the anchor.
+    const w = Number(wm[1]);
+    const st: HistState = { s: ++navSeq, w, col: "a", d: [0, 0, 0], l: null };
+    history.replaceState(st, "", `#w${w}`);
+  }
+  lastNavKey = histKey();
+  if (wm && booting) void openWork(Number(wm[1]), "A", false);
 }
 
 function wireSearch(): void {
@@ -1175,7 +1223,11 @@ document.addEventListener("click", (ev) => {
     const tid = Number(trail);
     const opening = openTrailId !== tid;
     openTrailId = opening ? tid : null;
-    if (opening && stackA.length === 0) history.pushState({ t: tid }, "", `#t${tid}`);
+    if (opening && stackA.length === 0) {
+      const st: HistState = { s: ++navSeq, t: tid };
+      history.pushState(st, "", `#t${tid}`);
+      lastNavKey = `s${st.s}`;
+    }
     if (stackA.length > 0) renderTrailsNav();
     else render();
     return;
@@ -1251,6 +1303,9 @@ async function follow(linkId: number, from: Col = "a"): Promise<void> {
     return;
   }
   const already = stackAt(target).some((w) => w.workId === far);
+  // A follow is a history entry like any other open: back closes the
+  // far column and returns the spread, forward reopens it.
+  if (stackAt(target)[0]?.workId !== far) pushHist(far, target, l.link_id);
   appendToStack(target, p);
   render();
   deckFocus(target);
@@ -1314,7 +1369,9 @@ function wireBeams(): void {
       inspectLink = null;
       void (async () => {
         const target: Col = stackAt("b").length === 0 ? "b" : stackAt("c").length === 0 ? "c" : "b";
-        appendToStack(target, await fetchPane(client!, workId));
+        const p = await fetchPane(client!, workId);
+        pushHist(workId, target, activeLink?.link_id ?? null);
+        appendToStack(target, p);
         render();
         deckFocus(target);
       })().catch((e) => setStatus((e as Error).message));
@@ -1384,26 +1441,114 @@ function wireClose(): void {
 
 function onHashNav(): void {
   if (!client) return;
+  // popstate and hashchange both fire for one navigation — process
+  // each history entry exactly once.
+  const key = histKey();
+  if (key === lastNavKey) return;
+  lastNavKey = key;
+  const st = history.state as HistState | null;
+  if (st !== null && typeof st.s === "number") {
+    if (st.w !== undefined && st.col !== undefined && st.d !== undefined) {
+      void restoreLayout(st);
+      return;
+    }
+    if (st.t !== undefined) {
+      leaveReading(st.t);
+      return;
+    }
+  }
+  // Legacy hash entries (no snapshot — e.g. a link pasted mid-session):
+  // open as before, then enrich the entry so back and forward restore.
   const wm = /^#w(\d+)$/.exec(location.hash);
   const tm = /^#t(\d+)$/.exec(location.hash);
   if (wm) {
-    void openWork(Number(wm[1]), "A", false);
+    const w = Number(wm[1]);
+    const d: [number, number, number] = [stackA.length, stackB.length, stackC.length];
+    void openWork(w, "A", false).then(() => {
+      if (histKey() !== key) return;
+      const enriched: HistState = { s: ++navSeq, w, col: "a", d };
+      history.replaceState(enriched, "", `#w${w}`);
+      lastNavKey = `s${enriched.s}`;
+    });
   } else {
-    // Trail or home entries: leave the reading surface — back must
-    // close the panes, not just re-render the sidebar. An active edit
-    // is canceled (with release) exactly as any other navigation does.
-    if (editing) {
-      void editor?.cancel(editing.workId).finally(() => render());
-      editor = null;
-      editing = null;
-    }
-    openTrailId = tm ? Number(tm[1]) : null;
-    stackA = [];
-    stackB = [];
-    stackC = [];
-    activeLink = null;
-    render();
+    leaveReading(tm ? Number(tm[1]) : null);
   }
+}
+
+/** Leave the reading surface — a trail view or home. Back must close
+ *  the panes, not just re-render the sidebar. An active edit is
+ *  canceled (with release) exactly as any other navigation does. */
+function leaveReading(tid: number | null): void {
+  if (editing) {
+    void editor?.cancel(editing.workId).finally(() => render());
+    editor = null;
+    editing = null;
+  }
+  openTrailId = tid;
+  stackA = [];
+  stackB = [];
+  stackC = [];
+  activeLink = null;
+  render();
+}
+
+/** Restore the layout a history entry describes: every column
+ *  truncated to its pre-open depth, then the entry's work back on
+ *  top of its column. Back from a follow closes the far column;
+ *  forward reopens it — the whole spread, not just the hash. */
+async function restoreLayout(st: HistState): Promise<void> {
+  if (!client || st.w === undefined || st.col === undefined || st.d === undefined) return;
+  const my = ++navToken;
+  if (editing) {
+    await editor?.cancel(editing.workId);
+    editor = null;
+    editing = null;
+    if (navToken !== my) return;
+  }
+  const ci = COLS.indexOf(st.col);
+  if (ci === -1) return;
+  const stacks: Pane[][] = [stackA, stackB, stackC];
+  const depth = [st.d[0], st.d[1], st.d[2]];
+  depth[ci] += 1;
+  for (let i = 0; i < stacks.length; i++) {
+    if (stacks[i].length > depth[i]) stacks[i].length = depth[i];
+  }
+  const colStack = stacks[ci];
+  if (colStack[0]?.workId === st.w) {
+    // The common back: the layout already matches, only the far
+    // columns needed truncating — no refetch, no flicker.
+    activeLink = findLink(st.l ?? null);
+    render();
+    deckFocus(st.col);
+    return;
+  }
+  // Forward (or a column that lost the work): reopen it.
+  if (colStack.length > st.d[ci]) colStack.length = st.d[ci];
+  let p: Pane;
+  try {
+    p = await fetchPane(client, st.w);
+  } catch (e) {
+    setStatus("could not reopen: " + String(e));
+    return;
+  }
+  if (navToken !== my) return;
+  appendToStack(st.col, p);
+  activeLink = findLink(st.l ?? null);
+  render();
+  deckFocus(st.col);
+}
+
+/** A followed connection returns with its layout: find the link
+ *  entry by id among everything currently open. */
+function findLink(linkId: number | null): LinkEntryClassic | null {
+  if (linkId === null) return null;
+  for (const tag of COLS) {
+    for (const p of stackAt(tag)) {
+      const hit = p.links.find((l) => l.link_id === linkId);
+      if (hit) return hit;
+    }
+  }
+  return null;
 }
 
 window.onpopstate = onHashNav;
