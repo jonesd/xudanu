@@ -67,11 +67,12 @@ li{margin-bottom:4px}
 <div class="toc-section">Contents</div>
 <a href="#census">1. The census</a>
 <a href="#additions">2. Proposed additions &mdash; systems the list missed</a>
-<a href="#teds-demos">3. Ted Nelson&rsquo;s own browser demos &mdash; what remains</a>
-<a href="#timeline">4. Timeline, 1988&ndash;2026</a>
-<a href="#gold-model">5. Where the Gold model is actually documented</a>
-<a href="#sources">6. Sources and verification</a>
-<a href="#corrections">7. Corrections &mdash; how to reach us</a>
+<a href="#addendum">3. Addendum &mdash; 27 November 2026</a>
+<a href="#teds-demos">4. Ted Nelson&rsquo;s own browser demos &mdash; what remains</a>
+<a href="#timeline">5. Timeline, 1988&ndash;2026</a>
+<a href="#gold-model">6. Where the Gold model is actually documented</a>
+<a href="#sources">7. Sources and verification</a>
+<a href="#corrections">8. Corrections &mdash; how to reach us</a>
 </div>
 
 <h2 id="census">The census</h2>
@@ -110,6 +111,33 @@ li{margin-bottom:4px}
 </table>
 
 <div class="note"><strong>Adjacent:</strong> <a href="https://github.com/jonesd/xcp">XCP</a> &mdash; a proposed open standard for cross-implementation content sharing between xanalogical systems. Not a system; listed because it matters the day more than one of these runs at once.</div>
+
+<h2 id="addendum">Addendum &mdash; 27 November 2026</h2>
+<p>The rule of this page is that dated observations accumulate rather than being silently overwritten. One week after the 20 November snapshot, two findings belong on the record: Roger Gregory&rsquo;s own words, now found in public, and a new organization doing preservation and revival work the tables above do not yet show. The tables stay as they were; both findings are dated here.</p>
+
+<h3>R. Gregory, in his own words</h3>
+<p>The entry above records what was reported secondhand in September. In June 2026, Roger Gregory had already said more in public &mdash; in a comment on a LinkedIn post by Rob Jellinghaus, a programmer from Project Xanadu&rsquo;s Gold era:</p>
+<p>&ldquo;Vibe coding is different if you have 50 man years of code to start it from. Do you want me to add you to my nascent Xanadu[Green/Gold] email list. I&rsquo;ve got green&lt;=&gt;gold talking to a web frontend. Green is tested, claude claims Gold works too in Pharo.&rdquo; &mdash; Roger Gregory, public comment, June 2026 (brackets his own)</p>
+<p>In his own words, then: the ports exist and interoperate &mdash; green and gold, talking to a web frontend. Green is tested. Gold&rsquo;s pass, he says, is attested by Claude. The means of translation is on the record now: vibe coding, starting from the fifty man-years of accumulated code. And it remains pre-release &mdash; a &ldquo;nascent&rdquo; email list; no repository, no distribution, and none found as of this addendum (GitHub, Hacker News, and web-search checks, 27 November 2026). The September entry&rsquo;s remaining caveat stands: the byte-identical-output claim is unverified until release. Quoted verbatim from his own public comment; no cooperation with any project is implied.</p>
+
+<h3>The xanatoo organization</h3>
+<p>Found while checking for new Udanax descendants: <a href="https://github.com/xanatoo">github.com/xanatoo</a>, created 3 November 2026 (GitHub API), five repositories by Ingo Ruhnke, veteran of the SuperTux and Pingus open-source projects (GitHub &ldquo;Grumbel&rdquo;). Every repo sits at zero stars, and no mention of the org was found on Hacker News, Reddit, or Lobsters as of this date &mdash; three weeks old and, as far as the census can tell, undiscovered. It is recorded here so the field&rsquo;s attention map includes it.</p>
+
+<table>
+<thead><tr><th>System</th><th>Author</th><th>Since</th><th>Lineage</th><th>Status (27 Nov 2026)</th></tr></thead>
+<tbody>
+<tr><td><strong>xanatoo</strong> (the browser)</td><td>Ingo Ruhnke</td><td>Oct 2026</td><td><span class="tag tag-blue">Independent</span> &mdash; Xanadu-inspired, no Udanax ancestry</td><td class="pro">Very active &mdash; 985 commits by 27 Nov; C++20/SDL3/ImGui; GPL-3.0; Linux (Nix), Android, Windows, WASM builds</td></tr>
+<tr><td><strong>udanax-green</strong></td><td>Ingo Ruhnke</td><td>2026</td><td><span class="tag tag-green">Green</span> (actual code, running)</td><td class="pro">Brought &ldquo;back into a usable state&rdquo; (their description) &mdash; beyond the mirrors-and-build-fixes row above: the 1999 release builds on modern Linux/NixOS, and the original Pyxi frontend (Ka-Ping Yee, Python/Tk) runs again, ported to Python 3. Single-user; &ldquo;compatibility and usability work, not a redesign of the Xanadu data model&rdquo; (their README)</td></tr>
+<tr><td><strong>udanax-gold</strong></td><td>Ingo Ruhnke</td><td>2026</td><td><span class="tag tag-gold">Gold</span> (preservation)</td><td>Preserved &mdash; the original 1999 distribution kept as released (MIT/X11), CVS working-copy metadata and the 1993 <code>winfe</code> Windows front end included; not a reimplementation</td></tr>
+<tr><td><strong>winfe-resurrect</strong></td><td>Ingo Ruhnke</td><td>2026</td><td><span class="tag tag-gold">Gold</span> (frontend)</td><td>Visual resurrection of that 1993 front end &mdash; rebuilt as standalone Win32 under Wine with a stub mid-end so the UI is operable; &ldquo;historical UI effort, not a live FeBe/Xanadu protocol client&rdquo; (their README)</td></tr>
+</tbody>
+</table>
+
+<p>Two details worth recording. The Green repo&rsquo;s Pyxi brings the <em>Parallel View</em> back &mdash; two documents side by side, shared spans colored and connected by lines; the 1999 sample database&rsquo;s two versions of the US Declaration of Independence still compare (per the repo&rsquo;s screenshot and regression tests; this census has not run it). And the browser keeps the xanalogical reading experience &mdash; cuts, parallel panes, passage embeds &mdash; while replacing the Gold span/tumbler algebra underneath with quote-based addressing.</p>
+
+<p>Their own words on that choice, from the browser&rsquo;s PASSAGES.md: <em>&ldquo;No <code>NodeId</code>, no span index in addresses. NodeIds last a session; span boundaries move when formatting changes. Text is addressed by content, which also survives re-fetches of foreign pages that we cannot give stable ids. This follows the W3C Web Annotation quote selector and text fragments.&rdquo;</em> A long range is matched by its first and last four words plus context words until the match is unique; resolution comes back Exact, Moved, or Lost; and cuts are view state &mdash; <em>&ldquo;a cut needs no reload, and edits in a cut are ordinary edits of the document.&rdquo;</em> The trade is explicit in the same note: positional ids do not survive a session or a re-layout, and foreign pages cannot be given stable ids at all; content addressing does survive &mdash; at the price of the exact-span guarantees the Gold model was built to deliver.</p>
+
+<div class="gold"><strong>What the table says, revisited.</strong> Both additions leave the 20 November conclusion standing. The xanatoo org&rsquo;s Gold work is preservation and visual resurrection, not reimplementation; its Green run is single-user; the browser itself is Independent lineage. Roger&rsquo;s ports, per his own words, remain unreleased. The Gold lineage still has exactly one active multi-user system. What the week changed is the field around it: the revival strategies are now all visible at once &mdash; resurrect and run the originals (winfe-resurrect, xanatoo&rsquo;s preserved Gold and running Green, Roger&rsquo;s unreleased ports), re-translate the model into a new codebase (Xudanu), build fresh in the spirit (the xanatoo browser) &mdash; in an organization three weeks old with zero stars. The busiest the field has ever been, per the timeline above, got busier in one week.</div>
 
 <h2 id="teds-demos">Ted Nelson&rsquo;s own browser demos &mdash; what remains</h2>
 <p>The origin designer&rsquo;s own line of browser demos is itself part of the census, and part of the story. Ted Nelson, describing where the design settled: <em>&ldquo;The Xanadu design has essentially resolved to one basic document concept: parallel pages with visible connections.&rdquo;</em> (<a href="http://hyperland.com/HTbrew-D11">hyperland.com</a>)</p>
@@ -213,9 +241,11 @@ li{margin-bottom:4px}
 <li><strong>The framing critique:</strong> Gwern, <a href="https://gwern.net/xanadu">&ldquo;Xanadu: Then and Now&rdquo;</a> &mdash; the best-known critical essay on the design; the census is, in part, an empirical answer to its &ldquo;vaporware&rdquo; framing.</li>
 <li><strong>xu60:</strong> <a href="https://pypi.org/project/xu60">PyPI</a> &mdash; 0.1.0 Nov 2025, 0.1.5 Sep 2026, Python/ASGI.</li>
 <li><strong>Seed Hypermedia:</strong> <a href="https://seed.hyper.media/">seed.hyper.media</a>; ACM HT&rsquo;14/24 DOI 10.1145/3648188.3677050; Mintter rebrand Feb 2025.</li>
-<li><strong>R. Gregory ports:</strong> reported publicly Sept 2026 in correspondence archived in Don Hopkins&rsquo; <a href="https://github.com/SimHacker/WillWrightShowForFood">WillWrightShowForFood</a> repository (the invitation and reply documents). Unreleased; no cooperation with any project is implied by this entry; nothing here is quoted beyond what that public archive already states.</li>
+<li><strong>R. Gregory ports:</strong> reported publicly Sept 2026 in correspondence archived in Don Hopkins&rsquo; <a href="https://github.com/SimHacker/WillWrightShowForFood">WillWrightShowForFood</a> repository (the invitation and reply documents). Unreleased; no cooperation with any project is implied by this entry; nothing in the table above is quoted beyond what that public archive already states.</li>
 <li><strong>Ted Nelson&rsquo;s demo lineage:</strong> <a href="http://hyperland.com/HTbrew-D11">hyperland.com project history</a> and <a href="https://xanadu.com/YourXanadoc.html">xanadu.com/xanadoc instructions</a>. Liveness checked 2026-11-20: xanadu.com/demo/ returns 200 but is a meta-refresh to perma.pub, which fails TLS with an invalid certificate; hyperland.com/xuCambDemo/ returns 403 on the directory but sample xanalink files within return 200.</li>
 <li><strong>Live/dead checks</strong> on this page were made 2026&ndash;11&ndash;20 with plain HTTP requests (status codes as noted). Dates are recorded so future readers can see how fresh each observation was.</li>
+<li><strong>R. Gregory, in his own words (added 27 November 2026):</strong> public comment, June 2026, on a LinkedIn post by Rob Jellinghaus (a Gold-era Udanax programmer). <a href="https://www.linkedin.com/posts/robjellinghaus_one-bleeding-edge-of-the-ai-wave-is-the-increase-activity-7467131560392060929-Dozl">Original post</a> (<a href="https://web.archive.org/web/20261127230937/https://www.linkedin.com/posts/robjellinghaus_one-bleeding-edge-of-the-ai-wave-is-the-increase-activity-7467131560392060929-Dozl">archived copy</a>), fetched logged-out and quoted verbatim; the brackets in &ldquo;Xanadu[Green/Gold]&rdquo; are his own. No release had followed as of 2026-11-27 (GitHub, Hacker News, and web-search checks).</li>
+<li><strong>xanatoo org (added 27 November 2026):</strong> <a href="https://github.com/xanatoo">github.com/xanatoo</a> &mdash; org creation date from the GitHub API; five repositories, zero stars each. Author Ingo Ruhnke, veteran of the SuperTux and Pingus projects (GitHub &ldquo;Grumbel&rdquo;). Browser, udanax-green, udanax-gold, and winfe-resurrect READMEs and the browser&rsquo;s PASSAGES.md read in full; commit count, language, license, and build targets verified 2026-11-27. No external mentions found (Hacker News/Algolia, Reddit, Lobsters) as of that date. Nothing in the org has been built or run by this census.</li>
 </ul>
 
 <h2 id="corrections">Corrections &mdash; how to reach us</h2>
