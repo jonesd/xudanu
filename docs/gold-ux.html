@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The 1992 Link Model, Rendered</title>
+<meta name="description" content="The Udanax Gold link model's own components — two-ended and multi-ended links, gathered end-sets, descriptors, comment-on-link, density pills, lanes, the link wizard, trails — each one live, each one real.">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#0d1117;color:#c9d1d9;line-height:1.7;padding:0}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:#e6edf3}
+h1{font-size:36px;font-weight:800;margin-bottom:8px;letter-spacing:-0.5px}
+h2{font-size:26px;font-weight:700;margin-top:72px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #21262d}
+h3{font-size:18px;font-weight:600;margin-top:32px;margin-bottom:12px;color:#58a6ff}
+p{margin-bottom:12px;max-width:820px}
+code{font-family:'JetBrains Mono',monospace;font-size:0.88em;background:rgba(110,118,129,0.15);padding:2px 6px;border-radius:4px;color:#79c0ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 20px;margin:16px 0;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.6;color:#c9d1d9}
+.content-wrap{max-width:960px;margin:0 auto;padding:48px 32px 80px}
+.subtitle{font-size:18px;color:#8b949e;font-weight:300;margin-bottom:40px}
+.note{background:rgba(88,166,255,0.06);border-left:3px solid #58a6ff;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.note strong{color:#58a6ff}
+.gold{background:rgba(210,153,34,0.06);border-left:3px solid #d29922;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.gold strong{color:#d29922}
+.warning{background:rgba(248,81,73,0.06);border-left:3px solid #f85149;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0;font-size:14px;color:#8b949e}
+.warning strong{color:#f85149}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13px}
+th{text-align:left;padding:10px 14px;border-bottom:2px solid #30363d;color:#8b949e;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #21262d;vertical-align:top}
+.toc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:20px 24px;margin:24px 0}
+.toc a{display:block;padding:3px 0;font-size:14px;color:#8b949e}
+.toc a:hover{color:#58a6ff}
+.toc .toc-section{font-weight:600;color:#e6edf3;margin-top:8px}
+ul{margin-left:20px;margin-bottom:12px;list-style:disc}
+li{margin-bottom:4px}
+.footer{margin-top:80px;padding-top:24px;border-top:1px solid #21262d;font-size:12px;color:#484f58;text-align:center}
+@media print{body{background:#fff;color:#222}h1,h2,h3,h4{color:#111}table{font-size:11px}}
+
+/* ---- gallery extensions ---- */
+:root{
+  --t-comment:#7aa2f7; --t-reference:#9ece6a; --t-disagreement:#f7768e;
+  --t-quotation:#e0af68; --t-seealso:#bb9af7; --t-web:#7dcfff;
+}
+.demo{background:#10151c;border:1px solid #21262d;border-radius:12px;padding:20px;margin:24px 0}
+.demo-hint{font-size:12px;color:#484f58;font-style:italic;margin-top:10px}
+.docgrid{display:grid;gap:14px}
+.docgrid.g2{grid-template-columns:1fr 1fr}
+.docgrid.g3{grid-template-columns:1fr 1fr 1fr}
+.docpanel{background:#161b22;border:1px solid #30363d;border-radius:8px;overflow:hidden}
+.docpanel .dp-head{font-family:'JetBrains Mono',monospace;font-size:11px;color:#8b949e;padding:7px 12px;border-bottom:1px solid #21262d;display:flex;justify-content:space-between;align-items:center;letter-spacing:0.3px}
+.dp-backlink{font-size:10px;color:#8b949e;border:1px solid #30363d;border-radius:9px;padding:0 7px;cursor:default;white-space:nowrap}
+.docpanel .dp-body{padding:12px 14px;font-size:14px;color:#c9d1d9}
+.mk{border-bottom:2px solid var(--c,#8a857b);background:color-mix(in srgb,var(--c,#8a857b) 10%,transparent);padding:0 1px;cursor:pointer;transition:background .12s,box-shadow .12s}
+.mk.lit,.mk:hover{background:color-mix(in srgb,var(--c,#8a857b) 26%,transparent);box-shadow:0 0 0 1px color-mix(in srgb,var(--c,#8a857b) 30%,transparent)}
+.ord{font-family:'JetBrains Mono',monospace;font-size:9px;vertical-align:super;color:var(--c,#8a857b);margin-left:1px}
+.mk-gather{border-bottom-style:double;border-bottom-width:3px}
+.beam{background:#161b22;border:1px solid #30363d;border-left:3px solid var(--c,#8a857b);border-radius:0 8px 8px 0;padding:12px 16px;margin-top:14px;font-size:13px}
+.beam .beam-type{color:var(--c,#8a857b);font-weight:600;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:8px}
+.beam-row{display:flex;gap:10px;padding:5px 0;border-bottom:1px solid #21262d;align-items:baseline}
+.beam-row:last-child{border-bottom:none}
+.beam-row .br-end{font-family:'JetBrains Mono',monospace;font-size:10px;color:#8b949e;min-width:86px;text-transform:uppercase;letter-spacing:0.3px}
+.beam-row .br-txt{color:#c9d1d9}
+.beam-row{transition:background .2s}
+.beam-row.flash{background:rgba(110,118,129,0.16)}
+.ledger{background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:14px 18px;margin-top:14px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.8;color:#c9d1d9;overflow-x:auto}
+.ledger .lk{color:#8b949e}
+.ledger .lt{color:var(--c,#8a857b)}
+.ledger .lm{color:#e0af68}
+.dropped{background:rgba(248,81,73,0.05);border-left:3px solid rgba(248,81,73,0.55);padding:10px 14px;margin:14px 0 6px;border-radius:0 6px 6px 0;font-size:13.5px;color:#8b949e}
+.dropped strong{color:#f85149}
+.prov{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#484f58;margin-top:10px;line-height:1.7}
+.prov b{color:#8b949e;font-weight:500}
+.typekey{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0}
+.tk{font-family:'JetBrains Mono',monospace;font-size:11px;padding:2px 10px;border-radius:11px;border:1px solid var(--c);color:var(--c);background:color-mix(in srgb,var(--c) 9%,transparent);cursor:default}
+.doors{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid #30363d;border-radius:12px;overflow:hidden;margin:26px 0}
+.door{display:block;padding:26px 24px 22px;text-decoration:none;border-right:1px solid #30363d;background:#161b22;transition:background .15s}
+.door:last-child{border-right:none}
+.door:hover{background:#1a212b;text-decoration:none}
+.door .door-era{font-family:'JetBrains Mono',monospace;font-size:11px;color:#8b949e;letter-spacing:2px}
+.door .door-phrase{font-size:21px;font-weight:700;color:#e6edf3;margin:7px 0 5px}
+.door .door-note{font-size:12.5px;color:#8b949e}
+.door.here{background:rgba(210,153,34,0.07)}
+.door.here .door-era{color:#d29922}
+.door.here .door-note{color:#8b949e}
+.door .door-note em{color:#58a6ff;font-style:normal}
+.door.here .door-note em{color:#d29922}
+.pill{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#e0af68;border:1px solid rgba(224,175,104,0.45);background:rgba(224,175,104,0.1);border-radius:12px;padding:1px 10px;cursor:pointer;white-space:nowrap;vertical-align:middle;margin-left:6px}
+.pill:hover{background:rgba(224,175,104,0.2)}
+.dense-phrase{border-bottom:2px dotted rgba(224,175,104,0.5);background:rgba(224,175,104,0.06);padding:0 1px}
+.lane-text{font-size:14px;color:#c9d1d9;padding:12px 14px;line-height:1.9}
+.lanes{position:relative;margin:6px 14px 2px;border-top:1px dashed #21262d}
+.lane-row{position:absolute;left:0;right:0;height:16px}
+.lane-bar{position:absolute;top:3px;height:10px;border-radius:3px;background:color-mix(in srgb,var(--c,#8a857b) 22%,transparent);border:1px solid var(--c);cursor:pointer;transition:opacity .15s,background .15s;min-width:4px}
+.lane-bar:hover,.lane-bar.lit{background:color-mix(in srgb,var(--c,#8a857b) 48%,transparent)}
+.lane-bar.dim{opacity:0.22}
+.lane-readout{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#8b949e;margin:10px 14px 2px;min-height:18px}
+.lane-cap{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#484f58;margin:12px 14px 0;letter-spacing:0.3px}
+.d6hl{border-bottom:2px solid var(--c,#8a857b);background:color-mix(in srgb,var(--c,#8a857b) 22%,transparent);padding:0 1px}
+.lane-readout .lr-t{color:var(--c,#8a857b)}
+.wz{background:#161b22;border:1px solid #30363d;border-radius:8px;overflow:hidden}
+.wz-head{font-family:'JetBrains Mono',monospace;font-size:11px;color:#8b949e;padding:8px 14px;border-bottom:1px solid #21262d;display:flex;justify-content:space-between}
+.wz-step{display:none;padding:16px}
+.wz-step.active{display:block}
+.wz-cap{font-size:12px;color:#8b949e;margin-bottom:10px}
+.wz-target{animation:wzpulse 2.2s ease-in-out infinite}
+@keyframes wzpulse{0%,100%{background:rgba(247,118,142,0)}50%{background:rgba(247,118,142,0.22)}}
+.wz-selbox{position:relative;border:1px dashed #f7768e;border-radius:4px;padding:1px 3px;box-shadow:2px 2px 0 rgba(247,118,142,0.3);animation:wzpulse 2.2s ease-in-out infinite}
+.wz-modes{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.wz-mode{border:1px solid #30363d;border-radius:8px;padding:10px 12px;background:#10151c}
+.wz-mode .wm-name{font-size:13px;font-weight:600;color:#e6edf3}
+.wz-mode .wm-note{font-size:11.5px;color:#8b949e;margin-top:3px}
+.wz-mode.picked{border-color:var(--t-disagreement);box-shadow:0 0 0 1px var(--t-disagreement)}
+.wz-types{display:flex;flex-wrap:wrap;gap:8px}
+.wz-type{font-family:'JetBrains Mono',monospace;font-size:12px;padding:4px 13px;border-radius:13px;border:1px solid var(--c);color:var(--c);background:color-mix(in srgb,var(--c) 9%,transparent);cursor:default}
+.wz-type.picked{background:color-mix(in srgb,var(--c) 26%,transparent);font-weight:600}
+.wz-desc{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:9px 12px;font-size:13.5px;color:#c9d1d9;width:100%;font-family:'Inter',sans-serif}
+.wz-desc::placeholder{color:#484f58}
+.wz-ctl{display:flex;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid #21262d;flex-wrap:wrap}
+.wz-btn{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#c9d1d9;background:#10151c;border:1px solid #30363d;border-radius:6px;padding:5px 13px;cursor:pointer}
+.wz-btn:hover{border-color:#58a6ff;color:#58a6ff}
+.wz-pos{font-family:'JetBrains Mono',monospace;font-size:11px;color:#484f58;margin-left:auto}
+.trail-strip{background:#161b22;border:1px solid #30363d;border-radius:8px;overflow:hidden}
+.trail-head{font-family:'JetBrains Mono',monospace;font-size:11px;color:#8b949e;padding:8px 14px;border-bottom:1px solid #21262d;letter-spacing:0.3px}
+.trail-stops{display:flex;flex-wrap:wrap;gap:6px;padding:12px 14px;border-bottom:1px solid #21262d}
+.trail-chip{font-family:'JetBrains Mono',monospace;font-size:11px;color:#8b949e;border:1px solid #30363d;background:#10151c;border-radius:13px;padding:3px 12px;cursor:pointer}
+.trail-chip:hover{color:#58a6ff;border-color:#58a6ff}
+.trail-chip.here{color:#e0af68;border-color:rgba(224,175,104,0.6);background:rgba(224,175,104,0.08)}
+.trail-pane{padding:12px 14px;font-size:14px}
+.trail-pane .tp-title{font-family:'JetBrains Mono',monospace;font-size:11px;color:#8b949e;margin-bottom:6px}
+.trail-ctl{display:flex;gap:8px;padding:0 14px 12px}
+.comment-link-row{border:1px solid rgba(163,113,247,0.4);background:rgba(163,113,247,0.06);border-radius:6px;padding:8px 12px;margin-top:8px}
+.comment-link-row .clr-head{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#a371f7;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:4px}
+.desc-box{display:inline-block;background:rgba(224,175,104,0.08);border:1px solid rgba(224,175,104,0.4);border-left:3px solid #e0af68;border-radius:0 6px 6px 0;padding:5px 12px;font-size:13px;color:#e0af68;margin:10px 0 2px}
+.desc-box.lit{background:rgba(224,175,104,0.2);box-shadow:0 0 0 1px rgba(224,175,104,0.4)}
+.desc-chain{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#484f58}
+.desc-chain .dc-step{border:1px solid #30363d;border-radius:4px;padding:2px 8px;cursor:pointer}
+.desc-chain .dc-step.here{border-color:#e0af68;color:#e0af68}
+.setviz{margin:16px 0 4px}
+@media (max-width:760px){
+  .docgrid.g2,.docgrid.g3,.doors,.wz-modes{grid-template-columns:1fr}
+  .door{border-right:none;border-bottom:1px solid #30363d}
+  .door:last-child{border-bottom:none}
+  h1{font-size:28px}
+}
+</style>
+</head>
+<body>
+<div style="background:#161b22;border-bottom:1px solid #30363d;color:#8b949e;font-size:13px;padding:6px 16px;text-align:center">An independent interpretation of the released Udanax Gold source &middot; not Project Xanadu documentation &middot; <a href="provenance.html" style="color:#58a6ff;text-decoration:none">about this documentation</a></div>
+<div class="content-wrap">
+
+<h1>The 1992 Link Model, Rendered</h1>
+<p class="subtitle">The Gold link model&rsquo;s own components — bidirectional, multi-ended, gathered, described, contested — each one live, each one real.</p>
+
+<div class="note"><strong>What this is.</strong> An interactive gallery of the link machinery of <strong>Udanax Gold</strong> (the 1992 design, released 1999), rendered by <a href="https://demo.transclusion.org">Xudanu</a> — the system that implements the Gold model today. Every component below is a working demonstration of a structure the model actually defines, exercised on the same corpus the live demo server uses. Nothing on this page is a mockup: every structure shown — multi-ended links, gathered end-sets, descriptors, comments-on-links — is stored by the same server that serves the <a href="https://demo.transclusion.org">live sandbox</a> and the 1972 reading interface. This page is the deep end; corrections are welcome (<a href="#corrections">below</a>).</div>
+
+<div class="gold"><strong>Why 1992, not 1999.</strong> The label is the design date, not the escape date. The Gold model existed as a design in 1992; the code escaped in 1999 as machine-generated C++ nobody could read; the shipped Windows frontend was 1993. This gallery renders the <em>model</em>, so it dates the model — the same convention the <a href="xanalogical-census.html">census</a> and the <a href="gold-xudanu-complexity.html">complexity comparison</a> already use.</div>
+
+<h2>Two doors</h2>
+<p>Nelson, describing where the design settled: <em>&ldquo;The Xanadu design has essentially resolved to one basic document concept: parallel pages with visible connections.&rdquo;</em> (<a href="http://hyperland.com/HTbrew-D11">hyperland.com</a>). That is one sentence containing two interfaces, twenty years apart:</p>
+
+<div class="doors">
+  <a class="door" href="https://demo.transclusion.org">
+    <div class="door-era">1972</div>
+    <div class="door-phrase">parallel pages</div>
+    <div class="door-note">the reading interface — the page, the panes, the trail. <em>The &rsquo;72 skin, live on the sandbox.</em></div>
+  </a>
+  <a class="door here" href="#components">
+    <div class="door-era">1992</div>
+    <div class="door-phrase">visible connections</div>
+    <div class="door-note">the link model — end-sets, descriptors, the machinery that makes connections unbreakable and multi-ended. <em>This page.</em></div>
+  </a>
+</div>
+
+<p>The doors are never mixed: the &rsquo;72 interface stays historically pure (that is its whole value), and the Gold components live here, dated 1992, in their own visual identity. But the two doors are not two systems. They are <strong>one server, one link store, two renderings</strong> — the &rsquo;72 client queries the same end-sets this gallery shows; it renders a reading subset of them. The gradient between the doors is deliberate: we built the Gold-capable interface first, watched it read as alien, and distilled the &rsquo;72 interface out of it. Readers who find this page confusing are <em>supposed to</em> — the &rsquo;72 door is the on-ramp, and this is the deep end.</p>
+
+<div class="warning"><strong>Read this before judging the visuals.</strong> The Gold link UX was alien to its own decade. The 1993 frontend wrapped it in familiar professional chrome (insurance-rating forms) because the concepts had never met an audience they weren&rsquo;t ahead of. The web later resolved the same tension by <em>deleting the capability</em> — one-way, one-ended, mute links — to stay legible. This gallery keeps the capability and labels the confusion instead. Each component carries a short caption saying exactly what the web dropped to buy its legibility. Alien-and-capable is the exhibit, not the defect.</div>
+
+<h3>How to read the provenance lines</h3>
+<p>Every component ends with a three-part note in the system&rsquo;s own terms:</p>
+<div class="prov"><b>Gold model</b> — what the 1999-released sources define (with file and line where known) &middot; <b>our impl</b> — where Xudanu implements it &middot; <b>rendering</b> — what is drawn on this page, and honestly flagged where the drawing is original</div>
+<p>One accuracy rule held throughout: <strong>we render the model&rsquo;s UX in our own visual language — we do not cosplay the 1993 Windows chrome.</strong> No in-text colored underlines survive anywhere in the Gold-era sources; Xudanu&rsquo;s typed underlines are an original rendering in the spirit of the type system. For the actual 1993 frontend, see <a href="https://github.com/xanatoo/winfe-resurrect">winfe-resurrect</a> (Ingo Ruhnke) — the running reconstruction of the shipped Windows FE. The type colors below are the real palette of the &rsquo;72 client, taken from the code that ships today:</p>
+
+<div class="typekey">
+  <span class="tk" style="--c:var(--t-comment)">comment</span>
+  <span class="tk" style="--c:var(--t-reference)">reference</span>
+  <span class="tk" style="--c:var(--t-disagreement)">disagreement</span>
+  <span class="tk" style="--c:var(--t-quotation)">quotation</span>
+  <span class="tk" style="--c:var(--t-seealso)">see also</span>
+  <span class="tk" style="--c:var(--t-web)">web</span>
+</div>
+<p class="demo-hint">In the Gold sources the type set is not a tag — it is an endorsed <em>claim</em> carried by the link itself, and it is a <em>set</em>: one link may carry several types, each endorsed by its author.</p>
+
+<div class="toc">
+<div class="toc-section">Contents</div>
+<a href="#c1">1. The two-ended link — the connection that knows both its ends</a>
+<a href="#c2">2. The three-ended link — a comparison with a subject</a>
+<a href="#c3">3. The gathered end-set — one end that is many</a>
+<a href="#c4">4. The descriptor — the link speaks</a>
+<a href="#c5">5. Comment-on-link — contesting the connection itself</a>
+<a href="#c6">6. The density pill — density you can see, then unfold</a>
+<a href="#c7">7. The link wizard — creation without loss</a>
+<a href="#c8">8. Trails — the form that survived both eras</a>
+<a href="#dropped">9. What the web dropped</a>
+<a href="#model">10. One model, two doors</a>
+<a href="#sources">11. Sources and verification</a>
+<a href="#corrections">12. Corrections</a>
+</div>
+
+<h2 id="components">The components</h2>
+<p>Corpus: the <a href="https://demo.transclusion.org">live demo server&rsquo;s</a> seeded link corpus — a quarterly claims report, a reviewer&rsquo;s analysis, and field notes, connected the way a real dispute is connected. Every passage below is real seed text.</p>
+
+<!-- ============ 1. TWO-ENDED ============ -->
+<h2 id="c1">1. The two-ended link</h2>
+<p>The atom of the model: a connection between two passages that <strong>knows both its ends</strong>. Not a jump — an edge. It is visible from either end, carries a type, and survives edits to the text on either side (the span migrates; the link does not break). Hover either passage below; click to follow.</p>
+
+<div class="demo" id="demo1">
+  <div class="docgrid g2">
+    <div class="docpanel">
+      <div class="dp-head"><span>Q3 Claims Report</span></div>
+      <div class="dp-body"><span class="mk" style="--c:var(--t-disagreement)" data-hl="d1">Customer escalations fell to their lowest level in three years</span>, which we attribute to the new triage rota introduced in June.</div>
+    </div>
+    <div class="docpanel">
+      <div class="dp-head"><span>Reviewer Analysis</span><span class="dp-backlink">&#8617; 1 in</span></div>
+      <div class="dp-body">Escalations fell during a period when the intake form was broken — <span class="mk" style="--c:var(--t-disagreement)" data-hl="d1">the funnel was narrower, not the sentiment better</span>.</div>
+    </div>
+  </div>
+  <div class="beam" style="--c:var(--t-disagreement)" id="demo1-beam">
+    <div class="beam-type">disagreement &middot; link &middot; 2 ends</div>
+    <div class="beam-row"><span class="br-end">LeftEnd</span><span class="br-txt">&ldquo;Customer escalations fell to their lowest level in three years&rdquo; &mdash; Q3 Claims Report</span></div>
+    <div class="beam-row"><span class="br-end">RightEnd</span><span class="br-txt">&ldquo;the funnel was narrower, not the sentiment better&rdquo; &mdash; Reviewer Analysis</span></div>
+  </div>
+  <div class="demo-hint">The glyph on the far panel (&#8617; 1 in) is the backlink: the destination <em>knows</em> it is pointed at, without asking anyone. Clicking either passage follows the link to the other end.</div>
+</div>
+<div class="dropped"><strong>What the web dropped.</strong> A web link is one-way and one-ended: the destination never learns it exists, backlinks are someone else&rsquo;s crawler, and the moment the destination moves or dies, the link is silently broken. The Gold link is an edge in a graph both ends can see.</div>
+<div class="prov"><b>Gold model:</b> canonical constructor builds exactly LinkTypes + LeftEnd + RightEnd (nlinksx.cxx:193) &middot; <b>our impl:</b> <code>links.rs</code> HyperLink with two named ends; span migration on every edit &middot; <b>rendering:</b> typed underlines are original — no colored underlines survive in the Gold sources; the beam card mirrors the &rsquo;72 client&rsquo;s real link inspector</div>
+
+<!-- ============ 2. THREE-ENDED ============ -->
+<h2 id="c2">2. The three-ended link</h2>
+<p>A link has as many named ends as it needs. Three documents meet here — the report&rsquo;s methodology, the reviewer&rsquo;s rebuttal, and a field note nobody asked for — and the <strong>comparison itself is one object</strong>, not a pile of pairwise pointers. Hover any passage; all three ends light together.</p>
+
+<div class="demo" id="demo2">
+  <div class="docgrid g3">
+    <div class="docpanel">
+      <div class="dp-head"><span>Q3 Claims Report</span></div>
+      <div class="dp-body">We measured <span class="mk" style="--c:var(--t-comment)" data-hl="d2">consecutive four-week windows and excluded the holiday gap</span>, which we believe overstates the baseline.</div>
+    </div>
+    <div class="docpanel">
+      <div class="dp-head"><span>Reviewer Analysis</span></div>
+      <div class="dp-body">The retiming coincided with the seasonal traffic trough; <span class="mk" style="--c:var(--t-comment)" data-hl="d2">a year-over-year comparison, not four-week windows, is the honest measure</span>.</div>
+    </div>
+    <div class="docpanel">
+      <div class="dp-head"><span>Field Notes Q3</span></div>
+      <div class="dp-body"><span class="mk" style="--c:var(--t-comment)" data-hl="d2">Corridor signage was replaced during the retiming window</span> &mdash; a confounder nobody has mentioned in either document.</div>
+    </div>
+  </div>
+  <div class="ledger" style="--c:var(--t-comment)">
+<span class="lt">link</span> <span class="lm">4C2</span> &middot; comment &middot; 3 ends<br>
+<span class="lk">LeftEnd&nbsp;&nbsp;</span> report&nbsp;&nbsp;&nbsp;&nbsp;<span class="lm">&ldquo;consecutive four-week windows and excluded the holiday gap&rdquo;</span><br>
+<span class="lk">RightEnd&nbsp;</span> analysis&nbsp;&nbsp;<span class="lm">&ldquo;a year-over-year comparison, not four-week windows, is the honest measure&rdquo;</span><br>
+<span class="lk">ThirdEnd&nbsp;</span> notes&nbsp;&nbsp;&nbsp;&nbsp;<span class="lm">&ldquo;Corridor signage was replaced during the retiming window&rdquo;</span>
+  </div>
+  <div class="demo-hint">The ledger is the link as stored: an edition whose named ends are references. Any number of names is allowed — three is just where it starts to be interesting.</div>
+</div>
+<div class="dropped"><strong>What the web dropped.</strong> A web link has exactly two addresses. Any comparison of three sources becomes a listicle, a screenshot, or nothing at all — the comparison never gets to be <em>a thing</em> with its own identity, type, and history.</div>
+<div class="prov"><b>Gold model:</b> a link-edition carries <em>any number</em> of named ends (nlinksx.cxx:102); Green&rsquo;s from/to/three-set is this same shape with three names &middot; <b>our impl:</b> <code>links.rs</code> end map — extra ends land as named end-set attachments (FR-40) &middot; <b>rendering:</b> original; three-way demos live in the seeded Links Course on the sandbox</div>
+
+<!-- ============ 3. GATHERED END-SET ============ -->
+<h2 id="c3">3. The gathered end-set</h2>
+<p>The centerpiece. <strong>One end of a link can be an entire set of passages</strong> — gathered. Here a single disagreement holds three separate claims from the report, each with its own ordinal, against one rebuttal. The end is not a list of links; it is one end, and it is a <em>set</em>. Hover the rebuttal — all three gathered passages light at once.</p>
+
+<div class="demo" id="demo3">
+  <div class="docgrid g2">
+    <div class="docpanel">
+      <div class="dp-head"><span>Q3 Claims Report</span><span class="dp-backlink">LeftEnd &middot; 3 members</span></div>
+      <div class="dp-body">
+        <span class="mk mk-gather" style="--c:var(--t-disagreement)" data-hl="d3">The western corridor throughput improved by forty percent</span><span class="ord" style="--c:var(--t-disagreement)">1/3</span> following the signal retiming, and <span class="mk mk-gather" style="--c:var(--t-disagreement)" data-hl="d3">no incident metrics rose</span><span class="ord" style="--c:var(--t-disagreement)">2/3</span> during the period. <span class="mk mk-gather" style="--c:var(--t-disagreement)" data-hl="d3">Maintenance costs per corridor-mile dropped twelve percent</span><span class="ord" style="--c:var(--t-disagreement)">3/3</span> under the revised vendor contracts.
+      </div>
+    </div>
+    <div class="docpanel">
+      <div class="dp-head"><span>Reviewer Analysis</span></div>
+      <div class="dp-body">The retiming coincided with the seasonal traffic trough; <span class="mk" style="--c:var(--t-disagreement)" data-hl="d3">a year-over-year comparison, not four-week windows, is the honest measure</span>.</div>
+    </div>
+  </div>
+  <div class="ledger" style="--c:var(--t-disagreement)">
+<span class="lt">link</span> <span class="lm">3A7</span> &middot; disagreement &middot; 2 ends, LeftEnd is a set<br>
+<span class="lk">LeftEnd&nbsp;&nbsp;</span> report&nbsp;&nbsp;&nbsp;&nbsp;{ 3 members &mdash; a set, identity-keyed, unordered }<br>
+<span class="lk">RightEnd&nbsp;</span> analysis&nbsp;&nbsp;<span class="lm">&ldquo;a year-over-year comparison, not four-week windows, is the honest measure&rdquo;</span>
+  </div>
+  <div class="demo-hint">This is how a rebuttal actually argues: against a <em>body</em> of claims, not one sentence. The ordinals (1/3, 2/3, 3/3) are how the live editor shows a passage&rsquo;s position inside a gathered end.</div>
+</div>
+<div class="dropped"><strong>What the web dropped.</strong> Quote three passages in one comment and the three quotations have nothing to do with each other — three separate boxes, no set, no ordinal, no single thing to answer or to follow. On the web, a gathered disagreement is impossible to state.</div>
+<div class="prov"><b>Gold model:</b> FeMultiRef — an end-set in IDSpace, a true set, identity-keyed, and <em>nestable</em> (a set of sets; nlinksx.cxx:479) &middot; <b>our impl:</b> <code>links.rs</code> end maps of Vec&lt;HyperRef&gt;; the &rsquo;72 client&rsquo;s <code>gatherInto</code> authors these sets from the reading surface &middot; <b>rendering:</b> ordinals and the double underline are original; the &ldquo;3 members&rdquo; ledger is what the server stores</div>
+
+<!-- ============ 4. DESCRIPTOR ============ -->
+<h2 id="c4">4. The descriptor</h2>
+<p>The link can <strong>speak in its own voice</strong>. Not the type, not the excerpt at the far end — its own sentence, stored as a named end of the link itself. The 1993 frontend invented exactly this: <code>FELink:Descriptor</code>, a human-readable description carried by the link, with a defined fallback chain. Step through the chain below.</p>
+
+<div class="demo" id="demo4">
+  <div class="docgrid g2">
+    <div class="docpanel">
+      <div class="dp-head"><span>Q3 Claims Report</span></div>
+      <div class="dp-body"><span class="mk" style="--c:var(--t-disagreement)" data-hl="d4">The western corridor throughput improved by forty percent</span> following the signal retiming.</div>
+    </div>
+    <div class="docpanel">
+      <div class="dp-head"><span>Reviewer Analysis</span></div>
+      <div class="dp-body">The retiming <span class="mk" style="--c:var(--t-disagreement)" data-hl="d4">coincided with the seasonal traffic trough</span>.</div>
+    </div>
+  </div>
+  <div class="desc-chain">
+    <span class="dc-step" data-dc="0">1 &middot; descriptor end</span>
+    <span>→</span>
+    <span class="dc-step" data-dc="1">2 &middot; other-end excerpt</span>
+    <span>→</span>
+    <span class="dc-step" data-dc="2">3 &middot; default</span>
+    <span style="margin-left:auto">the resolution order winfe shipped, 1993</span>
+  </div>
+  <div class="desc-box" id="demo4-desc" data-hl="d4">the honest pairing</div>
+  <div class="demo-hint" id="demo4-note">Tier 1 — the descriptor end: the link&rsquo;s own words, stored as a named end. Hover either passage above to see what it describes.</div>
+</div>
+<div class="dropped"><strong>What the web dropped.</strong> The web link is mute. Its <code>title</code> attribute, at best, is a tooltip for whoever happens to hover — it travels with the anchor, not the connection, and the destination never sees it. A connection that can explain itself does not exist on the web.</div>
+<div class="prov"><b>Gold model:</b> <code>FELink:Descriptor</code> named end (winfe links.cpp:26); resolution: descriptor → other-end excerpt → &ldquo;&lt; New Link &gt;&rdquo; (links.cpp:73–77) &middot; <b>our impl:</b> named ends on every link (<code>link_add_end</code>); descriptor boxes with collision-free placement (FR-40 Appendix B) &middot; <b>rendering:</b> the gold box above is ours; the fallback chain and its order are winfe&rsquo;s, exactly</div>
+
+<!-- ============ 5. COMMENT-ON-LINK ============ -->
+<h2 id="c5">5. Comment-on-link</h2>
+<p>Links are works — so <strong>a link can be the subject of another link</strong>. Not the text, the <em>connection</em>: a third reader can contest the dispute itself. This needs no special mechanism in the model; it falls out of everything-is-a-work. The inspector below sits open, as the live client leaves it — the link&rsquo;s two ends, and what is attached to the link itself. Click either underlined passage to trace its end in the inspector.</p>
+
+<div class="demo" id="demo5">
+  <div class="docgrid g2">
+    <div class="docpanel">
+      <div class="dp-head"><span>Q3 Claims Report</span></div>
+      <div class="dp-body">We measured <span class="mk" style="--c:var(--t-comment)" data-hl="d5">consecutive four-week windows and excluded the holiday gap</span>, which we believe overstates the baseline.</div>
+    </div>
+    <div class="docpanel">
+      <div class="dp-head"><span>Reviewer Analysis</span></div>
+      <div class="dp-body">The retiming coincided with the seasonal traffic trough; <span class="mk" style="--c:var(--t-comment)" data-hl="d5">a year-over-year comparison, not four-week windows, is the honest measure</span>.</div>
+    </div>
+  </div>
+  <div class="beam" style="--c:var(--t-comment)" id="demo5-beam">
+    <div class="beam-type">comment &middot; link 4C2 &middot; 3 ends</div>
+    <div class="beam-row"><span class="br-end">LeftEnd</span><span class="br-txt">&ldquo;consecutive four-week windows and excluded the holiday gap&rdquo; &mdash; Q3 Claims Report</span></div>
+    <div class="beam-row"><span class="br-end">RightEnd</span><span class="br-txt">&ldquo;a year-over-year comparison, not four-week windows, is the honest measure&rdquo; &mdash; Reviewer Analysis</span></div>
+    <div class="comment-link-row">
+      <div class="clr-head">attached to this link — comment-on-link</div>
+      <div>&ldquo;the whole dispute turns on measurement windows — four-week versus year-over-year. Settle that and both documents collapse into agreement.&rdquo; &mdash; <span class="mono" style="font-size:11px;color:#8b949e">a note ending at link 4C2</span></div>
+    </div>
+  </div>
+  <div class="demo-hint">The purple row is a second link whose end is not a passage but <em>the first link</em>. The subject of the comment is the connection itself. In the live &rsquo;72 client, clicking a marked passage opens this inspector for that link — the click-to-trace behavior above is the same gesture.</div>
+</div>
+<div class="dropped"><strong>What the web dropped.</strong> You can comment on a page. You can never comment on a <em>link</em> — the connection is not an addressable thing, so it cannot be praised, disputed, or corrected. On the web, the argument about the argument has nowhere to live.</div>
+<div class="prov"><b>Gold model:</b> a ref&rsquo;s workContext may point at any work, including a link work — links-to-links for free (gold-link-model.md §1); winfe&rsquo;s attachLink commented by linking to a fresh document (links.cpp:305) &middot; <b>our impl:</b> link-attachment refs; the &rsquo;72 client&rsquo;s inspector lists them under the link &middot; <b>rendering:</b> the inspector above mirrors that real panel; the comment text is the live corpus&rsquo;s own</div>
+
+<!-- ============ 6. DENSITY PILL ============ -->
+<h2 id="c6">6. The density pill</h2>
+<p>What happens when a passage is <strong>that</strong> connected — six connections stacked on one sentence? The Gold answer is not to hide the density; it is to make it visible at a glance and unfoldable. At five overlapping connections the cluster collapses into a single pill. Click it.</p>
+
+<div class="demo" id="demo6">
+  <div class="docpanel">
+    <div class="dp-head"><span>Q3 Claims Report &middot; claim one</span></div>
+    <div class="lane-text" id="demo6-collapsed"><span class="dense-phrase">The western corridor throughput improved by forty percent following the signal retiming, and no incident metrics rose during the period.</span><button class="pill" id="demo6-pill">&#9662; 6 connections</button></div>
+    <div class="lane-text" id="demo6-expanded" style="display:none">The western corridor throughput improved by forty percent following the signal retiming, and no incident metrics rose during the period.</div>
+    <div class="lane-cap" id="demo6-cap" style="display:none">each bar is one connection &middot; its width is the words it connects &middot; its row keeps overlapping connections apart &middot; hover to light its words in the sentence</div>
+    <div class="lanes" id="demo6-lanes" style="display:none"></div>
+    <div class="lane-readout" id="demo6-readout" style="display:none">hover a lane to read the connection — hovering also solos it (the live system dims the rest to 22%)</div>
+  </div>
+  <div class="demo-hint" id="demo6-hint">Collapsed: the pill is the count, not the clutter. Click it to unfold the itemized view — every connection becomes a bar: width is the words it connects, row keeps overlaps apart, color is type. Hover a bar to light its exact words in the sentence and solo it. In the live editor this is how a dense passage stays readable: fold it while passing through, unfold it when you care.</div>
+</div>
+<div class="dropped"><strong>What the web dropped.</strong> The web has no indicator at all. A passage can be quoted, contested, and annotated forty times across the network and look exactly like a passage quoted zero times. Density of connection — arguably the most honest signal a document can emit — is simply invisible.</div>
+<div class="prov"><b>Gold model:</b> none — density rendering is an application concern, honestly ours &middot; <b>our impl:</b> threshold 5, interval-partitioned lanes, same-span clustering, focus-dimming at 0.22 (<code>link-markers.ts</code>, FR-4.5/FR-40) &middot; <b>rendering:</b> original, and the lane assignment in this demo runs the real greedy partition on the real character offsets</div>
+
+<!-- ============ 7. LINK WIZARD ============ -->
+<h2 id="c7">7. The link wizard</h2>
+<p>Creation is where link UIs die — the Gold frontend&rsquo;s creation dialog was a TODO that never shipped (&ldquo;this should pop up the link creation dialog&rdquo;, winfe links.cpp:299). The rule that follows from that failure: the two-ended fast path stays sacred, and every additional end or span is a deliberate extra step. Watch the link from section 1 get made.</p>
+
+<div class="demo" id="demo7">
+  <div class="wz">
+    <div class="wz-head"><span>create a connection</span><span id="demo7-pos">step 1 of 5</span></div>
+    <div class="wz-step active" data-step="0">
+      <div class="wz-cap">Select the origin passage — the connection starts from text you can see.</div>
+      <div class="dp-body" style="font-size:14px">Customer escalations <span class="wz-selbox">fell to their lowest level in three years</span>, which we attribute to the new triage rota introduced in June.</div>
+    </div>
+    <div class="wz-step" data-step="1">
+      <div class="wz-cap">Choose the far side — four kinds of destination, no hierarchy among them.</div>
+      <div class="wz-modes">
+        <div class="wz-mode"><div class="wm-name">a whole work</div><div class="wm-note">the connection addresses the document itself</div></div>
+        <div class="wz-mode picked"><div class="wm-name">specific text</div><div class="wm-note">a passage in another work — Reviewer Analysis</div></div>
+        <div class="wz-mode"><div class="wm-name">this document</div><div class="wm-note">from one passage to another in the same work</div></div>
+        <div class="wz-mode"><div class="wm-name">a remote server</div><div class="wm-note">an end on another Xudanu server, by tumbler</div></div>
+      </div>
+    </div>
+    <div class="wz-step" data-step="2">
+      <div class="wz-cap">Choose the type — the connection states its own claim. A set, not a tag: more than one may apply.</div>
+      <div class="wz-types">
+        <span class="wz-type" style="--c:var(--t-comment)">comment</span>
+        <span class="wz-type" style="--c:var(--t-reference)">reference</span>
+        <span class="wz-type picked" style="--c:var(--t-disagreement)">disagreement</span>
+        <span class="wz-type" style="--c:var(--t-quotation)">quotation</span>
+        <span class="wz-type" style="--c:var(--t-seealso)">see also</span>
+        <span class="wz-type" style="--c:var(--t-web)">web</span>
+      </div>
+    </div>
+    <div class="wz-step" data-step="3">
+      <div class="wz-cap">Describe the connection — optional. This becomes the link&rsquo;s own descriptor end (section 4).</div>
+      <input class="wz-desc" readonly value="the funnel versus the rota — one claim, two causes" id="demo7-desc">
+    </div>
+    <div class="wz-step" data-step="4">
+      <div class="wz-cap">Done. The connection now exists in both documents — both ends know it, and it will survive every future edit to either passage.</div>
+      <div class="docgrid g2">
+        <div class="docpanel"><div class="dp-head"><span>Q3 Claims Report</span></div><div class="dp-body" style="font-size:13px">Customer <span class="mk" style="--c:var(--t-disagreement)">escalations fell to their lowest level in three years</span>, which we attribute to&hellip;</div></div>
+        <div class="docpanel"><div class="dp-head"><span>Reviewer Analysis</span><span class="dp-backlink">&#8617; 1 in</span></div><div class="dp-body" style="font-size:13px">&hellip;the intake form was broken — <span class="mk" style="--c:var(--t-disagreement)">the funnel was narrower, not the sentiment better</span>.</div></div>
+      </div>
+    </div>
+    <div class="wz-ctl">
+      <button class="wz-btn" id="demo7-prev">&lsaquo; prev</button>
+      <button class="wz-btn" id="demo7-play">play</button>
+      <button class="wz-btn" id="demo7-next">next &rsaquo;</button>
+      <span class="wz-pos">the four far-side modes are the live wizard&rsquo;s real four</span>
+    </div>
+  </div>
+</div>
+<div class="dropped"><strong>What the web dropped.</strong> Web link creation is typing an href — the author states an address, never a claim, never a set, never a description. There is nothing to guide, because there is nothing to decide: the web&rsquo;s link has no room for intent.</div>
+<div class="prov"><b>Gold model:</b> the creation flow&rsquo;s <em>shape</em> — ends, type set, descriptor — plus the shipped warning: the dialog was a TODO (links.cpp:299) &middot; <b>our impl:</b> the guided four-mode creator in the workspace client (whole work / specific text / same document / remote server) &middot; <b>rendering:</b> the stepper above walks the real flow&rsquo;s real order</div>
+
+<!-- ============ 8. TRAILS ============ -->
+<h2 id="c8">8. Trails</h2>
+<p>The one component simple enough to survive both eras. A trail is a curated path through the docuverse — stops, in order, each a passage. Gold&rsquo;s shipped link list window was literally &ldquo;the manager for a list of links and its trail&rdquo; (winfe links.cpp:1); the &rsquo;72 interface renders the same concept as a reading path. Step through this one.</p>
+
+<div class="demo" id="demo8">
+  <div class="trail-strip">
+    <div class="trail-head">trail &middot; &ldquo;Reading Q3 critically&rdquo; &middot; 4 stops</div>
+    <div class="trail-stops" id="demo8-stops"></div>
+    <div class="trail-pane" id="demo8-pane"></div>
+    <div class="trail-ctl">
+      <button class="wz-btn" id="demo8-prev">&lsaquo; prev stop</button>
+      <button class="wz-btn" id="demo8-next">next stop &rsaquo;</button>
+    </div>
+  </div>
+</div>
+<div class="dropped"><strong>What the web kept — almost.</strong> The web&rsquo;s nearest survivor is the reading list: a frozen, one-way, author-only pile of URLs. A trail is a live ordering of passages that follows its text through edits, is followable by anyone, and can be annotated by anyone who walks it. Close, and nowhere near.</div>
+<div class="prov"><b>Gold model:</b> trails as the link list window&rsquo;s own concept (links.cpp:1); Nelson&rsquo;s trails from the &rsquo;70s design &middot; <b>our impl:</b> trails panel in both clients; the &rsquo;72 tour on the sandbox is a trail &middot; <b>rendering:</b> deliberately in the &rsquo;72 form — the one component that needs no Gold-era costume</div>
+
+<h2 id="dropped">9. What the web dropped</h2>
+<p>The exhibit&rsquo;s thesis, one row per component. Thirty years of UX discipline spent removing power to reduce confusion — the web resolved the capability-confusion trade by deleting the capability:</p>
+
+<table>
+<thead><tr><th>Structure (1992 model)</th><th>The web&rsquo;s nearest equivalent</th><th>What is missing</th></tr></thead>
+<tbody>
+<tr><td><strong>Two-ended link</strong></td><td><code>a href</code></td><td>The destination never knows; backlinks are a third party&rsquo;s crawler; edits break the link silently</td></tr>
+<tr><td><strong>Three-ended link</strong></td><td>listicle, screenshot</td><td>A comparison of N sources is never itself an addressable object</td></tr>
+<tr><td><strong>Gathered end-set</strong></td><td>N separate comments</td><td>The set of claims vs one rebuttal cannot be stated as one connection</td></tr>
+<tr><td><strong>Descriptor</strong></td><td><code>title</code> tooltip</td><td>The link cannot carry its own meaning; the far end never sees it</td></tr>
+<tr><td><strong>Comment-on-link</strong></td><td>comment on a page</td><td>The connection itself cannot be contested — only its endpoints</td></tr>
+<tr><td><strong>Density pill &amp; lanes</strong></td><td>nothing</td><td>Connection density is invisible; the most honest signal a document can emit does not exist</td></tr>
+<tr><td><strong>Guided creation</strong></td><td>typing an href</td><td>The author states an address, never a claim — no room for intent</td></tr>
+<tr><td><strong>Trails</strong></td><td>reading list</td><td>Frozen, one-way, author-only; does not follow its text through edits</td></tr>
+</tbody>
+</table>
+
+<div class="gold"><strong>The trade, stated once.</strong> The web chose legibility and lost the connections. This page is what keeping the connections looks like.</div>
+
+<h2 id="model">10. One model, two doors</h2>
+<p>Worth saying precisely, because it is the page&rsquo;s structural claim: the &rsquo;72 reading interface and this gallery are <strong>the same link model wearing two presentations</strong>. Not two models, not a bridge between them. The server holds one store of links — typed, multi-ended, gathered, described — and every client renders what it needs from it:</p>
+<ul>
+<li>the &rsquo;72 client queries those links and walks <em>every</em> end, including gathered members, in its link inspector — and can gather new ends from the reading surface;</li>
+<li>the modern workspace renders them as pills, lanes, clusters, and a guided creator;</li>
+<li>this page renders the model&rsquo;s full capability with the training wheels off.</li>
+</ul>
+<p>The model implemented here is Xudanu&rsquo;s — translated and extended from the released Udanax Gold source, and documented divergence-by-divergence (<a href="gold-link-model.html">the concept doc</a>, <a href="gold-xudanu-complexity.html">the complexity comparison</a>). It is not Roger Gregory&rsquo;s port, and it is not the 1999 code running; it is the 1992 design, implemented today, with its own honesty about what is original. The census keeps the field map; this page is the deep end of one entry in it.</p>
+
+<h2 id="sources">11. Sources and verification</h2>
+<ul>
+<li><strong>Gold sources (via <a href="gold-link-model.html">The Gold Link Model</a>, this documentation&rsquo;s archaeology):</strong> <code>src/server/nlinksx.hxx</code> / <code>nlinksx.cxx</code> (FeHyperLink, FeHyperRef, FeSingleRef, FeMultiRef, IDSpace end-sets); <code>winfe/links.cpp</code> (April 1993 — link list window, descriptor ends, attachLink, the creation-dialog TODO); <code>winfe/xstuff.hxx</code>; the Udanax Green FeBe manual &ldquo;Links and Link Types&rdquo;; <em>Literary Machines</em> 93.1, pp. 4/52&ndash;4/55.</li>
+<li><strong>Xudanu implementation:</strong> <code>edition/links.rs</code> (HyperLink, named end maps, type registry); <code>web/app/src/link-markers.ts</code> (density threshold 5, lane partition, same-span clusters, focus dimming); the workspace link creator&rsquo;s four modes; the &rsquo;72 client&rsquo;s link inspector and gather flow; type palette taken from the shipping client.</li>
+<li><strong>Corpus:</strong> the passages in every demo are the seeded link corpus (<code>scripts/demo-links-seed.mjs</code>) running on <a href="https://demo.transclusion.org">demo.transclusion.org</a> — verified live 27 November 2026. The link ids shown (3A7, 4C2) are illustrative; the structures they display are the stored ones.</li>
+<li><strong>Nelson quote:</strong> &ldquo;The Xanadu design has essentially resolved to one basic document concept: parallel pages with visible connections&rdquo; — <a href="http://hyperland.com/HTbrew-D11">hyperland.com</a>, as also cited in the <a href="xanalogical-census.html">census</a>.</li>
+<li><strong>1993 frontend, running:</strong> <a href="https://github.com/xanatoo/winfe-resurrect">xanatoo/winfe-resurrect</a> — for the shipped Windows chrome, which this page deliberately does not imitate.</li>
+<li><strong>Honest limitations, stated:</strong> no in-text colored underlines and no transpointing UI survive in the Gold-era sources — every visual rendering on this page is Xudanu&rsquo;s, in the spirit of the model; where a component is purely ours (density pill), its provenance line says so. Interactive demos are static re-enactments of live behavior, not live connections.</li>
+</ul>
+
+<h2 id="corrections">12. Corrections</h2>
+<p>Same terms as the <a href="xanalogical-census.html#corrections">census</a>: this page is an independent interpretation offered in good faith; errors are the author&rsquo;s, corrections are welcome and will be attributed. If you built or remember the Gold-era frontends and something here is wrong — a caption, a date, a rendering claim — <a href="xanalogical-census.html#corrections">write in</a>, and the record will be fixed with your name on the fix.</p>
+
+<div class="footer">
+<p>The 1992 Link Model, Rendered &middot; part of the <a href="index.html">Xudanu documentation</a> &middot; sibling of <a href="xanalogical-census.html">the xanalogical systems census</a> and <a href="gold-link-model.html">the Gold link model archaeology</a><br>
+An independent interpretation of the released Udanax Gold source &middot; not Project Xanadu documentation &middot; rendered 27 November 2026</p>
+</div>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---- shared: grouped hover lighting (demos 1,2,3,4,5) ---- */
+  document.querySelectorAll("[data-hl]").forEach(function (el) {
+    var group = el.getAttribute("data-hl");
+    el.addEventListener("mouseenter", function () {
+      document.querySelectorAll('[data-hl="' + group + '"]').forEach(function (m) {
+        m.classList.add("lit");
+      });
+    });
+    el.addEventListener("mouseleave", function () {
+      document.querySelectorAll('[data-hl="' + group + '"]').forEach(function (m) {
+        m.classList.remove("lit");
+      });
+    });
+  });
+
+  /* ---- demo 1: follow on click ---- */
+  var d1 = document.getElementById("demo1");
+  if (d1) {
+    var ends1 = d1.querySelectorAll(".mk");
+    ends1.forEach(function (mk) {
+      mk.addEventListener("click", function () {
+        var far = Array.prototype.filter.call(ends1, function (m) { return m !== mk; })[0];
+        if (!far) return;
+        far.scrollIntoView({ behavior: "smooth", block: "center" });
+        far.classList.add("lit");
+        window.setTimeout(function () { far.classList.remove("lit"); }, 700);
+      });
+    });
+  }
+
+  /* ---- demo 4: descriptor resolution chain ---- */
+  var d4desc = document.getElementById("demo4-desc");
+  var d4note = document.getElementById("demo4-note");
+  if (d4desc && d4note) {
+    var tiers = [
+      { text: "the honest pairing", note: "Tier 1 — the descriptor end: the link’s own words, stored as a named end. Hover either passage above to see what it describes." },
+      { text: "“coincided with the seasonal traffic trough”", note: "Tier 2 — no descriptor end, so the list falls back to the first few characters at the link’s other end, fetched live." },
+      { text: "< New Link >", note: "Tier 3 — no descriptor, no other-end text: winfe’s default string, verbatim. An undescribed connection names itself honestly." }
+    ];
+    var d4state = 0;
+    function showTier(n) {
+      d4state = n;
+      d4desc.textContent = tiers[n].text;
+      d4note.textContent = tiers[n].note;
+      document.querySelectorAll("#demo4 .dc-step").forEach(function (s) {
+        s.classList.toggle("here", parseInt(s.getAttribute("data-dc"), 10) === n);
+      });
+    }
+    document.querySelectorAll("#demo4 .dc-step").forEach(function (s) {
+      s.addEventListener("click", function () {
+        showTier(parseInt(s.getAttribute("data-dc"), 10));
+      });
+    });
+    d4desc.addEventListener("click", function () {
+      showTier((d4state + 1) % tiers.length);
+    });
+    showTier(0);
+  }
+
+  /* ---- demo 5: click a passage to trace its end in the open inspector ---- */
+  var d5 = document.getElementById("demo5");
+  var d5beam = document.getElementById("demo5-beam");
+  if (d5 && d5beam) {
+    var d5rows = d5beam.querySelectorAll(".beam-row");
+    d5.querySelectorAll(".mk").forEach(function (mk, i) {
+      mk.addEventListener("click", function () {
+        var row = d5rows[i];
+        if (!row) return;
+        row.classList.add("flash");
+        d5beam.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        window.setTimeout(function () { row.classList.remove("flash"); }, 900);
+      });
+    });
+  }
+
+  /* ---- demo 6: density pill -> lane view ---- */
+  var d6pill = document.getElementById("demo6-pill");
+  if (d6pill) {
+    /* the six connections, with real character offsets in the sentence */
+    var d6links = [
+      { s: 0, e: 31, type: "comment", c: "var(--t-comment)", text: "The western corridor throughput" },
+      { s: 12, e: 40, type: "reference", c: "var(--t-reference)", text: "corridor throughput improved" },
+      { s: 21, e: 57, type: "quotation", c: "var(--t-quotation)", text: "throughput improved by forty percent" },
+      { s: 44, e: 78, type: "disagreement", c: "var(--t-disagreement)", text: "forty percent following the signal" },
+      { s: 68, e: 104, type: "comment", c: "var(--t-comment)", text: "the signal retiming, and no incident" },
+      { s: 93, e: 136, type: "see also", c: "var(--t-seealso)", text: "no incident metrics rose during the period" }
+    ];
+    var D6SENT = "The western corridor throughput improved by forty percent following the signal retiming, and no incident metrics rose during the period.";
+    var D6LEN = D6SENT.length; /* character space is the lane coordinate system */
+    function d6esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+    var d6collapsed = document.getElementById("demo6-collapsed");
+    var d6expanded = document.getElementById("demo6-expanded");
+    var d6lanes = document.getElementById("demo6-lanes");
+    var d6readout = document.getElementById("demo6-readout");
+    var d6cap = document.getElementById("demo6-cap");
+    var d6expandedState = false;
+
+    /* the real greedy lane partition (link-markers.ts assignLinkLanes),
+       on character offsets exactly as the live system computes them */
+    function partitionLanes(links) {
+      var order = links.map(function (l, i) { return { l: l, i: i }; })
+        .sort(function (a, b) { return a.l.s - b.l.s || a.l.e - b.l.e; });
+      var laneEnds = [];
+      var lanes = {};
+      order.forEach(function (it) {
+        if (it.l.e <= it.l.s) return;
+        var lane = -1;
+        for (var li = 0; li < laneEnds.length; li++) {
+          if (laneEnds[li] <= it.l.s) { lane = li; laneEnds[li] = it.l.e; break; }
+        }
+        if (lane === -1) { lane = laneEnds.length; laneEnds.push(it.l.e); }
+        lanes[it.i] = lane;
+      });
+      return { lanes: lanes, count: laneEnds.length };
+    }
+
+    function buildLanes() {
+      var part = partitionLanes(d6links);
+      d6lanes.innerHTML = "";
+      d6links.forEach(function (l, i) {
+        var row = document.createElement("div");
+        row.className = "lane-row";
+        row.style.top = (part.lanes[i] * 17) + "px";
+        var bar = document.createElement("div");
+        bar.className = "lane-bar";
+        bar.style.setProperty("--c", l.c);
+        bar.style.left = (l.s / D6LEN * 100) + "%";
+        bar.style.width = ((l.e - l.s) / D6LEN * 100) + "%";
+        bar.title = l.type + " — “" + l.text + "”";
+        bar.addEventListener("mouseenter", function () {
+          d6readout.innerHTML = '<span class="lr-t" style="--c:' + l.c + '">' + l.type + "</span> — “" + l.text + "”";
+          d6expanded.innerHTML = d6esc(D6SENT.slice(0, l.s)) + '<span class="d6hl" style="--c:' + l.c + '">' + d6esc(D6SENT.slice(l.s, l.e)) + "</span>" + d6esc(D6SENT.slice(l.e));
+          Array.prototype.forEach.call(d6lanes.querySelectorAll(".lane-bar"), function (b) {
+            b.classList.add(b === bar ? "lit" : "dim");
+          });
+        });
+        bar.addEventListener("mouseleave", function () {
+          d6readout.textContent = "hover a lane to read the connection — hovering also solos it (the live system dims the rest to 22%)";
+          d6expanded.textContent = D6SENT;
+          Array.prototype.forEach.call(d6lanes.querySelectorAll(".lane-bar"), function (b) {
+            b.classList.remove("lit", "dim");
+          });
+        });
+        row.appendChild(bar);
+        d6lanes.appendChild(row);
+      });
+      d6lanes.style.height = (part.count * 17) + "px";
+    }
+
+    d6pill.addEventListener("click", function () {
+      d6expandedState = !d6expandedState;
+      d6collapsed.style.display = d6expandedState ? "none" : "block";
+      d6expanded.style.display = d6expandedState ? "block" : "none";
+      d6expanded.textContent = D6SENT;
+      d6lanes.style.display = d6expandedState ? "block" : "none";
+      d6readout.style.display = d6expandedState ? "block" : "none";
+      if (d6cap) d6cap.style.display = d6expandedState ? "block" : "none";
+      if (d6expandedState) buildLanes();
+    });
+  }
+
+  /* ---- demo 7: wizard stepper ---- */
+  var d7 = document.getElementById("demo7");
+  if (d7) {
+    var steps = d7.querySelectorAll(".wz-step");
+    var pos = d7.querySelector("#demo7-pos");
+    var playBtn = d7.querySelector("#demo7-play");
+    var sIdx = 0, playing = false, timer = null;
+    function showStep(n) {
+      sIdx = (n + steps.length) % steps.length;
+      steps.forEach(function (s, i) { s.classList.toggle("active", i === sIdx); });
+      pos.textContent = "step " + (sIdx + 1) + " of " + steps.length;
+    }
+    function stopPlay() {
+      playing = false;
+      if (timer) { window.clearTimeout(timer); timer = null; }
+      playBtn.textContent = "play";
+    }
+    function tick() {
+      if (!playing) return;
+      showStep(sIdx + 1);
+      timer = window.setTimeout(tick, 2600);
+    }
+    playBtn.addEventListener("click", function () {
+      if (playing) { stopPlay(); return; }
+      playing = true;
+      playBtn.textContent = "pause";
+      tick();
+    });
+    d7.querySelector("#demo7-prev").addEventListener("click", function () { stopPlay(); showStep(sIdx - 1); });
+    d7.querySelector("#demo7-next").addEventListener("click", function () { stopPlay(); showStep(sIdx + 1); });
+    showStep(0);
+  }
+
+  /* ---- demo 8: trail ---- */
+  var d8stops = document.getElementById("demo8-stops");
+  if (d8stops) {
+    var trail = [
+      { chip: "1 claim two", title: "Q3 Claims Report", html: "Customer <span class='mk' style='--c:var(--t-disagreement)'>escalations fell to their lowest level in three years</span>, which we attribute to the new triage rota introduced in June." },
+      { chip: "2 the rebuttal", title: "Reviewer Analysis", html: "Escalations fell during a period when the intake form was broken — <span class='mk' style='--c:var(--t-disagreement)'>the funnel was narrower, not the sentiment better</span>." },
+      { chip: "3 the fine print", title: "Q3 Claims Report", html: "Caveat. <span class='mk' style='--c:var(--t-comment)'>The escalation window overlaps the marketing pause, so attribution is uncertain</span>." },
+      { chip: "4 the field note", title: "Field Notes Q3", html: "Site visit, week 31. <span class='mk' style='--c:var(--t-comment)'>Corridor signage was replaced during the retiming window</span> — a confounder nobody has mentioned in either document." }
+    ];
+    var tIdx = 0;
+    var pane = document.getElementById("demo8-pane");
+    function renderTrail() {
+      d8stops.innerHTML = "";
+      trail.forEach(function (st, i) {
+        var chip = document.createElement("button");
+        chip.className = "trail-chip" + (i === tIdx ? " here" : "");
+        chip.textContent = st.chip;
+        chip.addEventListener("click", function () { tIdx = i; renderTrail(); });
+        d8stops.appendChild(chip);
+      });
+      pane.innerHTML = "<div class='tp-title'>" + trail[tIdx].title + "</div>" + trail[tIdx].html;
+    }
+    document.getElementById("demo8-prev").addEventListener("click", function () {
+      tIdx = (tIdx - 1 + trail.length) % trail.length; renderTrail();
+    });
+    document.getElementById("demo8-next").addEventListener("click", function () {
+      tIdx = (tIdx + 1) % trail.length; renderTrail();
+    });
+    renderTrail();
+  }
+})();
+</script>
+</body>
+</html>
